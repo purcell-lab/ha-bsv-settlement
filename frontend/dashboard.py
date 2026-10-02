@@ -14,12 +14,28 @@ def cards(tree):
 
 
 def redesign(config):
-    """Derive site IDs from the existing dashboard; preserve all stable paths."""
+    """Migrate the legacy layout once; preserve an already redesigned layout."""
     old = deepcopy(config)
     flat = list(cards(old))
     budget = next(c for c in flat if c.get("type") == "custom:bsv-budget-card")
     review = next(c for c in flat if c.get("type") == "custom:bsv-session-review-card")
     budget["wallet_entity"] = review["wallet_entity"]
+    if any(c.get("type") == "custom:bsv-operator-card" for c in flat):
+        required = {
+            "overview": "custom:bsv-operator-card",
+            "drivers": "custom:bsv-budget-card",
+            "payments": "custom:bsv-session-review-card",
+            "wallet": "custom:bsv-receive-qr-card",
+            "testing": None,
+        }
+        for path, kind in required.items():
+            views = [v for v in old.get("views", []) if v.get("path") == path]
+            if (len(views) != 1 or views[0].get("type") != "sections" or
+                    (kind and not any(c.get("type") == kind for c in cards(views[0])))):
+                raise ValueError("Partially redesigned dashboard; review its backup before migration")
+        # Keep native controls, user cards, private config, metadata and extra
+        # views exactly as supplied. The only repair is the derived wallet link.
+        return old
     qr = next(c for c in flat if c.get("type") == "custom:bsv-receive-qr-card")
     balance = next(c["entity"] for c in flat if str(c.get("entity", "")).endswith("_confirmed_wallet_balance"))
     operator = {"type": "custom:bsv-operator-card", "wallet_entity": review["wallet_entity"],

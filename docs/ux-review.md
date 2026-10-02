@@ -94,6 +94,11 @@ the new static route and read-only summary attributes. Then register
 budget and review modules with a revision query parameter. Apply
 `frontend/dashboard.py: redesign` to a backup of the existing five-view dashboard.
 It derives configured entry and entity IDs and retains existing view paths.
+The helper recognises the redesigned section views on subsequent runs and
+preserves user-added cards, extra views, ordering and dashboard metadata.
+It only repairs the budget card's wallet-status reference from the review card.
+A partial or ambiguous redesigned layout raises an error instead of rebuilding
+it destructively; inspect the backup and make a targeted patch in that case.
 Keep the backup for rollback. The driver page retains its existing static URL.
 
 Do not create a payment, change a recipient, change an approval or alter the
