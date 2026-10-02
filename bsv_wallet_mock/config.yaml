@@ -1,0 +1,21 @@
+name: BSV Wallet Mock
+version: "0.1.0"
+slug: bsv_wallet_mock
+description: Mock-only session settlement service; no real wallets or payments.
+url: https://github.com/purcell-lab/ha-bsv-settlement
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: true
+ports:
+  8091/tcp: null
+ports_description:
+  8091/tcp: Mock API (internal access only by default)
+options:
+  api_token: ""
+  approval_token: ""
+schema:
+  api_token: password
+  approval_token: password

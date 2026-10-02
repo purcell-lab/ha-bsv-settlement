@@ -73,6 +73,12 @@ The Compose definition binds port 8091 to loopback only and persists SQLite in a
 
 For a separate HA device, intentionally change the port binding to an appropriate host/LAN address and firewall access to the test machines. HTTP is permitted by this mock scaffold for an isolated test network; it sends bearer tokens unencrypted. Use direct HTTPS on shared or untrusted networks. This is an exception for mock testing, not a proposed live-payment deployment.
 
+## Home Assistant OS app alternative
+
+The repository also provides a dedicated **BSV Wallet Mock** app/add-on, separate from the HACS integration. Add `https://github.com/purcell-lab/ha-bsv-settlement` to the Home Assistant app store repositories, install the app and configure its two mock tokens.
+
+Follow the [app setup guide](bsv_wallet_mock/DOCS.md). It uses persistent `/data` storage, grants no Supervisor/host/device privileges and has no host port mapping by default. The Dockerfile pins the wallet-service source to a specific commit.
+
 ## Install with HACS
 
 This repository supports the **HACS custom repository** installation path. It is not included in the default HACS catalogue, and neither HACS nor Home Assistant has certified the payment functionality.
@@ -100,7 +106,7 @@ When a new release is available, update through HACS and restart HA. The service
 5. Supply the service URL and `MOCK_API_TOKEN`. Do not supply the approval token.
 6. Use the sample script below or call the actions from Developer Tools.
 
-The URL is the service origin, such as `http://192.168.1.20:8091`, with no `/v1` suffix. `127.0.0.1` means the HA process's own network namespace: it will not reach a separate Docker container, HA add-on or another computer. This repository is not an HA OS add-on package.
+The URL is the service origin, such as `http://192.168.1.20:8091`, with no `/v1` suffix. `127.0.0.1` means the HA process's own network namespace: it will not reach a separate Docker container, HA add-on or another computer. For the bundled add-on, use its actual Supervisor hostname on port 8091.
 
 The component rejects a service whose health response is not `mode: mock`. There is deliberately no live-mode switch.
 
@@ -246,7 +252,7 @@ See `TEST_RESULTS.md` for the actual verification performed. Dependency ranges a
 - **Live quote and fees:** implement an agreed conversion source, actual fees and wallet minimums. The fixed mock conversion never creates a nonzero sub-satoshi amount.
 - **Transaction lifecycle:** implement actual signing, receipt verification, recipient acceptance, broadcast ambiguity, reconciliation and chain confirmations.
 - **Operational hardening:** authentication review, transport security, rate limits, retention, backup/restore, clock handling and key custody.
-- **Distribution:** HACS custom-repository metadata and release-based updates are supplied. There is no default HACS catalogue listing, HA OS add-on or live wallet adapter.
+- **Distribution:** HACS custom-repository metadata, release-based integration updates and a separate HA OS mock-service add-on are supplied. There is no default HACS catalogue listing or live wallet adapter.
 
 BRC-29 payment delivery requires transaction and remittance/proof handling, not merely a transaction ID; that is a later wallet-adapter task ([BRC-29](https://bsv.brc.dev/payments/0029)).
 
