@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2: MIT licence
+
+- Add the owner-approved MIT licence for the original code and documentation.
+- Clarify that third-party material retains its respective rights.
+- Add a licence-presence test and rerun HACS validation.
+
+Mock-only behaviour and the separate wallet-service deployment are unchanged.
+
 ## 0.1.1: HACS custom repository scaffolding
 
 - Add root `hacs.json` with Home Assistant 2026.9.4 as the tested minimum.

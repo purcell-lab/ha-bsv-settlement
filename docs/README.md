@@ -8,7 +8,7 @@ The current design is session-end payment or credit, without a budget process. T
 - **[Settlement sequence](settlement-sequence.md):** no-budget flow and explicit mock implementation boundary.
 - **[Setup guide](../README.md):** runnable mock service and HA scaffold.
 - **[API schema](../openapi.json):** generated from the implemented service.
-- **[Verification results](../TEST_RESULTS.md):** 26 passing tests for v0.1.1 and an HTTP demonstration, with untested boundaries identified.
+- **[Verification results](../TEST_RESULTS.md):** 27 passing tests for v0.1.2 and an HTTP demonstration, with untested boundaries identified.
 
 The design document describes the target interface. The implementation deliberately uses `mock_received` and `mock_confirmed`, adds the HA `add_interval` action and provides synthetic identities and manual mock-approval endpoints. No live-wallet capability should be inferred from the design.
 

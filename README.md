@@ -1,6 +1,6 @@
 # BSV session settlement: runnable mock and HA scaffold
 
-Version 0.1.1 | Prepared for Mark Purcell | 2 October 2026
+Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 
 ![BSV Settlement mock integration icon](brand/icon.png)
 
@@ -251,3 +251,7 @@ See `TEST_RESULTS.md` for the actual verification performed. Dependency ranges a
 BRC-29 payment delivery requires transaction and remittance/proof handling, not merely a transaction ID; that is a later wallet-adapter task ([BRC-29](https://bsv.brc.dev/payments/0029)).
 
 The first live milestone should remain a small, supervised operator-to-driver credit followed by the reverse payment. Neither should be enabled by simply renaming `mock_received`.
+
+## Licence
+
+The project's original code and documentation are available under the [MIT licence](LICENSE), copyright 2026 Mark Purcell. Referenced or quoted third-party material, dependencies, names and trademarks retain their respective rights; this repository does not relicense them.

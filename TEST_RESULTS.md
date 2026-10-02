@@ -4,7 +4,7 @@ Verified in the sandbox on 2 October 2026. No tests contacted a real wallet, blo
 
 ## Automated tests
 
-`python -m pytest -q tests` completed with **26 passing tests** for v0.1.1 against Python 3.14.3, Home Assistant 2026.9.4 and FastAPI 0.142.2. The original v0.1.0 suite contained 23 tests; three distribution checks were added for HACS metadata, manifest requirements, branding and translations.
+`python -m pytest -q tests` completed with **27 passing tests** for v0.1.2 against Python 3.14.3, Home Assistant 2026.9.4 and FastAPI 0.142.2. The original v0.1.0 suite contained 23 tests; three distribution checks were added in v0.1.1 for HACS metadata, manifest requirements, branding and translations, followed by a licence check in v0.1.2.
 
 Coverage includes:
 

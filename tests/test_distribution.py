@@ -19,7 +19,7 @@ def test_manifest_distribution_requirements():
     manifest = json.loads((ROOT / "custom_components/bsv_settlement/manifest.json").read_text())
     for key in ("domain", "documentation", "issue_tracker", "codeowners", "name", "version"):
         assert manifest[key]
-    assert manifest["version"] == "0.1.1"
+    assert manifest["version"] == "0.1.2"
     assert manifest["domain"] == "bsv_settlement"
     assert manifest["config_flow"] is True
     assert manifest["requirements"] == []
@@ -32,3 +32,10 @@ def test_brand_and_translations():
     strings = json.loads((ROOT / "custom_components/bsv_settlement/strings.json").read_text())
     english = json.loads((ROOT / "custom_components/bsv_settlement/translations/en.json").read_text())
     assert strings == english
+
+
+def test_license():
+    licence = (ROOT / "LICENSE").read_text()
+    assert licence.startswith("MIT License\n")
+    assert "Copyright (c) 2026 Mark Purcell" in licence
+    assert 'THE SOFTWARE IS PROVIDED "AS IS"' in licence
