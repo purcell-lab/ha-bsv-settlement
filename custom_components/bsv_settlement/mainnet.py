@@ -193,6 +193,11 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
     mode = "embedded_mainnet"
     network = "mainnet"
 
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        from .ledger_checkpoint import CheckpointedStore
+        self.store = CheckpointedStore(hass, entry, self.store)
+
     async def load(self):
         if (self.entry.data.get("acknowledge_mainnet") is not True
                 or self.entry.data.get("enable_broadcast") is not True):
