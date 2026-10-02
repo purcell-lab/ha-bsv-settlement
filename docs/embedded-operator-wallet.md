@@ -56,6 +56,20 @@ Local tests use real HA 2026.9.4 classes and the actual BSV SDK on Python 3.14. 
 
 The offline signing test explicitly forbids socket connections. A passing result demonstrates local SDK operation, not network acceptance, wallet interoperability, receipt delivery or mined settlement.
 
+### Verified HA deployment
+
+On 2 October 2026, the development branch was installed through HACS and activated after an authorised Home Assistant restart. A separate embedded testnet entry loaded successfully on HA 2026.10.0b0. All 35 local tests also passed against that version, as well as the minimum supported HA 2026.9.4; GitHub tests and HACS validation passed ([CI run](https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/36963326459)).
+
+On the installed HA instance:
+
+- SDK identity signature verification passed.
+- Signing and script verification of a fictional-source transaction passed.
+- Wallet status reported `ready_broadcast_disabled`, testnet, no verified balance and no transaction ID.
+- Reloading only the embedded entry preserved the operator public identity and saved self-test result.
+- The original mock entry remained loaded and refreshed successfully; its latest synthetic credit and existing dashboard configuration remained available.
+
+No network transaction was submitted, no funds were supplied, and no charger-control settings were changed. The budget gate and live settlement remain unimplemented. Operator public keys, private keys and site-specific config-entry IDs are deliberately excluded from this public record.
+
 Before enabling any real payment:
 
 1. Prove dependency compatibility on the installed HA version.

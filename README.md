@@ -14,9 +14,11 @@ See [embedded operator-wallet setup and safety boundaries](docs/embedded-operato
 
 **Target design:** retain the BSV budget gate before session start, then meter and price energy dynamically and settle the final payment or credit. Budget authorisation is not a prepayment or a guarantee of available funds. The planned controller must monitor spend and pause or obtain renewed approval before the limit is reached, while preserving charger and grid safety controls.
 
-**Running implementation:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate, automatic OCPP meter feed and real wallet adapter are not implemented. In particular, this service is **not yet wired to `bsv-wallet-cli`** and cannot move real BSV.
+**Original mock:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate and automatic OCPP meter feed are not implemented. Neither backend is wired to `bsv-wallet-cli` or able to move real BSV.
 
 **New development milestone:** the standalone embedded backend uses `bsv-sdk==2.4.0`, not `bsv-wallet-cli`. It provides persistent operator identity, real offline signature tests and local settlement drafts. This is not yet a completed live-payment adapter; the infographic's real-payment and budget steps remain target capabilities.
+
+The embedded backend has now been activated on HA 2026.10.0b0, with offline signature/script verification and identity persistence across entry reload verified. See the [deployment validation record](docs/embedded-operator-wallet.md#verified-ha-deployment). Broadcasting remains disabled.
 
 ## Design documents
 
