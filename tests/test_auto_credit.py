@@ -1,5 +1,6 @@
 """Automatic credits use only fictional keys and a recording fake provider."""
 from datetime import timedelta
+from copy import deepcopy
 
 import pytest
 from bsv import PrivateKey, PublicKey, Transaction
@@ -203,3 +204,20 @@ async def test_manual_draft_blocks_auto_and_disabled_policy_still_reconciles(tmp
     await api.auto_credits.tick()
     assert api.auto_credits.get(row)["state"]=="provider_confirmed"
     assert len(api.chain.posts)==1
+
+
+async def test_occupied_closed_session_is_paid_without_reusing_approval_for_resumption(tmp_path):
+    _, api, proxy, row, _, _ = await ready(tmp_path)
+    ended = proxy.data["latest_session"]
+    ended["running_state"] = "Occupied"
+    resumed = deepcopy(ended)
+    resumed.update(session_id="new-resumed-session", ocpp_transaction_id="new-proxy-id",
+                   ended_at=None, status="active_observed", running_state="Discharging")
+    proxy.data.update(latest_session=resumed, previous_session=ended)
+    await api.auto_credits.tick()
+    item = api.auto_credits.get(row)
+    assert item["state"] == "submitted" and item["session_id"] == ended["session_id"]
+    await api.auto_credits.tick()
+    assert len(api.chain.posts) == 1
+    assert all(p["session_id"] != resumed["session_id"]
+               for p in api.saved["automatic_credits"].values())

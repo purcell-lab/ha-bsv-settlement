@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from custom_components.bsv_settlement.proxy_ledger import build_records, select_prices, instant
+from custom_components.bsv_settlement.proxy_ledger import build_records, select_prices, instant, infer_sessions
 from custom_components.bsv_settlement.proxy import ProxyCoordinator, SOURCE_KEYS, normalize
 from custom_components.bsv_settlement.sensor import ProxySensor
 from custom_components.bsv_settlement.config_flow import BSVSettlementConfigFlow
@@ -29,7 +29,7 @@ def row(minute, value, unit=None, **attrs):
 def fixture():
     return {
         "state": [row(0, "Idle"), row(1, "Occupied"), row(2, "Charging"),
-                  row(5, "Discharging"), row(8, "Occupied"), row(9, "Charging"),
+                  row(5, "Discharging"), row(8, "Preparing Comm"), row(9, "Charging"),
                   row(10, "Ended")],
         "import": [row(0, "1", "MWh"), row(5, "1.001", "MWh"), row(10, "1.002", "MWh")],
         "export": [row(0, "2", "MWh"), row(8, "2.0005", "MWh")],
@@ -38,7 +38,7 @@ def fixture():
     }
 
 
-def test_proxy_direction_changes_pauses_and_negative_feed_in():
+def test_proxy_direction_changes_preparation_and_negative_feed_in():
     records = build_records(fixture(), "sensor.state", stamp(15))
     assert len(records) == 1
     r = records[0]
@@ -48,6 +48,50 @@ def test_proxy_direction_changes_pauses_and_negative_feed_in():
     assert r["transaction_id_source"] == "proxy_generated"
     assert not r["billing_eligible"]
     assert records == build_records(fixture(), "sensor.state", stamp(15))
+
+
+def test_occupied_ends_energy_session_and_resumption_has_distinct_id():
+    h = fixture()
+    h["state"][4] = row(8, "Occupied")
+    first, resumed = build_records(h, "sensor.state", stamp(15))
+    assert first["opened_at"] == stamp(1) and first["ended_at"] == stamp(8)
+    assert first["running_state"] == "Occupied" and first["status"] == "ended_observed"
+    assert first["import_kwh"] == 1 and first["export_kwh"] == .5
+    assert first["net_cost_aud"] == .11
+    assert resumed["opened_at"] == stamp(8) and resumed["energy_started_at"] == stamp(9)
+    assert resumed["ended_at"] == stamp(10) and resumed["import_kwh"] == 1
+    assert resumed["export_kwh"] == 0 and resumed["net_cost_aud"] == .10
+    assert first["session_id"] != resumed["session_id"]
+    assert first["session_id"] == build_records(fixture(), "sensor.state", stamp(15))[0]["session_id"]
+    assert sum(r["import_kwh"] for r in (first, resumed)) == 2
+    assert sum(r["export_kwh"] for r in (first, resumed)) == .5
+    assert [first, resumed] == build_records(h, "sensor.state", stamp(15))
+
+
+@pytest.mark.parametrize("active", ["Charging", "Discharging"])
+def test_initial_occupied_is_not_an_empty_session_and_repeated_occupied_is_idempotent(active):
+    rows = [row(0,"Idle"),row(1,"Occupied"),row(2,"Occupied"),
+            row(3,"Preparing Comm"),row(4,active),row(5,"Occupied"),
+            row(6,"Occupied"),row(7,"Ended"),row(8,"Idle")]
+    records = infer_sessions(rows)
+    assert len(records) == 1
+    assert records[0]["opened_at"] == stamp(1)
+    assert records[0]["energy_started_at"] == stamp(4)
+    assert records[0]["ended_at"] == stamp(5)
+    assert infer_sessions(rows[:4]) == []
+
+
+def test_occupied_candidate_survives_trimmed_state_history_with_stable_identity():
+    rows = [row(0,"Idle"),row(1,"Occupied"),row(2,"Charging"),row(3,"Occupied"),
+            row(4,"Discharging"),row(5,"Occupied"),row(6,"Preparing Comm"),
+            row(7,"Charging"),row(8,"Occupied")]
+    original = infer_sessions(rows)
+    # The coordinator keeps one preceding state and all rows from the retained
+    # opening timestamp. A partial older record must not shift retained IDs.
+    retained = infer_sessions(rows[2:])
+    assert [(r["opened_at"],r["ended_at"]) for r in retained[-2:]] == [
+        (r["opened_at"],r["ended_at"]) for r in original[-2:]]
+    assert all(not r["partial_start"] for r in retained[-2:])
 
 
 def test_proxy_reset_recovery_is_not_energy():

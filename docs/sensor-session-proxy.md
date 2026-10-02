@@ -32,8 +32,15 @@ for startup/restart gap recovery; ensure all five source sensors are recorded.
 
 - A candidate opens on an occupied, preparation or active state, but appears
   as an energy session only after charging/discharging activity.
-- Direction changes and occupied pauses stay within that session. `Ended` or
-  `Idle` closes the proxy activity session.
+- A return to `Occupied` after charging or discharging closes the activity
+  session at that transition. `Ended` and `Idle` also close it. Initial
+  `Occupied` or preparation states without energy activity do not create an
+  empty completed session.
+- Direct charging/discharging direction changes remain within the same session.
+  After an `Occupied` close, the next energy activity is a separate session,
+  even if the vehicle stays plugged in. Its candidate opening timestamp is the
+  `Occupied` boundary; it appears as a session only once energy activity starts.
+  The previous wallet approval is not reused for that new session.
 - UUID transaction IDs derive deterministically from the configured state
   entity and observed opening timestamp. They are explicitly proxy-generated,
   not charger-issued OCPP transaction IDs. Renaming the source entity or
@@ -79,6 +86,12 @@ older summary records are retained. Their amounts are not immutable commercial
 invoices. This is not an unlimited audit archive or a substitute for recorder
 backup and retention management.
 
+The `Occupied` boundary rule is applied when retained observations are replayed
+after activation. A previously open record keeps its original opening-derived
+ID but closes at its first observed `Occupied` return after energy flow. Later
+activity gets a different ID. Already signed payment records are never replaced
+or automatically paid again; changed frozen accounts fail their existing checks.
+
 At most 60,000 observations per input may be collected. Reaching that limit
 fails closed with a visible issue; it does not silently discard energy and
 continue billing. A long uninterrupted session may require an explicit
@@ -100,7 +113,8 @@ mutation actions are rejected for it.
 
 ## Validation boundary
 
-Tests cover stable identity, pauses and direction changes, negative feed-in
+Tests cover stable identity, initial and repeated occupied states, occupied
+session closure, resumed-session separation, direction changes, negative feed-in
 prices, effective-period selection, final-versus-estimated rates, missing
 tariffs, counter resets, unavailable sources, storage/reload and read-only
 service guards. A private historical replay matched the previously generated

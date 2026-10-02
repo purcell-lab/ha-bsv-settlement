@@ -43,6 +43,9 @@ requires new invitations; old queued sessions remain for reconciliation.
    The same page action also obtains a receiving key and signs its registration.
    Wallet-native permission prompts can still appear.
 3. Bind the correct physical charging session. Record and price each interval.
+   In the sensor proxy, a return to `Occupied` after energy flow closes that
+   activity session, as do `Ended` and `Idle`. Resumed activity after `Occupied`
+   is a new session and needs its own approval.
 4. The server checks eligible closed accounts every 15 seconds. A negative account
    creates a frozen credit and reserves that session against both manual payment
    review and automatic driver collection.

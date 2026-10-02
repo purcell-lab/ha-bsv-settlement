@@ -62,6 +62,15 @@ def infer_sessions(rows):
         if state == previous:
             continue
         previous = state
+        # Occupied before energy flow is preparation. A return to Occupied
+        # after energy flow ends that activity session, even while plugged in.
+        # Seed the next candidate at the same boundary so history trimming and
+        # replay preserve its opening timestamp and deterministic transaction ID.
+        if current is not None and state == "Occupied" and current["energy_started_at"]:
+            current["transitions"].append(row)
+            current["ended_at"] = row["t"]
+            sessions.append(current)
+            current = None
         if current is None and state in PREPARING | ACTIVE:
             current = {"opened_at": row["t"], "energy_started_at": None,
                        "ended_at": None, "transitions": [],
