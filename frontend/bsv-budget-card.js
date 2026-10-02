@@ -1,4 +1,4 @@
-import qrcode from "qrcode-generator";
+import {awaitingApproval,approvalUrl,drawApprovalQR} from "./approval-qr.js";
 import {styles,esc,stamp,short,stateLabel} from "./ui.js";
 class BSVBudgetCard extends HTMLElement {
   setConfig(config) {
@@ -13,10 +13,12 @@ class BSVBudgetCard extends HTMLElement {
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
       <p id="status" class="note" role="status" aria-live="polite"></p>
       <div id="link-panel" hidden class="section">
-        <h3>Share with this driver only</h3><label>Private approval link<input id="driver-link" readonly></label>
+        <h3>Scan to approve in BSV Browser</h3>
+        <p class="note">Share with this driver only. Scanning opens the terms; it does not approve payment or start charging.</p>
+        <div id="qr" class="qr"></div>
+        <label>Private approval link<input id="driver-link" readonly></label>
         <div class="actions"><button id="copy" class="primary">Copy driver link</button><a id="open-link" class="button" target="_blank" rel="noopener noreferrer">Open driver page</a></div>
-        <details><summary>Show QR for the driver</summary><div id="qr" class="qr"></div></details>
-        <p class="note">Open inside BSV Browser. Save this link now; it is only returned when created.</p>
+        <p class="note">The QR closes when approval is received, expires or is revoked. Save your driver link for session updates and receipts.</p>
       </div>
       <div class="actions"><button id="bind" class="primary" hidden>Confirm driver and match session</button><button id="refresh" hidden>Check approval</button></div>
       <p id="session" class="note" style="margin-top:12px"></p>
@@ -82,7 +84,7 @@ class BSVBudgetCard extends HTMLElement {
     };
   }
   $(id){return this.shadowRoot.getElementById(id);}
-  connectedCallback(){if(!this.timer)this.timer=setInterval(()=>{if(this.budget&&!this.busy&&this._hass?.user?.is_admin)this.perform("session_budget_status",{budget_id:this.budget.terms.budget_id},true);},15000);}
+  connectedCallback(){if(!this.timer)this.timer=setInterval(()=>{this.paint();if(this.budget&&!this.busy&&this._hass?.user?.is_admin)this.perform("session_budget_status",{budget_id:this.budget.terms.budget_id},true);},15000);}
   disconnectedCallback(){clearInterval(this.timer);this.timer=null;}
   getCardSize(){return 7;}
   set hass(h){this._hass=h;if(!this.config)return;this.session=h.states[this.config.proxy_entity]?.attributes.latest_session;this.paint();
@@ -97,6 +99,12 @@ class BSVBudgetCard extends HTMLElement {
       "The ongoing credit policy is paused by the master automatic-credit policy. Check Payments.";
     const usable=h.states[this.config.proxy_entity]&&!["unknown","unavailable"].includes(h.states[this.config.proxy_entity].state);
     const accepted=b?.state==="spending_authorised_wallet_permission_required";
+    const matching=b?.terms.session_mode!=="existing_session"||
+      (b?.terms.session_id===this.session?.session_id&&!this.session?.ended_at);
+    this.$("link-panel").hidden=!(admin&&usable&&matching&&awaitingApproval(b)&&this.linkBudget===b.terms.budget_id&&this.linkFresh!==false);
+    if(!admin||b&&!awaitingApproval(b)){
+      this.linkBudget=null;this.$("driver-link").value="";this.$("open-link").removeAttribute("href");this.$("qr").replaceChildren();
+    }
     const bound=!!b?.binding||b?.terms.session_mode==="existing_session";
     this.$("current").hidden=!b;
     this.$("step1").className=b?"done":"";this.$("step2").className=accepted?"done":"";this.$("step3").className=bound?"done":"";
@@ -106,7 +114,7 @@ class BSVBudgetCard extends HTMLElement {
     if(b){
       this.$("state-title").textContent=stateLabel(b.state);
       this.$("next-step").textContent=!accepted?(b.state==="awaiting_driver_consent"?"Ask the driver to open their private link in BSV Browser and approve.":"This approval is not active. Create a fresh invitation for a future session."):!bound?"Driver approved. Confirm the correct open session below.":b.credit_destination?"Session matched and receiving wallet registered. Final account and payment checks still apply.":"Session matched. Ask the driver to reconnect before session end to register their receiving wallet.";
-      this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your private link is shown above.":"The private link is not recoverable from this card. The saved approval still exists. Do not pay or reapprove an already-settled session.";
+      this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your pending private link is shown above.":awaitingApproval(b)?"This older invitation's link cannot be recovered automatically. Use the original saved link, or explicitly revoke it before creating a replacement.":"No approval QR is needed. Do not pay or reapprove an already-settled session.";
     }
     this.$("create").disabled=this.busy||!admin||!usable;
     this.$("accept").disabled=this.busy||!admin;
@@ -123,20 +131,19 @@ class BSVBudgetCard extends HTMLElement {
     try{
       const result=await this._hass.callWS({type:"call_service",domain:"bsv_settlement",service,
         service_data:{config_entry_id:this.config.config_entry_id,...data},return_response:true});
-      this.budget=result.response;const b=this.budget;
-      if(b.driver_link_fragment){
-        const url=new URL("/bsv_settlement/driver/index.html",location.origin);url.hash=b.driver_link_fragment.slice(1);
-        this.linkBudget=b.terms.budget_id;this.$("driver-link").value=url.href;this.$("open-link").href=url.href;
-        const qr=qrcode(0,"M");qr.addData(url.href,"Byte");qr.make();this.$("qr").innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});
-        this.$("qr").querySelector("svg").setAttribute("aria-label","Private driver approval link");
+      this.budget=result.response;this.linkFresh=true;const b=this.budget;
+      const url=approvalUrl(b.driver_link_fragment,b.terms.budget_id,location.origin);
+      if(url&&awaitingApproval(b)){
+        this.linkBudget=b.terms.budget_id;this.$("driver-link").value=url;this.$("open-link").href=url;
+        drawApprovalQR(this.$("qr"),url);
         this.$("create-panel").open=false;
       }
-      this.$("link-panel").hidden=this.linkBudget!==b.terms.budget_id;
       this.$("invitation").value=JSON.stringify(b.invitation,null,2);
       const p=b.automatic_credit?.txid?b.automatic_credit:b.collection;
       this.$("collection").textContent=p?`${stateLabel(p.state)}${p.txid?": "+p.txid:""}`:"No payment submitted under this approval.";
-      if(!silent)this.$("status").textContent=service==="create_session_budget"?"Invitation ready. Keep the private link before leaving this page.":"Approval record updated.";
+      if(!silent)this.$("status").textContent=service==="create_session_budget"?"Invitation ready. Ask the driver to scan and review the terms.":"Approval record updated.";
     }catch(e){
+      this.linkFresh=false;
       this.$("status").textContent=silent&&!this.budget?"No approval loaded. Create an invitation, or use Check approval to retry.":e.message||"Could not update the approval. Try again.";
     }finally{this.busy=false;this.paint();}
   }

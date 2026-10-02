@@ -1,7 +1,9 @@
 import {esc,num,stamp,short,styles,sessionStatus} from "./ui.js";
+import {awaitingApproval,approvalUrl,drawApprovalQR,pendingForSession} from "./approval-qr.js";
 class BSVOperatorCard extends HTMLElement{
   setConfig(c){this.config=c;if(!this.shadowRoot)this.attachShadow({mode:"open"});this.render();}
   set hass(h){this._hass=h;this.render();}
+  disconnectedCallback(){clearTimeout(this.approvalExpiry);this.signature=null;}
   getCardSize(){return 6;}
   render(){
     const c=this.config,h=this._hass;if(!c||!h)return;
@@ -9,7 +11,7 @@ class BSVOperatorCard extends HTMLElement{
     const balance=h.states[c.balance_entity], stale=!ws||["unavailable","unknown"].includes(ws.state);
     const mode=c.mode||"overview";
     const signature=JSON.stringify([mode,proxy?.state,proxy?.attributes,ws?.state,health,balance?.state,h.user?.is_admin]);
-    if(signature===this.signature)return;this.signature=signature;
+    if(signature===this.signature)return;this.signature=signature;clearTimeout(this.approvalExpiry);
     const link=(path,text,primary=false)=>`<a class="button ${primary?"primary":""}" href="/bsv-settlement/${path}">${esc(text)}</a>`;
     const sessions=[proxy?.attributes.latest_session,proxy?.attributes.previous_session].filter(Boolean);
     let body;
@@ -28,6 +30,7 @@ class BSVOperatorCard extends HTMLElement{
       ${unavailable?`<p class="notice">Session data is unavailable. Do not infer a completed payment from an old reading.</p>`:`
       <div class="notice"><strong>${esc(summary.label)}</strong>${esc(summary.detail)}</div>
       <div class="actions">${link(summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${link("wallet","View funds")}</div>
+      <section id="approval-qr" class="section" hidden aria-label="Driver approval"></section>
       ${s?`<div class="section"><div class="row"><div><p class="note">${Number(s.net_cost_aud)<0?"Provisional credit to driver":"Provisional driver charge"}</p><p class="amount">AUD ${num(s.net_cost_aud===null?null:Math.abs(Number(s.net_cost_aud)),2)}</p></div><span class="badge ${summary.tone}">${esc(summary.label)}</span></div>
       <dl><dt>Charged to EV</dt><dd>${num(s.import_kwh,2)} kWh</dd><dt>Exported from EV</dt><dd>${num(s.export_kwh,2)} kWh</dd><dt>${s.ended_at?"Ended":"Started"}</dt><dd>${esc(stamp(s.ended_at||s.energy_started_at||s.opened_at))}</dd><dt>Session reference</dt><dd>${esc(short(s.ocpp_transaction_id))}</dd></dl>
       <details><summary>Full session reference and meter notes</summary><code>${esc(s.ocpp_transaction_id)}</code><p class="note">Sensor-derived proxy ID, not a charger-issued OCPP ID. Interval costs are provisional, not a certified bill.</p></details></div>`:""}`}
@@ -37,6 +40,10 @@ class BSVOperatorCard extends HTMLElement{
     }
     const opened=[...this.shadowRoot.querySelectorAll("details[open]")].map(d=>d.querySelector("summary")?.textContent);
     this.shadowRoot.innerHTML=`<style>${styles}</style><ha-card>${body}</ha-card>`;
+    const pending=mode==="overview"&&!stale&&h.user?.is_admin&&
+      proxy&&!["unknown","unavailable"].includes(proxy.state)&&!(proxy.attributes?.issues||[]).length?
+      pendingForSession(sessions[0],health):null;
+    if(pending)this.loadApprovalQR(pending.budget_id,signature);
     for(const d of this.shadowRoot.querySelectorAll("details"))if(opened.includes(d.querySelector("summary")?.textContent))d.open=true;
     const button=this.shadowRoot.getElementById("refresh");
     if(button)button.onclick=async()=>{
@@ -45,6 +52,26 @@ class BSVOperatorCard extends HTMLElement{
       catch(e){f.textContent=e.message||"Provider check failed. Try again later.";}
       finally{button.disabled=false;}
     };
+  }
+  async loadApprovalQR(budgetId,signature){
+    const holder=this.shadowRoot.getElementById("approval-qr");if(!holder)return;
+    try{
+      const result=await this._hass.callWS({type:"call_service",domain:"bsv_settlement",service:"session_budget_status",
+        service_data:{config_entry_id:this.config.config_entry_id,budget_id:budgetId},return_response:true});
+      if(signature!==this.signature||!this._hass.user?.is_admin)return;
+      const b=result.response,url=approvalUrl(b?.driver_link_fragment,budgetId,location.origin);
+      if(!awaitingApproval(b)||!url)return;
+      holder.innerHTML=`<h3>Waiting for driver approval</h3><p class="note">Scan in BSV Browser, review the terms and approve. Scanning alone does not authorise payment.</p><div class="qr"></div><div class="actions"><button class="primary" id="copy-approval">Copy approval link</button></div><p class="note" role="status" id="qr-feedback">Private link for this session only.</p>`;
+      drawApprovalQR(holder.querySelector(".qr"),url);holder.hidden=false;
+      this.approvalExpiry=setTimeout(()=>{holder.hidden=true;holder.replaceChildren();},
+        Math.max(0,Date.parse(b.terms.expires_at)-Date.now()));
+      holder.querySelector("#copy-approval").onclick=async()=>{
+        try{await navigator.clipboard.writeText(url);holder.querySelector("#qr-feedback").textContent="Private approval link copied.";}
+        catch{holder.querySelector("#qr-feedback").textContent="Copy unavailable. Open Drivers to select the link.";}
+      };
+    }catch{
+      if(signature===this.signature){holder.hidden=false;holder.textContent="Approval QR unavailable. Open Drivers and check the current invitation.";}
+    }
   }
 }
 if(!customElements.get("bsv-operator-card"))customElements.define("bsv-operator-card",BSVOperatorCard);

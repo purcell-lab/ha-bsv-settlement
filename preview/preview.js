@@ -10,7 +10,7 @@ let budget=null,tab="overview";
 const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d})=>{
   $("#notice").textContent=`Preview only: ${service.replaceAll("_"," ")}. No live call was made.`;
   if(service==="session_budget_status"&&!budget)throw Error("No fictional approval yet.");
-  if(service==="create_session_budget")budget={state:"awaiting_driver_consent",terms:{budget_id:"fictional-budget",session_mode:d.session_id?"existing_session":"next_session_reservation"},driver_link_fragment:"#budget=fictional-budget&token=preview-only",invitation:{notice:"Fictional preview, not a valid signed invitation"}};
+  if(service==="create_session_budget")budget={state:"awaiting_driver_consent",terms:{budget_id:"11111111-1111-4111-8111-111111111111",session_id:d.session_id||"reservation:fictional",expires_at:new Date(Date.now()+7200000).toISOString(),session_mode:d.session_id?"existing_session":"next_session_reservation"},driver_link_fragment:"#budget=11111111-1111-4111-8111-111111111111&token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",invitation:{notice:"Fictional preview, not a valid signed invitation"}};
   if(service==="bind_session_budget")budget.binding={session_id:session.session_id};
   if(service==="revoke_session_budget")budget.state="revoked";
   if(service==="configure_automatic_credit")hass.states["sensor.wallet"].attributes.automatic_credit.enabled=d.enabled;
@@ -20,12 +20,12 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
     $("bsv-session-review-card").hass=hass;
   }
   if(service==="prepare_session_review")throw Error("Preview only. No payment review is created.");
-  const result=budget?structuredClone(budget):{};if(budget)delete budget.driver_link_fragment;return {response:result};
+  const result=budget?structuredClone(budget):{};if(budget&&budget.state!=="awaiting_driver_consent")delete result.driver_link_fragment;return {response:result};
 }};
 function state(){
  const s=$("#scenario").value;
  hass.states={"sensor.rate":{state:"100"},"sensor.balance":{state:s==="pending"?"76":"4652"},"sensor.proxy":{state:"ready",attributes:{latest_session:{...session,ended_at:s==="missing"?null:session.ended_at},updated_at:new Date().toISOString()}},
- "sensor.wallet":{state:s==="unavailable"?"unavailable":"ready",attributes:{pending_change_sats:s==="pending"?4576:0,chain_checked_at:new Date().toISOString(),automatic_credit:{enabled:true,max_total_sats:1000,fee_sats:10,payments:["missing","ongoing"].includes(s)?[]:[{...payment,state:s==="pending"?"provider_unconfirmed":"provider_confirmed"}]},session_payments:[],driver_approvals:[],
+ "sensor.wallet":{state:s==="unavailable"?"unavailable":"ready",attributes:{pending_change_sats:s==="pending"?4576:0,chain_checked_at:new Date().toISOString(),automatic_credit:{enabled:true,max_total_sats:1000,fee_sats:10,payments:["missing","ongoing"].includes(s)?[]:[{...payment,state:s==="pending"?"provider_unconfirmed":"provider_confirmed"}]},session_payments:[],driver_approvals:budget?[{budget_id:budget.terms.budget_id,session_id:budget.terms.session_id,state:budget.state,approved:budget.state!=="awaiting_driver_consent",expires_at:budget.terms.expires_at}]:[],
  ongoing_credit:s==="ongoing"?{enabled:true,effective:true,recipient:{address:"Fictional registered driver address"},sessions:[{session_id:session.session_id,transaction_id:session.ocpp_transaction_id,recipient_address:"Fictional registered driver address",satoshis_per_aud:"100",state:"waiting_for_session_end"}]}:null}}};
 }
 function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);return el;}
