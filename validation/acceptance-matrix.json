@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "baseline": "487d677742288c1089ce67ac4d6633703e723158",
+  "baseline_ci": "https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/37066045552",
+  "baseline_test_counts": {"python_ha": 181, "driver_js": 24, "operator_js": 5},
+  "evidence_boundary": "Test references are evidence of specific fictional/offline behaviours, not completion of the full outcome or proof of live wallet/charger compatibility.",
+  "outcomes": [
+    {
+      "id": "D01",
+      "outcome": "Driver wallet control and signed budget/session terms are verified",
+      "status": "partial",
+      "issues": [3, 5, 14],
+      "test_refs": [
+        {"path": "tests/test_budget.py", "test": "test_typescript_python_signature_interoperability"},
+        {"path": "tests/test_driver_http.py", "test": "test_private_link_read_approve_replay_and_revoke"}
+      ],
+      "remaining": ["Record actual wallet/version/transport and permission settings", "Retain supervised device and independent security-review evidence"]
+    },
+    {
+      "id": "D02",
+      "outcome": "No session starts without valid approval",
+      "status": "blocked",
+      "issues": [15, 16],
+      "test_refs": [],
+      "remaining": ["Implement exposure permission and safe charger arbitration", "Separately approve and measure physical start/stop tests"]
+    },
+    {
+      "id": "D03",
+      "outcome": "Session import/export energy is attributed and priced at correct interval rates",
+      "status": "partial",
+      "issues": [8, 9, 10, 11],
+      "test_refs": [
+        {"path": "tests/test_proxy.py", "test": "test_proxy_direction_changes_preparation_and_negative_feed_in"},
+        {"path": "tests/test_proxy.py", "test": "test_proxy_price_effective_period_not_arrival_and_final_preferred"}
+      ],
+      "remaining": ["Add native OCPP lifecycle/measurands and physical connector attribution", "Independently reconcile tariff-boundary energy and provenance"]
+    },
+    {
+      "id": "D04",
+      "outcome": "Missing prices, stale meters and exhaustion follow agreed pause/hold rules",
+      "status": "partial",
+      "issues": [9, 11, 15, 16],
+      "test_refs": [
+        {"path": "tests/test_proxy.py", "test": "test_proxy_missing_price_unknown_counter_and_units_fail_closed"},
+        {"path": "tests/test_driver_http.py", "test": "test_amber_estimates_units_and_stale_times"}
+      ],
+      "remaining": ["Agree gross exposure and stop reserve", "Test physical pause and failure escalation; financial hold is not charger stop"]
+    },
+    {
+      "id": "D05",
+      "outcome": "Final energy reconciles and independent accounting agrees",
+      "status": "blocked",
+      "issues": [2, 9, 11, 12, 13],
+      "test_refs": [
+        {"path": "tests/test_session_review.py", "test": "test_unfinished_or_unreconciled_accounts_block"}
+      ],
+      "remaining": ["Produce independent golden accounts and meter tolerance evidence", "Approve final tariff, adjustment and synthetic-versus-market conversion policy"]
+    },
+    {
+      "id": "D06",
+      "outcome": "Driver pays positive accounts; operator credits negative accounts; zero needs no transaction",
+      "status": "partial",
+      "issues": [3, 17, 18, 23],
+      "test_refs": [
+        {"path": "tests/test_collection.py", "test": "test_frozen_quote_exact_amount_and_no_duplicate_broadcast"},
+        {"path": "tests/test_collection.py", "test": "test_negative_zero_and_over_limit_accounts_do_not_collect"},
+        {"path": "tests/test_auto_credit.py", "test": "test_pays_without_browser_or_per_payment_approval_and_freezes_rate"},
+        {"path": "tests/test_ongoing_credit.py", "test": "test_initial_credit_shared_exclusion_restart_and_receipt_scope"}
+      ],
+      "remaining": ["Retain redacted real-wallet debit evidence and credit receipt acceptance record", "Specify unified zero/tiny-account closure and browser-absent unpaid handling"]
+    },
+    {
+      "id": "D07",
+      "outcome": "Recipient, amount and transaction evidence match immutable account and quote",
+      "status": "partial",
+      "issues": [6, 13, 18, 19],
+      "test_refs": [
+        {"path": "tests/test_collection.py", "test": "test_signed_transaction_cannot_change_authorised_outputs"},
+        {"path": "tests/test_ongoing_credit.py", "test": "test_latest_driver_changes_only_future_sessions_and_rate_freezes"},
+        {"path": "tests/test_auto_credit.py", "test": "test_credit_receipt_energy_is_frozen_and_legacy_recovery_is_hash_checked"}
+      ],
+      "remaining": ["Complete full tariff/quote receipt provenance", "Define independent chain/finality and stale-restore evidence policies"]
+    },
+    {
+      "id": "D08",
+      "outcome": "Decline, expiry, duplicates, restarts and uncertain submission do not create duplicate payments",
+      "status": "partial",
+      "issues": [4, 7, 17, 19],
+      "test_refs": [
+        {"path": "tests/test_collection.py", "test": "test_uncertain_broadcast_only_reconciles_never_resubmits"},
+        {"path": "tests/test_collection.py", "test": "test_save_failure_before_network_never_broadcasts"},
+        {"path": "tests/test_auto_credit.py", "test": "test_unknown_submission_and_restart_never_rebroadcast"},
+        {"path": "tests/test_ongoing_credit.py", "test": "test_changed_frozen_account_and_storage_failure_block_broadcast"}
+      ],
+      "remaining": ["Exercise every transition, protected restore and stale-backup mismatch", "Add confirmation-loss and real-device suspension/refusal cases"]
+    },
+    {
+      "id": "D09",
+      "outcome": "Dashboard distinguishes charging completion from payment confirmation and shows unresolved obligations",
+      "status": "partial",
+      "issues": [19, 20, 21],
+      "test_refs": [
+        {"path": "tests/test_ux_summary.py", "test": "test_driver_snapshot_is_only_the_approved_session"},
+        {"path": "frontend/ui.test.js", "test": "submitted and confirmed payments override metering not_requested"}
+      ],
+      "remaining": ["Clear stale recovered-source state safely", "Complete native HA and BSV Browser mobile/keyboard/dark-theme evidence"]
+    },
+    {
+      "id": "D10",
+      "outcome": "Recovery is tested and public records contain no custody or identifying site secrets",
+      "status": "blocked",
+      "issues": [4, 5, 7, 21, 24],
+      "test_refs": [
+        {"path": "tests/test_embedded.py", "test": "test_embedded_identity_restart_permissions_selftest_and_no_network"}
+      ],
+      "remaining": ["Execute an isolated protected backup/restore drill, not only a normal restart", "Complete privacy/security review and release recovery ownership"]
+    }
+  ]
+}
