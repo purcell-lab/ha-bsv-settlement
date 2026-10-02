@@ -22,7 +22,7 @@ def test_manifest_distribution_requirements():
     assert manifest["version"] == "0.1.2"
     assert manifest["domain"] == "bsv_settlement"
     assert manifest["config_flow"] is True
-    assert manifest["requirements"] == []
+    assert manifest["requirements"] == ["bsv-sdk==2.4.0"]
 
 
 def test_brand_and_translations():

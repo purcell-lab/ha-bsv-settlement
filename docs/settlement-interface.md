@@ -1,5 +1,7 @@
 # Home Assistant and BSV wallet settlement
 
+> Historical interface draft for the original mock. The current target design retains a budget gate, and development now includes an embedded, broadcast-disabled SDK wallet. See the [current README](../README.md) and [embedded-wallet guide](embedded-operator-wallet.md). The no-budget flow below describes the existing mock, not the full target design.
+
 ## Minimal proof-of-concept interface
 
 Prepared for Mark Purcell | 2 October 2026 | Draft 0.1

@@ -14,7 +14,10 @@ SENSORS = [
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in SENSORS)
+    specs = SENSORS
+    if coordinator.mode == "embedded_testnet":
+        specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None)]
+    async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in specs)
 
 
 class SettlementSensor(CoordinatorEntity, SensorEntity):
@@ -27,9 +30,13 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_info = {"identifiers": {(DOMAIN, entry.entry_id)},
-                                  "name": "BSV Settlement (Mock)",
+                                  "name": ("BSV Operator Wallet (Testnet)"
+                                           if coordinator.mode == "embedded_testnet"
+                                           else "BSV Settlement (Mock)"),
                                   "manufacturer": "Proof of concept",
-                                  "model": "Simulated settlement only"}
+                                  "model": ("Embedded SDK, broadcast disabled"
+                                            if coordinator.mode == "embedded_testnet"
+                                            else "Simulated settlement only")}
 
     @property
     def session(self):
@@ -38,13 +45,19 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
+        if self.key == "operator_wallet_status":
+            return (self.coordinator.data or {}).get("health", {}).get("state")
         session = self.session
         remote = session.get("remote", {})
         if self.key == "settlement_status":
             return remote.get("state", "metering" if session else "idle")
         if self.key == "session_import_energy":
+            if not session:
+                return None
             return sum(i["import_wh"] for i in session.get("intervals", [])) / 1000
         if self.key == "session_export_energy":
+            if not session:
+                return None
             return sum(i["export_wh"] for i in session.get("intervals", [])) / 1000
         if self.key == "session_net_amount":
             amount = session.get("payload", {}).get("net_amount_minor")
@@ -53,8 +66,13 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        if self.key == "operator_wallet_status":
+            health = (self.coordinator.data or {}).get("health", {})
+            return {key: health.get(key) for key in (
+                "mode", "network", "backend", "broadcast_enabled", "balance_verified",
+                "budget_gate_implemented", "driver_wallet_external", "last_self_test")}
         remote = self.session.get("remote", {})
-        return {"mode": "mock", "session_id": self.session.get("session_id"),
+        return {"mode": self.coordinator.mode, "session_id": self.session.get("session_id"),
                 "settlement_id": remote.get("settlement_id"),
                 "direction": remote.get("direction"), "receipt_id": remote.get("receipt_id"),
                 "txid": None}

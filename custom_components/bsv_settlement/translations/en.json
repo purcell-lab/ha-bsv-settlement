@@ -3,15 +3,36 @@
   "config": {
     "step": {
       "user": {
+        "title": "Select settlement backend",
+        "description": "Keep the existing mock service, or create a separate unfunded testnet operator wallet inside Home Assistant. Embedded broadcasting is disabled.",
+        "data": {"backend": "Backend"}
+      },
+      "embedded": {
+        "title": "Embedded testnet operator wallet",
+        "description": "Creates a real private key on this Home Assistant. It is stored in an owner-only local file, not encrypted or hardware protected. HA administrators and backups can access it. Keep backups secure. Do not fund this validation wallet. Broadcasting, driver payment approval and the budget gate are not implemented. The driver wallet stays external.",
+        "data": {"acknowledge_key_custody": "I accept local operator-key custody and will not fund this wallet"}
+      },
+      "mock": {
         "title": "Connect to a mock wallet service",
         "description": "Mock only. No real funds, private keys or wallet approval credentials. HTTP is permitted only for isolated mock testing; use HTTPS on shared networks.",
         "data": {"service_url": "Service URL", "api_token": "Service API token"}
       }
     },
-    "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode."},
-    "abort": {"already_configured": "This mock service is already configured."}
+    "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode.",
+              "acknowledgement_required": "Acknowledge the local-key custody and unfunded validation restrictions."},
+    "abort": {"already_configured": "This backend is already configured."}
   },
   "services": {
+    "wallet_status": {
+      "name": "Operator wallet status",
+      "description": "Read public embedded-wallet status. No network request or key export.",
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The embedded operator-wallet entry."}}
+    },
+    "wallet_self_test": {
+      "name": "Offline operator wallet self-test",
+      "description": "Verify an SDK identity signature and sign a fictional-source transaction offline. Does not broadcast, move funds or export signed bytes.",
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The embedded operator-wallet entry."}}
+    },
     "bind_session": {
       "name": "Bind session",
       "description": "Associate a new session with the synthetic driver wallet.",

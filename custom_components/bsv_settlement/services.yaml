@@ -83,3 +83,19 @@ refresh:
       selector:
         config_entry:
           integration: bsv_settlement
+wallet_status:
+  name: Operator wallet status
+  description: Read the embedded testnet wallet status without network access or key export.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+wallet_self_test:
+  name: Offline operator wallet self-test
+  description: Verify a real SDK signature and sign a fictional-source transaction. No broadcast or funds.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:

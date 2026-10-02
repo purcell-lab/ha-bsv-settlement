@@ -2,7 +2,9 @@
 
 Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 
-**A runnable, mock-only implementation of session-end payment or credit.** There is no budget process, prepayment, real wallet connection, private key, blockchain broadcast or real money movement. The HA scaffold collects explicit interval inputs; it does not yet subscribe to an installed OCPP integration.
+**Session-end settlement proof of concept with two separate backends.** Release v0.1.2 provides the original mock service. The development branch also provides an embedded Python SDK operator wallet for **unfunded, offline testnet validation**, without a separate service or CLI. It creates a real operator key locally, but cannot broadcast or move funds. Neither backend implements the budget gate or automatic OCPP capture yet.
+
+See [embedded operator-wallet setup and safety boundaries](docs/embedded-operator-wallet.md). No new version or release tag has been created.
 
 ## End-to-end concept
 
@@ -13,6 +15,8 @@ Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 **Target design:** retain the BSV budget gate before session start, then meter and price energy dynamically and settle the final payment or credit. Budget authorisation is not a prepayment or a guarantee of available funds. The planned controller must monitor spend and pause or obtain renewed approval before the limit is reached, while preserving charger and grid safety controls.
 
 **Running implementation:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate, automatic OCPP meter feed and real wallet adapter are not implemented. In particular, this service is **not yet wired to `bsv-wallet-cli`** and cannot move real BSV.
+
+**New development milestone:** the standalone embedded backend uses `bsv-sdk==2.4.0`, not `bsv-wallet-cli`. It provides persistent operator identity, real offline signature tests and local settlement drafts. This is not yet a completed live-payment adapter; the infographic's real-payment and budget steps remain target capabilities.
 
 ## Design documents
 
