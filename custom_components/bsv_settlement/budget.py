@@ -1,0 +1,162 @@
+"""Signed session-budget consent. Never grants spending or charger authority."""
+import copy
+from datetime import timedelta, datetime
+import hashlib
+import json
+import re
+from uuid import uuid4
+
+from bsv import PrivateKey, PublicKey
+from .api import WalletError
+from .const import DOMAIN
+from .session_review import decimal, now
+
+PROTOCOL = [2, "ha ev session budget"]
+PRICING = ("Net AUD account = interval import kWh times import price minus interval "
+           "export kWh times feed-in price. Prices may be negative. Round AUD to cents, "
+           "then convert at the fixed sat/AUD rate and round half-up to whole satoshis. "
+           "DC-meter time allocation is provisional, not a certified bill.")
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+
+
+def sha(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def message_hash(value):
+    """BRC-100 message signatures use one SHA-256, not Bitcoin hash256."""
+    return hashlib.sha256(value).digest()
+
+
+def approval_payload(invitation, identity):
+    terms = json.loads(invitation["payload"])
+    return canonical({
+        "action": "approve_session_budget_consent_only",
+        "budget_id": terms["budget_id"],
+        "driver_identity": identity,
+        "invitation_hash": sha(invitation["payload"]),
+        "no_spending_authority": True,
+        "version": 1,
+    })
+
+
+class SessionBudgets:
+    def __init__(self, api):
+        self.api = api
+        api.saved.setdefault("session_budgets", {})
+
+    def public(self, row):
+        result = copy.deepcopy(row)
+        for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by"):
+            result.pop(key, None)
+        if row["state"] != "revoked" and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
+            result["state"] = "expired"
+        return result
+
+    async def execute(self, action, data, user_id):
+        if not user_id:
+            raise WalletError("An explicit administrator context is required")
+        if action == "create_session_budget":
+            return await self.create(data, user_id)
+        row = self.api.saved["session_budgets"].get(data["budget_id"])
+        if not row:
+            raise WalletError("Budget invitation not found")
+        if action == "session_budget_status":
+            return self.public(row)
+        if action == "revoke_session_budget":
+            row["state"] = "revoked"
+            await self.api.store.async_save(self.api.saved)
+            return self.public(row)
+        if action != "accept_session_budget":
+            raise WalletError("Unsupported budget action")
+        if self.public(row)["state"] in ("revoked", "expired"):
+            raise WalletError("Budget invitation is expired or revoked")
+        receipt = data["receipt"]
+        try:
+            if len(canonical(receipt)) > 10000:
+                raise ValueError()
+            if set(receipt) != {"version", "budget_id", "driver_identity", "payload", "signature"}:
+                raise ValueError()
+            identity = receipt["driver_identity"]
+            if not re.fullmatch(r"(02|03)[0-9a-f]{64}", identity):
+                raise ValueError()
+            if receipt["version"] != 1 or receipt["budget_id"] != data["budget_id"]:
+                raise ValueError()
+            expected = approval_payload(row["invitation"], identity)
+            if receipt["payload"] != expected:
+                raise ValueError()
+            # BRC-43 protocol invoice; "anyone" is the public counterparty key 1.
+            invoice = f"2-{PROTOCOL[1]}-{data['budget_id']}"
+            key = PublicKey(bytes.fromhex(identity)).derive_child(PrivateKey(1), invoice)
+            signature = bytes.fromhex(receipt["signature"])
+            if not 8 <= len(signature) <= 72 or not key.verify(signature, expected.encode("utf-8"), hasher=message_hash):
+                raise ValueError()
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise WalletError("Invalid session-budget signature or terms") from None
+        if row.get("receipt"):
+            if row["receipt"]["payload"] != receipt["payload"]:
+                raise WalletError("This invitation is already bound to a different driver")
+            return self.public(row)
+        row.update(state="consent_verified_not_payment_authority",
+                   receipt=copy.deepcopy(receipt), accepted_at=now().isoformat(), accepted_by=user_id)
+        await self.api.store.async_save(self.api.saved)
+        return self.public(row)
+
+    async def create(self, data, user_id):
+        proxy = self.api.hass.data.get(DOMAIN, {}).get(data["proxy_config_entry_id"])
+        if proxy is None or proxy.mode != "sensor_proxy":
+            raise WalletError("Select the loaded session recorder")
+        await proxy.async_request_refresh()
+        observations = proxy.data or {}
+        candidates = [observations.get("latest_session"), observations.get("previous_session"), *proxy.archive]
+        record = next((r for r in candidates if r and r["session_id"] == data["session_id"]), None)
+        if record is None:
+            raise WalletError("Session is not in retained recorder history")
+        if record.get("ended_at"):
+            raise WalletError("Choose an open session; do not backdate budget consent")
+        if observations.get("issues"):
+            raise WalletError("Resolve recorder issues before inviting the driver")
+        key = f"{data['proxy_config_entry_id']}:{data['session_id']}"
+        for old in self.api.saved["session_budgets"].values():
+            if old["session_key"] == key and self.public(old)["state"] not in ("revoked", "expired"):
+                return self.public(old)
+        state = self.api.hass.states.get(data["conversion_rate_entity"])
+        if state is None or state.attributes.get("unit_of_measurement") != "sat/AUD":
+            raise WalletError("Select a positive conversion-rate sensor in sat/AUD")
+        rate = decimal(state.state)
+        if not 0 < rate <= 100000000:
+            raise WalletError("Invalid conversion rate")
+        maximum, fee = data["max_total_sats"], data["max_fee_sats"]
+        if type(maximum) is not int or not 1 <= maximum <= 100000 or type(fee) is not int or not 0 <= fee < maximum or fee > 1000:
+            raise WalletError("Budget must exceed its fee allowance and stay within demonstration limits")
+        minutes = data["valid_minutes"]
+        if type(minutes) is not int or not 1 <= minutes <= 1440:
+            raise WalletError("Expiry must be between one minute and 24 hours")
+        budget_id = str(uuid4())
+        sources = proxy.sources
+        terms = {
+            "version": 1, "budget_id": budget_id, "session_id": record["session_id"],
+            "transaction_id": record["ocpp_transaction_id"], "network": "BSV mainnet",
+            "operator_identity": self.api.identity["public_key"],
+            "operator_address": self.api.identity["address"],
+            "max_total_sats": maximum, "max_fee_sats": fee,
+            "satoshis_per_aud": str(rate), "conversion_rate_entity": data["conversion_rate_entity"],
+            "pricing_rule": PRICING, "created_at": now().isoformat(),
+            "import_price_entity": sources["import_price"],
+            "export_price_entity": sources["export_price"],
+            "account_scope": "Entire named session, including energy already recorded before consent.",
+            "expires_at": (now() + timedelta(minutes=minutes)).isoformat(),
+            "scope": "one_session_consent_only_no_payment_or_charger_authority",
+        }
+        payload = canonical(terms)
+        operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
+        invitation = {"version": 1, "payload": payload,
+                      "signature": operator.sign(payload.encode(), hasher=message_hash).hex()}
+        row = {"terms": terms, "invitation": invitation, "state": "awaiting_driver_consent",
+               "session_key": key, "proxy_config_entry_id": data["proxy_config_entry_id"],
+               "created_by": user_id, "receipt": None}
+        self.api.saved["session_budgets"][budget_id] = row
+        await self.api.store.async_save(self.api.saved)
+        return self.public(row)

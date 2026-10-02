@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 import logging
 
 from .api import WalletError
-from .const import DOMAIN, SESSION_REVIEW_SERVICES
+from .const import DOMAIN, SESSION_REVIEW_SERVICES, BUDGET_SERVICES
 from .ledger import freeze, timestamp, validate_interval
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ class SettlementCoordinator(DataUpdateCoordinator):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
+                if action in BUDGET_SERVICES:
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet for budget consent")
+                    return await self.api.budgets.execute(action, data, approving_user_id)
                 if action in SESSION_REVIEW_SERVICES:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the separate mainnet operator wallet for session review")

@@ -311,3 +311,85 @@ cancel_operator_payment:
       required: true
       selector:
         text:
+create_session_budget:
+  name: Create session budget invitation
+  description: Sign an invitation for one open session. No payment, funds reservation or charger control.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    proxy_config_entry_id:
+      required: true
+      selector:
+        text:
+    session_id:
+      required: true
+      selector:
+        text:
+    conversion_rate_entity:
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    max_total_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100000
+          mode: box
+    max_fee_sats:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    valid_minutes:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 1440
+          mode: box
+accept_session_budget:
+  name: Verify driver budget consent
+  description: Verify and persist the signed driver receipt. Does not enable automatic spending.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    budget_id:
+      required: true
+      selector:
+        text:
+    receipt:
+      required: true
+      selector:
+        object:
+revoke_session_budget:
+  name: Revoke session budget consent
+  description: Mark this invitation and its consent revoked in HA. Does not reverse payments.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    budget_id:
+      required: true
+      selector:
+        text:
+session_budget_status:
+  name: Read session budget status
+  description: Read a stored invitation and consent without making a wallet or chain request.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    budget_id:
+      required: true
+      selector:
+        text:

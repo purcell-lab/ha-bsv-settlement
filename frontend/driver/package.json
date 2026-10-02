@@ -1,0 +1,11 @@
+{
+  "name": "ha-bsv-driver-consent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.js --bundle --format=esm --minify --legal-comments=eof --outfile=../../custom_components/bsv_settlement/frontend/driver/app.bundle.js",
+    "test": "node --test model.test.js"
+  },
+  "dependencies": { "@bsv/sdk": "2.0.13" },
+  "devDependencies": { "esbuild": "0.25.12" }
+}

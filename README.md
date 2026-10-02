@@ -291,3 +291,11 @@ The first live milestone should remain a small, supervised operator-to-driver cr
 ## Licence
 
 The project's original code and documentation are available under the [MIT licence](LICENSE), copyright 2026 Mark Purcell. Referenced or quoted third-party material, dependencies, names and trademarks retain their respective rights; this repository does not relicense them.
+
+## Driver wallet connection and budget consent
+
+The [BSV Browser driver page](docs/driver-session-budget.md) can connect a wallet,
+check an operator-signed invitation and sign a consent record for one open
+session. HA independently verifies the returned receipt. This does not grant
+spending permission, reserve funds, start charging or enable automatic collection.
+The existing manual payment-review flow remains separate.

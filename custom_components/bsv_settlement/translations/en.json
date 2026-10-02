@@ -46,6 +46,22 @@
     "abort": {"already_configured": "This backend is already configured."}
   },
   "services": {
+    "create_session_budget": {
+      "name": "Create session budget invitation",
+      "description": "Sign consent terms for one open session. No funds reservation, payment or charger control."
+    },
+    "accept_session_budget": {
+      "name": "Verify driver budget consent",
+      "description": "Verify and save a signed BSV Browser receipt. Does not grant spending authority."
+    },
+    "revoke_session_budget": {
+      "name": "Revoke session budget consent",
+      "description": "Revoke this invitation and consent in HA. Does not reverse any payment."
+    },
+    "session_budget_status": {
+      "name": "Read session budget status",
+      "description": "Read the local invitation and consent. No chain or driver-wallet request."
+    },
     "prepare_session_review": {
       "name": "Freeze session payment review",
       "description": "Freeze a closed, fully priced account, conversion rate and driver details. Administrator only. No request, signing or broadcast."

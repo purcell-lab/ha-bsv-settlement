@@ -9,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.importlib import async_import_module
 
 from .api import WalletAPI
-from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES
+from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
@@ -22,6 +22,12 @@ async def async_setup(hass, config):
         await hass.http.async_register_static_paths([StaticPathConfig(
             "/bsv_settlement/session-review-card.js",
             str(Path(__file__).parent / "frontend" / "session-review-card.js"),
+            cache_headers=False), StaticPathConfig(
+            "/bsv_settlement/driver",
+            str(Path(__file__).parent / "frontend" / "driver"),
+            cache_headers=False), StaticPathConfig(
+            "/bsv_settlement/budget-card.js",
+            str(Path(__file__).parent / "frontend" / "budget-card.js"),
             cache_headers=False)])
         hass.data[DOMAIN + "_frontend"] = True
     common = {vol.Required("config_entry_id"): str}
@@ -60,6 +66,16 @@ async def async_setup(hass, config):
         vol.Required("amount_sats"): vol.All(int, vol.Range(min=0, max=100000)),
     }
     schemas.update({
+        "create_session_budget": {
+            **per_session, vol.Required("proxy_config_entry_id"): str,
+            vol.Required("conversion_rate_entity"): str,
+            vol.Required("max_total_sats"): vol.All(int, vol.Range(min=1, max=100000)),
+            vol.Required("max_fee_sats"): vol.All(int, vol.Range(min=0, max=1000)),
+            vol.Required("valid_minutes"): vol.All(int, vol.Range(min=1, max=1440))},
+        "accept_session_budget": {
+            **common, vol.Required("budget_id"): str, vol.Required("receipt"): dict},
+        "revoke_session_budget": {**common, vol.Required("budget_id"): str},
+        "session_budget_status": {**common, vol.Required("budget_id"): str},
         "prepare_session_review": {
             **per_session, vol.Required("proxy_config_entry_id"): str,
             vol.Required("conversion_rate_entity"): str},
@@ -82,7 +98,8 @@ async def async_setup(hass, config):
 
     async def handle(call):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
-                            "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES):
+                            "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
+                            *BUDGET_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
             user = (await hass.auth.async_get_user(call.context.user_id)
                     if call.context.user_id else None)

@@ -188,6 +188,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.chain = WoCClient(async_get_clientsession(self.hass))
         from .session_review import SessionReviews
         self.reviews = SessionReviews(self)
+        from .budget import SessionBudgets
+        self.budgets = SessionBudgets(self)
 
     def status(self):
         result = super().status()

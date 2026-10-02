@@ -1,5 +1,7 @@
 """Constants."""
 DOMAIN = "bsv_settlement"
+BUDGET_SERVICES = ("create_session_budget", "accept_session_budget",
+                   "revoke_session_budget", "session_budget_status")
 SESSION_REVIEW_SERVICES = (
     "prepare_session_review", "approve_session_review", "prepare_session_credit",
     "broadcast_session_credit", "verify_session_driver_payment",
@@ -8,4 +10,4 @@ SESSION_REVIEW_SERVICES = (
 SERVICES = ("bind_session", "add_interval", "prepare_session", "request_payment", "refresh",
             "wallet_status", "wallet_self_test", "wallet_refresh_chain",
             "prepare_operator_payment", "broadcast_operator_payment", "cancel_operator_payment",
-            *SESSION_REVIEW_SERVICES)
+            *SESSION_REVIEW_SERVICES, *BUDGET_SERVICES)

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Driver session budget | BSV Settlement</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header><div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><span class="badge">Driver consent · PoC</span></header>
+<main id="main">
+  <div class="intro"><p class="eyebrow">YOUR ENERGY. YOUR APPROVAL.</p><h1>Set the boundary for one session.</h1><p>Connect your BSV wallet and sign a session budget. Your keys stay in your wallet. This page cannot make a payment.</p></div>
+  <p id="status" class="notice" role="status" aria-live="polite">Start with an invitation from your operator. No wallet calls occur until you select Connect.</p>
+  <div class="layout">
+  <div>
+    <section id="load-section">
+      <div class="section-head"><span class="step">01</span><h2>Load your session</h2></div>
+      <p>Ask the operator for a budget invitation from Home Assistant. Paste the complete JSON record here.</p>
+      <label for="invitation">Operator-signed invitation</label>
+      <textarea id="invitation" rows="5" spellcheck="false" placeholder='Paste the invitation JSON. Never enter a seed phrase or private key.'></textarea>
+      <div class="actions"><button id="load">Load and check invitation</button><button id="reset" class="secondary">Clear page</button></div>
+    </section>
+    <section id="terms" hidden>
+      <div class="section-head"><span class="step">02</span><h2>Review your budget</h2></div>
+      <div class="amount"><span>Maximum total spend, including fees</span><strong id="budget"></strong></div>
+      <dl>
+        <dt>Network fee allowance</dt><dd id="fee"></dd>
+        <dt>Conversion rate</dt><dd id="rate"></dd>
+        <dt>Consent expires</dt><dd id="expiry"></dd>
+        <dt>Session</dt><dd id="session" class="mono"></dd>
+        <dt>Proxy transaction ID</dt><dd id="transaction" class="mono"></dd>
+        <dt>Operator receives at</dt><dd id="operator" class="mono"></dd>
+      </dl>
+      <details><summary>Pricing rule and operator identity</summary><p id="pricing"></p><p id="tariffs" class="mono"></p><p id="scope"></p><p>The rate is a demonstration conversion, not a market exchange rate. A negative account requires a separate operator credit.</p><p id="operator-key" class="mono"></p></details>
+      <label class="check"><input type="checkbox" id="trusted"><span>I checked the operator receiving address against a trusted source, such as the operator's HA dashboard.</span></label>
+    </section>
+    <section id="wallet-section" hidden>
+      <div class="section-head"><span class="step">03</span><h2>Connect and approve</h2></div>
+      <p>Open this page inside BSV Browser. Connecting asks for a public identity only.</p>
+      <button id="connect" class="secondary" disabled>Connect BSV Browser</button>
+      <p class="small">Connected public identity</p><p id="wallet-key" class="mono key">Not connected</p>
+      <label class="check"><input type="checkbox" id="consent"><span>I accept the displayed session terms and budget. I understand that this signs consent only. It does not grant spending access, reserve funds or start charging.</span></label>
+      <button id="approve" disabled>Sign session-budget consent</button>
+    </section>
+    <section id="result" hidden>
+      <div class="section-head"><span class="step">04</span><h2>Return your signed receipt</h2></div>
+      <p>The signature has been checked locally. Send this receipt to the operator, who must import and verify it in HA. It is not submitted automatically.</p>
+      <label for="receipt">Signed budget receipt</label><textarea id="receipt" rows="6" readonly></textarea>
+      <button id="download" class="secondary" disabled>Download receipt JSON</button>
+    </section>
+  </div>
+  <aside>
+    <h2>No payment at this step</h2>
+    <p>This page uses message signatures, not transaction signatures. It makes no payment or wallet spending-permission request.</p>
+    <ul><li>One named session</li><li>Fixed sat/AUD conversion</li><li>Total and fee limits</li><li>Explicit expiry</li></ul>
+    <hr><h2>What comes next</h2>
+    <p>The operator verifies your receipt in HA. Automatic collection and charger budget enforcement are not connected yet.</p>
+    <p>Closing or clearing this page does not revoke a saved receipt. Ask the operator to revoke it in HA.</p>
+    <p class="small">Open the direct HA page in BSV Browser for a real wallet connection. An embedded preview may not reach your wallet.</p>
+  </aside>
+  </div>
+</main>
+<footer>BSV mainnet identity · No funds reserved · No automatic payment</footer>
+<script type="module" src="./app.bundle.js"></script>
+</body>
+</html>
