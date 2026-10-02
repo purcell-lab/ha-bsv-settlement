@@ -35,6 +35,7 @@ async def async_setup(hass, config):
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
+        "configure_automatic_credit": {**common, vol.Required("enabled"): bool},
         "bind_session": {**per_session, vol.Required("started_at"): str,
                          vol.Required("driver_binding_id", default="driver-demo-01"): vol.In(
                              ["driver-demo-01", "driver-external"])},
@@ -106,6 +107,7 @@ async def async_setup(hass, config):
 
     async def handle(call):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
+                            "configure_automatic_credit",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
                             *BUDGET_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.

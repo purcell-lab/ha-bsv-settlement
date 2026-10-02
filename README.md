@@ -4,7 +4,7 @@ Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 
 **Session-end settlement proof of concept with two separate backends.** Release v0.1.2 provides the original mock service. The development branch also provides an embedded Python SDK operator wallet for **unfunded, offline testnet validation**, without a separate service or CLI. It creates a real operator key locally, but cannot broadcast or move funds. Neither backend implements the budget gate or automatic OCPP capture yet.
 
-**Mainnet development:** a third, separate operator-wallet backend now supports public driver-input dialogs and exact-approval mainnet P2PKH payments. Read the [mainnet safety and payment guide](docs/mainnet-operator-wallet.md) before configuring or funding it. This is an experimental hot wallet, not an audited or complete charging-settlement product.
+**Mainnet development:** a third, separate operator-wallet backend supports browser-open driver collection and server-side automatic operator credits for negative session balances. Automatic credits require a one-time operator policy, a new signed invitation and a verified driver receiving key, but no per-payment approval. Maximum operator spend is 1,000 sat per session including a 10 sat fee. Read the [automatic-credit guide](docs/automatic-operator-credits.md) and [mainnet safety guide](docs/mainnet-operator-wallet.md) before enabling or funding it. This is an experimental hot wallet, not an audited charging-settlement product.
 
 See [embedded operator-wallet setup and safety boundaries](docs/embedded-operator-wallet.md). No new version or release tag has been created.
 
@@ -16,7 +16,7 @@ See [embedded operator-wallet setup and safety boundaries](docs/embedded-operato
 
 **Target design:** retain the BSV budget gate before session start, then meter and price energy dynamically and settle the final payment or credit. Budget authorisation is not a prepayment or a guarantee of available funds. The planned controller must monitor spend and pause or obtain renewed approval before the limit is reached, while preserving charger and grid safety controls.
 
-**Original mock:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate and automatic OCPP meter feed are not implemented. No backend is wired to `bsv-wallet-cli`; the separate mainnet backend uses the Python SDK and can send real BSV only through its explicit administrator-approved workflow.
+**Original mock:** the mock service and mock dashboard controls exercise synthetic session-end settlement only. The charger-enforced budget gate and native OCPP meter feed are not implemented. No backend is wired to `bsv-wallet-cli`. The separate mainnet backend uses the Python SDK; its manual payments require exact approval, while automatic credits use the bounded operator policy.
 
 **New development milestone:** the standalone embedded backend uses `bsv-sdk==2.4.0`, not `bsv-wallet-cli`. It provides persistent operator identity, real offline signature tests and local settlement drafts. This is not yet a completed live-payment adapter; the infographic's real-payment and budget steps remain target capabilities.
 
@@ -26,8 +26,9 @@ The embedded backend has now been activated on HA 2026.10.0b0, with offline sign
 
 **Session-linked review:** development code also provides a frozen-account
 review card, a manually fulfilled driver payment request and separately
-approved operator credits. The driver wallet remains external, identity
-attestation is manual and no automatic payment is enabled. Read the
+approved operator credits as a manual exception path. The driver wallet remains
+external. This manual flow is separate from automatic credits and cannot pay
+a session already owned by the automatic flow. Read the
 [payment request and credit review guide](docs/session-payment-review.md)
 before configuring or using it.
 

@@ -6,7 +6,7 @@ class BSVBudgetCard extends HTMLElement {
     this.config = config; this.budget=null; this.initialRead=false;
     if (!this.shadowRoot) this.attachShadow({mode:"open"});
     this.shadowRoot.innerHTML = `<ha-card header="Driver session budget"><div class="body">
-      <p>Automatic collection is available for a version 2 spending approval. The driver must keep the approval page open in BSV Browser, and you must bind the correct charging session. After it ends, the wallet prepares and signs within the approved limits; the server submits the payment once. Wallet permission prompts may still appear. Net credits remain operator-reviewed.</p>
+      <p>For driver payments, keep the approval page open in BSV Browser and bind the correct charging session. For automatic operator credits, enable the operator policy before creating a new invitation and register the driver's receiving wallet before session end. Eligible negative balances are paid by the server without per-payment approval, even with the browser closed. Wallet permission prompts may still appear.</p>
       <p id="session"></p>
       <label>Operator name<input id="name" maxlength="100"></label>
       <label>Operator contact<input id="contact" maxlength="200" placeholder="Contact email or phone"></label>
@@ -104,6 +104,9 @@ class BSVBudgetCard extends HTMLElement {
       this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. ${this.budget.terms.version === 2 ? "Automatic collection requires the driver's open page and wallet permission." : "Legacy consent only; revoke and create a new invitation to approve spending."} No charger control.`;
       const c=this.budget.collection;
       this.$("collection").textContent=c ? `Collection: ${c.state}${c.fee_sats!==undefined ? ". Fee: "+c.fee_sats+" sat" : ""}${c.txid ? ". BSV transaction: "+c.txid : ""}${c.error ? ". "+c.error : ""}` : "No collection attempt yet. Status refreshes every 15 seconds.";
+      const credit=this.budget.automatic_credit;
+      if(credit && (this.budget.credit_destination || credit.txid))
+        this.$("collection").textContent+=` Operator credit: ${credit.state}${credit.amount_sats ? ", "+credit.amount_sats+" sat" : ""}${credit.txid ? ". BSV transaction: "+credit.txid : ""}${credit.error ? ". "+credit.error : ""}`;
       if(service==="create_session_budget"&&!this.budget.driver_link_fragment&&!this.$("driver-link").value)
         this.$("status").textContent += " Existing invitation retained. If you lost its link, revoke it before creating a replacement.";
     } catch (e) { this.$("status").textContent = e.message || "Budget operation failed."; }

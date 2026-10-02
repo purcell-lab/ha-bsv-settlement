@@ -1,3 +1,15 @@
+configure_automatic_credit:
+  name: Set automatic operator credit policy
+  description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fixed 10 sat fee. Disable stops new signatures, not transactions already submitted.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    enabled:
+      required: true
+      selector:
+        boolean:
 prepare_session_review:
   name: Freeze session payment review
   description: Administrator only. Freeze a closed, fully priced proxy account, rate and driver details. No payment is requested or sent.

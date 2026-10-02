@@ -29,7 +29,7 @@ export const paymentAuthority = t => ({
   funds_reserved: false,
   charger_control: false
 });
-export function parseInvitation(text, clock = Date.now()) {
+export function parseInvitation(text, clock = Date.now(), allowExpired = false) {
   if (text.length > 20000) throw Error("The invitation is too large.");
   const invitation = JSON.parse(text);
   if (invitation.version !== 1 || typeof invitation.payload !== "string" ||
@@ -47,7 +47,7 @@ export function parseInvitation(text, clock = Date.now()) {
       !Number.isFinite(Number(t.satoshis_per_aud)) || Number(t.satoshis_per_aud) <= 0 ||
       Number(t.satoshis_per_aud) > 100000000 ||
       !Number.isFinite(Date.parse(t.created_at)) || Date.parse(t.created_at) > clock + 60000 ||
-      !Number.isFinite(Date.parse(t.expires_at)) || Date.parse(t.expires_at) <= clock ||
+      !Number.isFinite(Date.parse(t.expires_at)) || (!allowExpired && Date.parse(t.expires_at) <= clock) ||
       Date.parse(t.expires_at) - Date.parse(t.created_at) > 86401000 ||
       typeof t.session_id !== "string" || !t.session_id || t.session_id.length > 200 ||
       typeof t.transaction_id !== "string" || typeof t.pricing_rule !== "string" ||

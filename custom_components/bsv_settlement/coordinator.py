@@ -36,6 +36,8 @@ class SettlementCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         async with self.lock:
             try:
+                if self.mode == "embedded_mainnet":
+                    await self.api.auto_credits.tick()
                 health = await self.api.call("GET", "/v1/health")
                 # A timed-out prepare is replayed with the same ID and frozen payload.
                 for session in self.saved["sessions"].values():
@@ -68,6 +70,12 @@ class SettlementCoordinator(DataUpdateCoordinator):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
+                if action == "configure_automatic_credit":
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    result = await self.api.auto_credits.configure(data["enabled"], approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
                 if action in BUDGET_SERVICES:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet for budget consent")

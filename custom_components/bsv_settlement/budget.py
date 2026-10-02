@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import secrets
+import base64
 from uuid import uuid4
 
 from bsv import PrivateKey, PublicKey
@@ -101,6 +102,8 @@ class SessionBudgets:
             result["state"] = "expired"
         if hasattr(self.api, "collections") and (collection := self.api.collections.get(row)):
             result["collection"] = self.api.collections.public(collection)
+        if hasattr(self.api, "auto_credits"):
+            result["automatic_credit"] = self.api.auto_credits.status(row)
         return result
 
     def prices(self, row):
@@ -142,7 +145,9 @@ class SessionBudgets:
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
                 "prices": self.prices(row),
                 "driver_identity": (row.get("receipt") or {}).get("driver_identity"),
-                "binding": copy.deepcopy(row.get("binding"))}
+                "binding": copy.deepcopy(row.get("binding")),
+                "credit_destination_registered": bool(row.get("credit_destination")),
+                "automatic_credit_enabled": self.api.auto_credits.policy.get("enabled", False)}
 
     async def execute(self, action, data, user_id):
         if not user_id:
@@ -285,6 +290,11 @@ class SessionBudgets:
             "scope": SPENDING_SCOPE,
         }
         terms["payment_authority"] = payment_authority(terms)
+        terms["credit_receiving"] = {
+            "protocolID": [2, "3241645161d8"],
+            "derivationPrefix": base64.b64encode(secrets.token_bytes(16)).decode(),
+            "derivationSuffix": base64.b64encode(secrets.token_bytes(16)).decode(),
+        }
         payload = canonical(terms)
         operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
         invitation = {"version": 1, "payload": payload,

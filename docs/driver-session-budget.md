@@ -51,6 +51,17 @@ not separate payments for each interval. A driver signature cannot authorise the
 operator wallet to pay a credit; that requires separate operator authority and a
 verified driver receiving path.
 
+The separate operator policy and receiving path are now implemented for
+[automatic operator credits](automatic-operator-credits.md). After one-time
+operator enablement, eligible negative balances are paid without per-payment
+approval. New invitations register a driver-controlled BRC-29 receiving key.
+The operator spends at most 1,000 sat per session, including a 10 sat fee.
+No amount is deducted from the driver's calculated credit to pay that fee.
+
+Unlike driver collection, this server-side credit can proceed with the browser
+closed. Reopening the same link lets the driver import the confirmed payment
+into the wallet. Existing invitations need replacement, not silent migration.
+
 ## Fixed driver page address
 
 The stable path is `/bsv_settlement/driver/index.html` on the installation's origin.
@@ -77,7 +88,7 @@ If receipt submission fails, the page retains the existing signature and offers
 **Retry saving receipt**. It does not sign a second consent. A reload can confirm
 that HA accepted it, but the downloaded receipt is only available while held by
 the page or from the administrator's saved record. After a reload, select
-**Resume automatic collection** to reconnect the same driver wallet. This never
+**Reconnect wallet** to reconnect the same driver wallet. This never
 restarts an already reserved wallet/payment attempt.
 
 The page has an advanced manual JSON fallback for earlier invitations. This

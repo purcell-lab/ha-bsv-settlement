@@ -1,7 +1,9 @@
 """Guarded, single-input mainnet P2PKH operator payments.
 
-Identity submission is not identity verification. Operator-wallet signing and
-broadcast require exact administrator approval. DriverCollections separately
+Manual identity submission is not identity verification. Manual operator-wallet
+payments require exact administrator approval. AutomaticCredits has a separate
+prospective, capped administrator policy and verified driver receiving keys.
+DriverCollections separately
 accepts driver-wallet-signed transactions under capped session mandates; it never
 holds driver keys. No automatic retry creates or sends a second transaction.
 """
@@ -193,6 +195,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.budgets = SessionBudgets(self)
         from .collection import DriverCollections
         self.collections = DriverCollections(self)
+        from .auto_credit import AutomaticCredits
+        self.auto_credits = AutomaticCredits(self)
 
     def status(self):
         result = super().status()
@@ -208,7 +212,10 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             last_payment=self.public_payment(payment) if payment else None,
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
             latest_session_review=self.reviews.latest() if hasattr(self, "reviews") else None,
+            automatic_credit=self.auto_credits.summary() if hasattr(self, "auto_credits") else None,
         )
+        if hasattr(self, "auto_credits") and self.auto_credits.policy.get("enabled"):
+            result["state"] = "broadcast_enabled_capped_automatic_credits"
         return result
 
     def public_payment(self, payment):
@@ -277,6 +284,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         rows = await self.chain.unspent(self.identity["address"])
         # Never reuse a source we have signed, even if the indexer is stale.
         used = {(p["source_txid"], p["source_index"]) for p in self.saved["payments"].values() if p.get("txid")}
+        if self.auto_credits.pending():
+            raise WalletError("Resolve the pending automatic credit first")
+        used |= self.auto_credits.used()
         candidates = [r for r in rows if r["value"] >= amount + fee + MIN_CHANGE_SATS
                       and (r["tx_hash"], r["tx_pos"]) not in used]
         if not candidates:

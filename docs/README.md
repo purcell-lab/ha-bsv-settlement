@@ -1,8 +1,22 @@
 # Design and implementation documents
 
-The current design is session-end payment or credit, without a budget process. This index separates the implementation contract from background research and superseded concepts.
+Development code now combines a signed pre-session spending budget, sensor-proxy
+session accounting, browser-open driver collection and optional server-side
+automatic operator credits. A charger-enforced budget gate remains a target, not
+an implemented control. The original no-budget mock documentation remains below.
 
-## Current baseline
+## Current development
+
+- **[Automatic operator credits](automatic-operator-credits.md):** negative
+  balances paid without per-payment approval under a bounded operator policy.
+- **[Driver spending approval](driver-session-budget.md):** private invitation,
+  dynamic pricing terms, BSV Browser connection and session binding.
+- **[Sensor session proxy](sensor-session-proxy.md):** provisional import/export
+  metering, interval pricing and proxy transaction IDs.
+- **[Manual exception review](session-payment-review.md):** separate reviewed
+  requests and credits, mutually exclusive with automatic session settlement.
+
+## Original mock baseline
 
 - **[Settlement interface](settlement-interface.md):** proposed responsibility split, HA actions and entities, pricing rules, API contract, approval and recovery safeguards.
 - **[Settlement sequence](settlement-sequence.md):** no-budget flow and explicit mock implementation boundary.

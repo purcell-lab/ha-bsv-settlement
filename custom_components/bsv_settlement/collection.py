@@ -82,6 +82,8 @@ class DriverCollections:
             raise WalletError("A manual payment review already owns this session")
 
     async def status(self, row):
+        if hasattr(self.api, "auto_credits") and self.api.auto_credits.get(row):
+            return self.api.auto_credits.status(row)
         old = self.get(row)
         if old and old["state"] != "ready":
             return self.public(old)
@@ -90,6 +92,8 @@ class DriverCollections:
             if not self.session_id(row):
                 return {"state": "waiting_for_operator_binding"}
             self.manual_conflict(row)
+            if self.key(row) in self.api.saved.get("automatic_credit_index", {}):
+                raise WalletError("Automatic credit already owns this session")
             record = await self.source(row)
             if not record.get("ended_at"):
                 return {"state": "waiting_for_session_end"}
@@ -104,6 +108,8 @@ class DriverCollections:
                 return self.public(old)
             aud = decimal(account["net_amount_aud"])
             if aud < 0:
+                if hasattr(self.api, "auto_credits") and self.api.auto_credits.policy.get("enabled"):
+                    return self.api.auto_credits.status(row)
                 return {"state": "operator_credit_review_required", "net_amount_aud": str(aud)}
             if aud == 0:
                 return {"state": "no_payment_due"}

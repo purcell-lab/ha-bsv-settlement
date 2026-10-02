@@ -44,7 +44,7 @@ class BsvSessionReviewCard extends HTMLElement {
         service_data: {config_entry_id: this._config.config_entry_id, ...data},
         return_response: true,
       });
-      this._review = result.response;
+      if(service !== "configure_automatic_credit") this._review = result.response;
       this._message = "Action completed. Review the updated state below.";
     } catch (err) {
       this._message = err.message || String(err);
@@ -57,13 +57,14 @@ class BsvSessionReviewCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const c = this._config, h = this._hass, r = this._review;
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
+    const automatic = wallet?.attributes?.automatic_credit;
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;
     const sessions = [proxy?.attributes?.latest_session, proxy?.attributes?.previous_session]
       .filter(s => s && s.ended_at);
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message]);
+      this._busy, this._message, automatic]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -89,9 +90,16 @@ class BsvSessionReviewCard extends HTMLElement {
         textarea{min-height:130px;font-size:12px}.divider{border-top:1px solid var(--divider-color,#ddd);margin:20px 0}
       </style>
       <ha-card>
-        <h2>Session payment review</h2>
+        <h2>Automatic operator credits</h2>
+        <p class="notice">${automatic?.enabled ? "Enabled. Eligible negative session balances are paid automatically, without per-payment approval." : "Disabled. Enable the operator policy before issuing new invitations."}
+        Maximum total operator spend: 1,000 sat per session, including a 10 sat fee. The driver receives the full credit amount.</p>
+        ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}
+        ${(automatic?.payments || []).slice().reverse().map(p=>`<p><strong>${esc(p.state)}</strong>: ${esc(p.amount_sats)} sat to driver, ${esc(p.fee_sats)} sat fee.</p>
+        <code>${esc(p.transaction_id)}</code><code>${esc(p.recipient_address)}</code><code>${esc(p.txid || "Not submitted")}</code>
+        ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}`).join("")}
+        <h3>Manual exception review</h3>
         <p class="note">BSV mainnet. Closed sessions only. Preparing or reviewing an account does not send money.
-        Driver-wallet approval stays external; operator credits require a separate exact broadcast approval.</p>
+        This manual fallback is separate from automatic credits. A session owned by either flow cannot enter the other flow.</p>
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
         <label>Closed session<select id="session">${sessions.map(s =>
@@ -114,6 +122,7 @@ class BsvSessionReviewCard extends HTMLElement {
           <div id="flow"></div>` : ""}
       </ha-card>`;
     const $ = selector => this.shadowRoot.querySelector(selector);
+    if($("#stop-credits")) $("#stop-credits").onclick=()=>this.action("configure_automatic_credit",{enabled:false});
     $("#prepare").onclick = () => this.action("prepare_session_review", {
       proxy_config_entry_id: c.proxy_config_entry_id, session_id: $("#session").value,
       conversion_rate_entity: c.rate_entity,

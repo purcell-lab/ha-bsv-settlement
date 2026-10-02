@@ -87,7 +87,7 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
                 "budget_gate_implemented", "driver_wallet_external", "last_self_test",
                 "receive_address", "operator_public_key", "driver_identity_status",
                 "chain_checked_at", "chain_error", "balance_source", "last_payment",
-                "max_payment_sats", "max_fee_sats", "latest_session_review")}
+                "max_payment_sats", "max_fee_sats", "latest_session_review", "automatic_credit")}
         remote = self.session.get("remote", {})
         return {"mode": self.coordinator.mode, "session_id": self.session.get("session_id"),
                 "settlement_id": remote.get("settlement_id"),

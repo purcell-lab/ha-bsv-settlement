@@ -2,6 +2,12 @@
 
 This development milestone adds a **separate mainnet wallet**, native driver-input dialogs and guarded operator payments. It does not change the offline testnet wallet, implement the charging budget gate or authorise automatic debits from driver wallets.
 
+This page describes the original manual-payment path. Current development also
+implements [automatic operator credits](automatic-operator-credits.md) under a
+one-time, bounded operator policy, and [browser-open driver collection](driver-session-budget.md)
+under signed driver mandates. Those are separate paths; their session ownership
+and funding reservations prevent duplicate payment through this manual workflow.
+
 ## Custody and funding
 
 HA generates the operator key locally. It is stored using private, atomic HA storage with owner-only permissions, but is **not encrypted or hardware-protected**. Any process with HA's privileges and anyone able to read its backups may access it. This is an experimental hot wallet, not an audited custody service.
@@ -35,7 +41,7 @@ All four mainnet actions require an authenticated HA administrator. Calls with n
 
 1. **`wallet_refresh_chain`:** read available confirmed funding outputs and reconcile the current submitted transaction. Does not broadcast.
 2. **`prepare_operator_payment`:** supply `config_entry_id`, a unique `reference`, `amount_sats`, and an exact `fee_sats`. The current driver address is the recipient. The response shows the draft ID, address, amount, fee, change and ten-minute expiry. No transaction is signed or broadcast at this stage.
-3. **`broadcast_operator_payment`:** repeat the exact `draft_id`, `recipient_address`, `amount_sats`, and `fee_sats`, and set `confirm_mainnet_payment: true`. This is the only real-money action. It signs, script-validates, durably stores the exact signed bytes and input reservation, and then submits that transaction.
+3. **`broadcast_operator_payment`:** repeat the exact `draft_id`, `recipient_address`, `amount_sats`, and `fee_sats`, and set `confirm_mainnet_payment: true`. This is the real-money action for this manual path. It signs, script-validates, durably stores the exact signed bytes and input reservation, and then submits that transaction.
 4. **`cancel_operator_payment`:** can cancel an unsigned prepared or expired draft, never a signed or submitted transaction.
 
 The POC restricts each payment to 100,000 satoshis and its exact fee to 1,000 satoshis. These are safety caps, not recommended payment sizes or current fee estimates. It requires one provider-confirmed P2PKH input and at least 546 satoshis of change; multi-input spending and sweep-all are unsupported. The chosen fee may be rejected by network policy, which must be handled as a reconciliation issue.
@@ -62,7 +68,12 @@ fulfilled driver payment request, and separately prepares/approves an operator
 credit. This is an additional explicit review path, not automatic charging
 settlement or integrated driver-wallet authorisation.
 
-The budget gate, proof of driver identity possession, BRC-29/BEEF receipt delivery, driver-authorised debits, automatic session-to-payment mapping, fiat exchange-rate feeds, independent chain-proof verification, reorg-safe finality policy and production wallet recovery/export remain future work. These gaps are not hidden behind a “paid” status.
+The charger-enforced budget gate, fiat exchange-rate feeds, independent
+header-chain verification, reorg-safe finality policy and production wallet
+recovery/export remain future work. The newer automatic paths provide driver
+signature verification, session-linked payment and BRC-29/BEEF credit receipts,
+but native wallet compatibility and real mainnet operation still require
+supervised validation. These gaps are not hidden behind a “paid” status.
 
 The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path.
 

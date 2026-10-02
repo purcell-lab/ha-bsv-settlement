@@ -46,6 +46,14 @@
     "abort": {"already_configured": "This backend is already configured."}
   },
   "services": {
+    "configure_automatic_credit": {
+      "name": "Set automatic operator credit policy",
+      "description": "Enable or stop prospective automatic credits. Maximum total 1000 sat per session, including a fixed 10 sat fee. No per-payment approval.",
+      "fields": {
+        "config_entry_id": {"name": "Mainnet operator wallet entry"},
+        "enabled": {"name": "Enable automatic credits"}
+      }
+    },
     "create_session_budget": {
       "name": "Create session budget invitation",
       "description": "Create capped spending terms for one session. No funds reservation, payment or charger control."

@@ -8,6 +8,7 @@ SESSION_REVIEW_SERVICES = (
     "cancel_session_review", "session_review_status",
 )
 SERVICES = ("bind_session", "add_interval", "prepare_session", "request_payment", "refresh",
+            "configure_automatic_credit",
             "wallet_status", "wallet_self_test", "wallet_refresh_chain",
             "prepare_operator_payment", "broadcast_operator_payment", "cancel_operator_payment",
             *SESSION_REVIEW_SERVICES, *BUDGET_SERVICES)
