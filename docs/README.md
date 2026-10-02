@@ -7,6 +7,14 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[Acceptance evidence](acceptance-evidence.md):** all ten roadmap outcomes,
+  test references, evidence classes and remaining gates.
+- **[Recovery drill](operator-recovery-drill.md):** isolated unfunded restore
+  procedure; not a claim that a protected restore has been completed.
+- **[Security review](security-review-checklist.md):** current trust boundaries
+  and the independent-review work still required.
+- **[Ongoing driver credits](ongoing-driver-credits.md):** separately authorised
+  last-registered-driver routing, fixed session recipients and receipt metadata.
 - **[Automatic operator credits](automatic-operator-credits.md):** negative
   balances paid without per-payment approval under a bounded operator policy.
 - **[Driver spending approval](driver-session-budget.md):** private invitation,
@@ -33,6 +41,10 @@ The design document describes the target interface. The implementation deliberat
 
 ## Next implementation milestone
 
-Map the installed OCPP integration's directional energy counters and final session readings into the ledger. Independently verify the dynamic tariff source, then implement and test a small operator-to-driver payment with the selected real wallet before enabling the reverse direction.
+Prioritise recovery, confirmation reassessment, real-wallet compatibility and
+criterion-level evidence before expanding scope. Sensor-proxy accounting,
+browser-open collection and capped operator credits are implemented; native
+OCPP, independent meter/account validation and charger-enforced budgets remain
+separate work. The acceptance matrix records the remaining gates.
 
 Repository publication does not install this software in Home Assistant or deploy a running wallet service.
