@@ -39,7 +39,7 @@ class DriverBudgetView(HomeAssistantView):
             data = json.loads(body)
             if not isinstance(data, dict) or data.get("action") not in (
                     "read", "approve", "collection_status", "claim_collection",
-                    "register_credit_destination", "credit_receipt",
+                    "register_credit_destination", "credit_receipt", "ongoing_credit_receipt",
                     "authorise_collection", "report_collection", "reconcile_collection"):
                 raise WalletError("Unsupported action")
             budget_id, token = data.get("budget_id"), data.get("token")
@@ -53,12 +53,15 @@ class DriverBudgetView(HomeAssistantView):
             async with coord.lock:
                 action = data["action"]
                 row = coord.api.budgets.driver_access(budget_id, token, allow_terminal=action in (
-                    "read", "collection_status", "report_collection", "reconcile_collection", "credit_receipt"))
-                if action == "read" and row["state"] == "revoked" and not coord.api.auto_credits.get(row):
+                    "read", "collection_status", "report_collection", "reconcile_collection",
+                    "credit_receipt", "ongoing_credit_receipt"))
+                if (action == "read" and row["state"] == "revoked" and not coord.api.auto_credits.get(row)
+                        and not coord.api.ongoing_credits.driver_rows(row)):
                     raise WalletError("Driver link is revoked")
                 handlers = {
                     "register_credit_destination": lambda: coord.api.auto_credits.register(row, data),
                     "credit_receipt": lambda: coord.api.auto_credits.receipt(row),
+                    "ongoing_credit_receipt": lambda: coord.api.ongoing_credits.driver_receipt(row, data.get("credit_id")),
                     "collection_status": lambda: coord.api.collections.status(row),
                     "claim_collection": lambda: coord.api.collections.claim(row, data),
                     "authorise_collection": lambda: coord.api.collections.authorise(row, data),

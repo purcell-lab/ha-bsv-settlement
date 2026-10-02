@@ -17,6 +17,40 @@ let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pend
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
 let latestTxid=null;
+let ongoingRows=[],registeredIdentity=null,receivingOngoing=false,ongoingEnabled=false;
+function paintOngoing(){
+  $("ongoing-section").hidden=!ongoingRows.length;
+  $("ongoing-list").replaceChildren();
+  for(const row of ongoingRows.slice().reverse()){
+    const box=document.createElement("div");box.className="notice small";
+    const p=document.createElement("p");p.className="strong";
+    p.textContent=`${row.amount_sats?row.amount_sats+" sat credit · ":""}${importedCredits.has(row.txid)?"Receipt accepted by wallet":(collectionMessages[row.state]||row.state.replaceAll("_"," "))}`;
+    const note=document.createElement("p");note.textContent=`Session ${row.transaction_id.slice(0,8)}${row.amount_sats?" · "+row.fee_sats+" sat operator fee":""}. ${row.error||""}`;
+    const details=document.createElement("details"),summary=document.createElement("summary"),refs=document.createElement("p");
+    summary.textContent="Full session and transaction references";refs.className="mono";
+    refs.textContent=`Session: ${row.transaction_id}. BSV transaction: ${row.txid||"Not submitted"}. Receiving address: ${row.recipient_address}.`;
+    details.append(summary,refs);box.append(p,note,details);$("ongoing-list").append(box);
+  }
+  const outstanding=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid));
+  $("receive-ongoing").disabled=receivingOngoing||!outstanding;
+  $("receive-ongoing").hidden=!outstanding&&!receivingOngoing;
+}
+$("receive-ongoing").onclick=async()=>{
+  receivingOngoing=true;paintOngoing();
+  try{
+    const {wallet,identity}=await connectWallet();
+    if(identity!==registeredIdentity)throw Error("Connect the wallet that registered this receiving address.");
+    for(const row of ongoingRows.filter(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid))){
+      const receipt=await api("ongoing_credit_receipt",{credit_id:row.credit_id});
+      if(receipt.credit_id!==row.credit_id || receipt.session_id!==row.session_id || receipt.txid!==row.txid)
+        throw Error("The credit receipt does not match the selected session.");
+      await importCredit(wallet,checked,receipt);
+      importedCredits.add(row.txid);
+    }
+    $("ongoing-feedback").textContent="Confirmed credit receipts accepted by your wallet. No payment was sent.";
+  }catch(e){$("ongoing-feedback").textContent=`Receipt import paused: ${e.message}. Retry imports the same payments, not new transfers.`;}
+  finally{receivingOngoing=false;paintOngoing();controls();}
+};
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
 const spending = () => checked?.terms.version === 2;
 const status = (message,error=false) => {
@@ -58,6 +92,24 @@ function controls() {
   $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet);
   $("retry-collection").hidden=!pendingReport;
   $("retry").hidden=accepted||!receipt;
+  if(ongoingRows.length && (!binding || collectionState==="waiting_for_operator_binding")){
+    const last=ongoingRows[ongoingRows.length-1], imported=importedCredits.has(last.txid);
+    $("page-title").textContent=last.txid?(imported?"Credit accepted by your wallet":last.state==="provider_confirmed"?"Your credit is confirmed":"Credit awaiting confirmation"):
+      last.state==="no_operator_credit"?"No operator credit due":ongoingEnabled?"Automatic driver credits":"Automatic credits paused";
+    $("page-subtitle").textContent=last.error||"Each session has a fixed receiving wallet and its own settlement record. This policy does not authorise charges to your wallet.";
+    $("status").textContent=imported?"Your confirmed credit receipt is accepted by your wallet. No further payment is needed.":
+      last.error|| (last.state==="provider_confirmed"?"Connect your registered wallet to receive the confirmed credit receipt.":
+      last.txid?"Tracking the existing payment. Do not send another transaction.":
+      !ongoingEnabled?"The operator has paused ongoing credits. Contact them to review your account.":
+      last.state==="no_operator_credit"?"This session does not require an operator payment.":
+      "The operator will check your final session account and pay an eligible credit automatically.");
+    $("approval-heading").textContent="Your separate spending approval";
+    $("status").className=last.error?"notice error":"notice";
+    $("collection-section").hidden=true;
+    $("progress-session").className="done";
+    $("progress-settle").className=imported||last.state==="no_operator_credit"?"done":"";
+    document.body.dataset.stage=imported?"settled":"approved";
+  }
 }
 async function api(action, extra={}) {
   const response = await fetch("/api/bsv_settlement/driver",{
@@ -109,6 +161,9 @@ function show(invitation) {
 async function refresh(initial=false) {
   try {
     const result=await api("read");
+    ongoingRows=result.ongoing_credits||[];registeredIdentity=result.driver_identity;
+    ongoingEnabled=!!result.ongoing_credit_enabled;
+    paintOngoing();
     if (checked && result.invitation.payload!==checked.invitation.payload) throw Error("Invitation changed. Reopen the operator's link.");
     if (!checked) show(result.invitation);
     live=result.prices; accepted=acceptedStates.includes(result.state) || !!result.driver_identity; binding=result.binding;

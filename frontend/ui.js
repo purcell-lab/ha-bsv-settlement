@@ -25,6 +25,12 @@ export function sessionStatus(s,health,now=Date.now()) {
   const payment=payments.find(p=>p.txid)||payments[0];
   if(payment)return {label:stateLabel(payment.state),tone:payment.state.includes("confirmed")&&!payment.state.includes("unconfirmed")?"good":payment.error||payment.state==="broadcast_unknown"?"warn":"info",
     detail:payment.txid?"Track the existing transaction. Do not pay again.":"Continue the saved settlement workflow.",target:"payments",payment};
+  const route=health.ongoing_credit?.sessions?.find(r=>r.session_id===s.session_id);
+  if(route && Number(s.net_cost_aud)<0)return {
+    label:!health.ongoing_credit.effective?"Ongoing credits paused":route.error?"Credit needs attention":"Ongoing credit assigned",
+    tone:route.error||!health.ongoing_credit.effective?"warn":"info",
+    detail:route.error||`Credit recipient fixed for this session: ${route.recipient_address}. Final pricing, funds and the 1,000 sat total cap still apply.`,
+    target:"payments"};
   const a=(health.driver_approvals || []).find(a=>a.session_id===s.session_id && a.approved && a.version===2 && a.state==="spending_authorised_wallet_permission_required" && Date.parse(a.expires_at)>now);
   if(!a)return {label:s.ended_at?"Review needed":"Driver approval needed",tone:"warn",detail:s.ended_at?"No current session approval is shown. Review this closed account; do not reuse a previous approval.":"Invite this driver and confirm this session before it ends.",target:s.ended_at?"payments":"drivers"};
   if(!finite(s.net_cost_aud))return {label:"Pricing unavailable",tone:"warn",detail:"Resolve the session price data before settlement.",target:"payments"};

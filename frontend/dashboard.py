@@ -19,6 +19,7 @@ def redesign(config):
     flat = list(cards(old))
     budget = next(c for c in flat if c.get("type") == "custom:bsv-budget-card")
     review = next(c for c in flat if c.get("type") == "custom:bsv-session-review-card")
+    budget["wallet_entity"] = review["wallet_entity"]
     qr = next(c for c in flat if c.get("type") == "custom:bsv-receive-qr-card")
     balance = next(c["entity"] for c in flat if str(c.get("entity", "")).endswith("_confirmed_wallet_balance"))
     operator = {"type": "custom:bsv-operator-card", "wallet_entity": review["wallet_entity"],

@@ -169,6 +169,9 @@ class SessionBudgets:
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
                 "prices": self.prices(row),
                 "session": session,
+                "ongoing_credits": self.api.ongoing_credits.driver_rows(row),
+                "ongoing_credit_enabled": bool(self.api.ongoing_credits.policy.get("enabled")
+                    and self.api.auto_credits.policy.get("enabled")),
                 "driver_identity": (row.get("receipt") or {}).get("driver_identity"),
                 "binding": copy.deepcopy(row.get("binding")),
                 "credit_destination_registered": bool(row.get("credit_destination")),

@@ -266,6 +266,9 @@ class AutomaticCredits:
 
     async def receipt(self, row):
         item = self.get(row)
+        return await self.receipt_for_item(row, item)
+
+    async def receipt_for_item(self, row, item):
         if not item or item["state"] != "provider_confirmed":
             raise WalletError("Credit receipt awaits provider confirmation")
         if not item.get("receipt"):

@@ -45,7 +45,7 @@ class BsvSessionReviewCard extends HTMLElement {
         service_data: {config_entry_id: this._config.config_entry_id, ...data},
         return_response: true,
       });
-      if(service !== "configure_automatic_credit") this._review = result.response;
+      if(!["configure_automatic_credit","configure_ongoing_credit"].includes(service)) this._review = result.response;
       this._message = "Action completed. Review the updated state below.";
     } catch (err) {
       this._message = err.message || String(err);
@@ -59,13 +59,14 @@ class BsvSessionReviewCard extends HTMLElement {
     const c = this._config, h = this._hass, r = this._review;
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
     const automatic = wallet?.attributes?.automatic_credit;
+    const ongoing = wallet?.attributes?.ongoing_credit;
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;
     const sessions = [proxy?.attributes?.latest_session, proxy?.attributes?.previous_session]
       .filter(s => s && s.ended_at);
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message, automatic]);
+      this._busy, this._message, automatic, ongoing]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -98,6 +99,14 @@ class BsvSessionReviewCard extends HTMLElement {
       <ha-card>
         <div class="head"><div><p class="eyebrow">Settlement</p><h2>Payments & credits</h2></div><span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span></div>
         <p class="note">Follow each session from review to confirmation. A submitted transaction must be reconciled, never paid again.</p>
+        ${ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
+        <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
+        <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
+        <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
+        ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
+        ${(ongoing.sessions||[]).slice().reverse().filter(s=>!s.txid).slice(0,5).map(s=>`<div class="notice" style="margin-top:12px"><strong>Session ${esc(short(s.transaction_id))} · ${esc(stateLabel(s.state))}</strong><code>${esc(s.recipient_address)}</code><span>${esc(s.satoshis_per_aud)} sat/AUD · ${esc(s.error||"Final account and funding checks still apply.")}</span></div>`).join("")}
+        <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
+        <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
         ${(automatic?.payments || []).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
         <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p><code>${esc(p.txid || "Not submitted")}</code></details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
@@ -129,6 +138,9 @@ class BsvSessionReviewCard extends HTMLElement {
     const $ = selector => this.shadowRoot.querySelector(selector);
     if($("#stop-credits")) $("#stop-credits").onclick=()=>{
       if(confirm("Stop new automatic credits? Submitted payments will still be reconciled. Re-enabling requires new invitations."))this.action("configure_automatic_credit",{enabled:false});
+    };
+    if($("#stop-ongoing"))$("#stop-ongoing").onclick=()=>{
+      if(confirm("Stop ongoing driver credits? Submitted payments will still be reconciled. Separately approved session credits remain enabled."))this.action("configure_ongoing_credit",{enabled:false});
     };
     $("#prepare").onclick = () => this.action("prepare_session_review", {
       proxy_config_entry_id: c.proxy_config_entry_id, session_id: $("#session").value,

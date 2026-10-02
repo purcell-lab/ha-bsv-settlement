@@ -37,6 +37,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
         async with self.lock:
             try:
                 if self.mode == "embedded_mainnet":
+                    await self.api.ongoing_credits.tick()
                     await self.api.auto_credits.tick()
                     await self.api.refresh_balance_if_due(reconcile_payment=True)
                 health = await self.api.call("GET", "/v1/health")
@@ -75,6 +76,12 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")
                     result = await self.api.auto_credits.configure(data["enabled"], approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
+                if action == "configure_ongoing_credit":
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    result = await self.api.ongoing_credits.configure(data, approving_user_id)
                     self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
                     return result
                 if action in BUDGET_SERVICES:

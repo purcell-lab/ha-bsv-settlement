@@ -8,6 +8,7 @@ class BSVBudgetCard extends HTMLElement {
     this.shadowRoot.innerHTML=`<style>${styles}</style><ha-card>
       <div class="head"><div><p class="eyebrow">Driver setup</p><h2>One driver. One session.</h2></div><ha-icon icon="mdi:account-check-outline"></ha-icon></div>
       <p class="note">Invite the driver, receive approval, then confirm the matching charging session.</p>
+      <p id="ongoing-notice" class="notice" hidden></p>
       <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
       <p id="status" class="note" role="status" aria-live="polite"></p>
@@ -89,6 +90,11 @@ class BSVBudgetCard extends HTMLElement {
   }
   paint(){
     const h=this._hass;if(!h)return;const b=this.budget,admin=!!h.user?.is_admin;
+    const ongoing=h.states[this.config.wallet_entity]?.attributes?.ongoing_credit;
+    this.$("ongoing-notice").hidden=!ongoing?.enabled;
+    this.$("ongoing-notice").textContent=ongoing?.effective?
+      "Ongoing operator credits are enabled. The last verified receiving registration supplies the recipient for each new session. Session matching below is for driver spending approval, not ongoing operator credits.":
+      "The ongoing credit policy is paused by the master automatic-credit policy. Check Payments.";
     const usable=h.states[this.config.proxy_entity]&&!["unknown","unavailable"].includes(h.states[this.config.proxy_entity].state);
     const accepted=b?.state==="spending_authorised_wallet_permission_required";
     const bound=!!b?.binding||b?.terms.session_mode==="existing_session";
@@ -107,7 +113,9 @@ class BSVBudgetCard extends HTMLElement {
     this.$("refresh").hidden=false;this.$("refresh").disabled=this.busy||!admin;
     this.$("revoke").disabled=this.busy||!admin||!b||["revoked","expired"].includes(b.state)||!!b.automatic_credit?.txid||!!b.collection?.txid;
     this.$("bind").hidden=!b||!accepted||bound;
-    this.$("bind").disabled=this.busy||!admin||!usable||!this.session||!!this.session.ended_at;
+    const afterApproval=!!b&&Date.parse(this.session?.opened_at)>=Date.parse(b.accepted_at);
+    this.$("bind").disabled=this.busy||!admin||!usable||!this.session||!!this.session.ended_at||!afterApproval;
+    if(b&&accepted&&!bound&&!afterApproval)this.$("next-step").textContent="Spending approval saved for a future session. The current session began before this approval and cannot be matched to it. Ongoing credits, if enabled, are handled separately.";
   }
   async perform(service,data,silent=false){
     if(this.busy||!this._hass?.user?.is_admin)return;this.busy=true;this.paint();

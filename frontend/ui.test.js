@@ -26,3 +26,10 @@ test("missing numbers remain unavailable and HTML values are escaped",()=>{
  assert.equal(num(null),"Unavailable");assert.equal(num("unavailable"),"Unavailable");
  assert.equal(num(0),"0");assert.equal(esc('<img onerror="x">'),"&lt;img onerror=&quot;x&quot;&gt;");
 });
+test("ongoing operator credit does not imply driver debit authority",()=>{
+ const h={ongoing_credit:{effective:true,sessions:[{session_id:s.session_id,recipient_address:"registered-wallet"}]}};
+ assert.equal(sessionStatus(s,h).label,"Ongoing credit assigned");
+ assert.equal(sessionStatus({...s,net_cost_aud:1},h).label,"Driver approval needed");
+ h.ongoing_credit.effective=false;
+ assert.equal(sessionStatus(s,h).label,"Ongoing credits paused");
+});

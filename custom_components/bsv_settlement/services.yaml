@@ -400,6 +400,38 @@ revoke_session_budget:
       required: true
       selector:
         text:
+configure_ongoing_credit:
+  name: Configure ongoing operator credits
+  description: Administrator-authorised mainnet credits to the latest verified receiving registration. Fixed recipient and conversion per session, 1000 sat total cap including 10 sat fee. This never grants driver debit authority.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    enabled:
+      required: true
+      selector:
+        boolean:
+    proxy_config_entry_id:
+      selector:
+        text:
+    conversion_rate_entity:
+      selector:
+        entity:
+          domain: sensor
+    initial_session_id:
+      description: Explicitly authorise this retained session, including if it began before policy activation. Other historical sessions are excluded.
+      selector:
+        text:
+    expected_budget_id:
+      selector:
+        text:
+    expected_recipient_address:
+      selector:
+        text:
+    confirm_ongoing_mainnet_credits:
+      selector:
+        boolean:
 session_budget_status:
   name: Read session budget status
   description: Read a stored invitation and consent without making a wallet or chain request.
