@@ -1,4 +1,4 @@
-"""Signed session-budget consent. Never grants spending or charger authority."""
+"""Versioned driver mandates. Message approval is not wallet transaction permission."""
 import copy
 from datetime import timedelta, datetime
 import hashlib
@@ -13,8 +13,15 @@ from .const import DOMAIN
 from .session_review import decimal, now
 
 PROTOCOL = [2, "ha ev session budget"]
-PRICING = ("Net AUD account = interval import kWh times import price minus interval "
-           "export kWh times feed-in price. Prices may be negative. Round AUD to cents, "
+SPENDING_PROTOCOL = [2, "ev session spending"]
+SPENDING_SCOPE = "one_session_capped_spending_no_charger_authority"
+SPENDING_STATE = "spending_authorised_wallet_permission_required"
+LEGACY_STATE = "consent_verified_not_payment_authority"
+PRICING = ("Net AUD account = interval charging kWh times charging rate minus interval "
+           "export kWh times export (V2G) rate. A positive charging rate debits your wallet; "
+           "a negative charging rate credits it. A positive export (V2G) rate credits your "
+           "wallet; a negative export (V2G) rate debits it. A zero rate has no energy cost. "
+           "Combine all intervals into one final net account. Round AUD to cents, "
            "then convert at the fixed sat/AUD rate and round half-up to whole satoshis. "
            "DC-meter time allocation is provisional, not a certified bill.")
 
@@ -30,9 +37,47 @@ def message_hash(value):
     """BRC-100 message signatures use one SHA-256, not Bitcoin hash256."""
     return hashlib.sha256(value).digest()
 
+def payment_authority(terms):
+    """Explicit signed mandate, limited to a single final net driver debit."""
+    return {
+        "trigger": "after_bound_session_ends",
+        "collection_mode": "automatic_once_when_wallet_available",
+        "direction": "driver_to_operator_if_net_account_positive",
+        "recipient_address": terms["operator_address"],
+        "operator_identity": terms["operator_identity"],
+        "session_id": terms["session_id"],
+        "max_payments": 1,
+        "max_total_sats_including_fees": terms["max_total_sats"],
+        "max_fee_sats": terms["max_fee_sats"],
+        "satoshis_per_aud": terms["satoshis_per_aud"],
+        "expires_at": terms["expires_at"],
+        "revocable_before_submission": True,
+        "wallet_transaction_permission_required": True,
+        "operator_credit_requires_separate_authority": True,
+        "funds_reserved": False,
+        "charger_control": False,
+    }
+
+
+def signature_protocol(terms):
+    return SPENDING_PROTOCOL if terms.get("version") == 2 else PROTOCOL
+
 
 def approval_payload(invitation, identity):
     terms = json.loads(invitation["payload"])
+    if terms.get("version") == 2:
+        if terms.get("scope") != SPENDING_SCOPE or terms.get("payment_authority") != payment_authority(terms):
+            raise WalletError("Invalid spending mandate terms")
+        return canonical({
+            "action": "authorise_one_session_spending",
+            "budget_id": terms["budget_id"],
+            "driver_identity": identity,
+            "invitation_hash": sha(invitation["payload"]),
+            "payment_authority": terms["payment_authority"],
+            "version": 2,
+        })
+    if terms.get("version") != 1 or terms.get("scope") != "one_session_consent_only_no_payment_or_charger_authority":
+        raise WalletError("Unsupported approval version")
     return canonical({
         "action": "approve_session_budget_consent_only",
         "budget_id": terms["budget_id"],
@@ -130,13 +175,13 @@ class SessionBudgets:
             identity = receipt["driver_identity"]
             if not re.fullmatch(r"(02|03)[0-9a-f]{64}", identity):
                 raise ValueError()
-            if receipt["version"] != 1 or receipt["budget_id"] != row["terms"]["budget_id"]:
+            if type(receipt["version"]) is not int or receipt["version"] != row["terms"]["version"] or receipt["budget_id"] != row["terms"]["budget_id"]:
                 raise ValueError()
             expected = approval_payload(row["invitation"], identity)
             if receipt["payload"] != expected:
                 raise ValueError()
             # BRC-43 protocol invoice; "anyone" is the public counterparty key 1.
-            invoice = f"2-{PROTOCOL[1]}-{row['terms']['budget_id']}"
+            invoice = f"2-{signature_protocol(row['terms'])[1]}-{row['terms']['budget_id']}"
             key = PublicKey(bytes.fromhex(identity)).derive_child(PrivateKey(1), invoice)
             signature = bytes.fromhex(receipt["signature"])
             if not 8 <= len(signature) <= 72 or not key.verify(signature, expected.encode("utf-8"), hasher=message_hash):
@@ -148,13 +193,13 @@ class SessionBudgets:
                 raise WalletError("This invitation is already bound to a different driver")
             await self.api.store.async_save(self.api.saved)
             return self.public(row)
-        row.update(state="consent_verified_not_payment_authority",
+        row.update(state=SPENDING_STATE if row["terms"]["version"] == 2 else LEGACY_STATE,
                    receipt=copy.deepcopy(receipt), accepted_at=now().isoformat(), accepted_by=accepted_by)
         await self.api.store.async_save(self.api.saved)
         return self.public(row)
 
     async def bind(self, row, data):
-        if self.public(row)["state"] != "consent_verified_not_payment_authority":
+        if self.public(row)["state"] not in (LEGACY_STATE, SPENDING_STATE):
             raise WalletError("An unexpired, verified consent is required")
         if row["terms"].get("session_mode") != "next_session_reservation":
             raise WalletError("This consent already names a recorded session")
@@ -217,7 +262,7 @@ class SessionBudgets:
         budget_id = str(uuid4())
         sources = proxy.sources
         terms = {
-            "version": 1, "budget_id": budget_id,
+            "version": 2, "budget_id": budget_id,
             "session_id": "reservation:" + reservation if pre_session else record["session_id"],
             "transaction_id": "Assigned after charging session opens" if pre_session else record["ocpp_transaction_id"],
             "session_mode": "next_session_reservation" if pre_session else "existing_session",
@@ -235,8 +280,9 @@ class SessionBudgets:
                               "Operator must confirm the driver and bind the transaction ID. No automatic selection."
                               if pre_session else "Entire named session, including energy already recorded before consent."),
             "expires_at": (now() + timedelta(minutes=minutes)).isoformat(),
-            "scope": "one_session_consent_only_no_payment_or_charger_authority",
+            "scope": SPENDING_SCOPE,
         }
+        terms["payment_authority"] = payment_authority(terms)
         payload = canonical(terms)
         operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
         invitation = {"version": 1, "payload": payload,

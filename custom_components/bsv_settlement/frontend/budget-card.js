@@ -6,27 +6,27 @@ class BSVBudgetCard extends HTMLElement {
     this.config = config; this.budget=null; this.initialRead=false;
     if (!this.shadowRoot) this.attachShadow({mode:"open"});
     this.shadowRoot.innerHTML = `<ha-card header="Driver session budget"><div class="body">
-      <p>Approve before plugging in. Share the private link; the driver reviews current Amber prices and approves once in BSV Browser. This does not enable payment collection or charger control.</p>
+      <p>Approve spending before plugging in. New invitations request a capped mandate for one final session debit. The driver reviews live Amber rates and approves once in BSV Browser. Wallet transaction permission and a payment adapter are still required; automatic collection and charger control remain inactive.</p>
       <p id="session"></p>
       <label>Operator name<input id="name" maxlength="100"></label>
       <label>Operator contact<input id="contact" maxlength="200" placeholder="Contact email or phone"></label>
       <label>Total budget, including fees (sat)<input id="total" type="number" min="1" max="100000" step="1" value="1000"></label>
       <label>Maximum network fee (sat)<input id="fee" type="number" min="0" max="1000" step="1" value="10"></label>
-      <label>Consent valid for (minutes)<input id="minutes" type="number" min="1" max="1440" step="1" value="720"></label>
+      <label>Spending approval valid for (minutes)<input id="minutes" type="number" min="1" max="1440" step="1" value="720"></label>
       <p id="rate"></p>
       <button id="create">Create pre-session approval link</button>
       <label>Private driver link<input id="driver-link" readonly></label>
       <p><a id="open-link" hidden target="_blank" rel="noopener noreferrer">Open this driver's approval page</a></p>
-      <p>Share only with the intended driver. The link can read these terms and submit one signed consent, never a payment.</p>
+      <p>Share only with the intended driver. The link can read these terms and submit one signed spending approval; it cannot move funds. Old consent receipts do not become spending approvals.</p>
       <p><a href="/bsv_settlement/driver/index.html" target="_blank" rel="noopener">Open driver approval page</a></p>
       <details><summary>Manual JSON fallback</summary>
       <label>Invitation JSON<textarea id="invitation" rows="5" readonly></textarea></label>
       <label>Signed receipt from driver<textarea id="receipt" rows="5" placeholder="Paste receipt JSON"></textarea></label>
-      <button id="accept" disabled>Verify and save driver consent</button>
+      <button id="accept" disabled>Verify and save driver approval</button>
       </details>
       <button id="refresh" disabled>Refresh budget status</button>
-      <button id="bind" disabled>Bind consent to latest session</button>
-      <button id="revoke" disabled>Revoke this budget consent</button>
+      <button id="bind" disabled>Bind approval to latest session</button>
+      <button id="revoke" disabled>Revoke this approval</button>
       <p id="status" role="status" aria-live="polite">Create an invitation before the charging session opens.</p>
       <p>The private link is returned once. Keep it before leaving this card. Automatic session binding is deliberately disabled to avoid assigning another driver's session.</p>
     </div></ha-card><style>
@@ -72,7 +72,7 @@ class BSVBudgetCard extends HTMLElement {
     this.$("refresh").disabled = this.busy || !admin || !this.budget;
     this.$("revoke").disabled = this.busy || !admin || !this.budget || this.budget.state === "revoked";
     this.$("bind").disabled = this.busy || !admin || !this.session ||
-      this.budget?.state !== "consent_verified_not_payment_authority" || !!this.budget?.binding;
+      !["consent_verified_not_payment_authority","spending_authorised_wallet_permission_required"].includes(this.budget?.state) || !!this.budget?.binding;
     if (admin && !this.initialRead) {
       this.initialRead=true;
       this.perform("session_budget_status",{});
@@ -93,7 +93,7 @@ class BSVBudgetCard extends HTMLElement {
         this.$("open-link").href=link.href;this.$("open-link").hidden=false;
       }
       this.$("invitation").value = JSON.stringify(this.budget.invitation, null, 2);
-      this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. No spending authority or charger control is enabled.`;
+      this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. ${this.budget.terms.version === 2 ? "Capped spending mandate; wallet transaction permission still required." : "Legacy consent only; revoke and create a new invitation to approve spending."} Automatic collection and charger control are not active.`;
       if(service==="create_session_budget"&&!this.budget.driver_link_fragment&&!this.$("driver-link").value)
         this.$("status").textContent += " Existing invitation retained. If you lost its link, revoke it before creating a replacement.";
     } catch (e) { this.$("status").textContent = e.message || "Budget operation failed."; }

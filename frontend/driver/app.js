@@ -7,6 +7,8 @@ const capability = fragment.has("budget") && fragment.has("token")
   ? {budget_id:fragment.get("budget"),token:fragment.get("token")} : null;
 const framed = !!capability && window.top !== window;
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
+const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
+const spending = () => checked?.terms.version === 2;
 const status = (message,error=false) => {
   $("status").textContent = message; $("status").className = error ? "notice error" : "notice";
   $("action-note").textContent = message;
@@ -18,14 +20,15 @@ function pricesValid() {
 }
 function controls() {
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
-  $("approve").disabled = framed || busy || !checked || expired || accepted || !!receipt ||
+  $("approve").disabled = framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
     (!!capability && !pricesValid());
   $("load").disabled = busy; $("invitation").disabled = busy;
   $("reset").disabled = busy; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
   if (expired && !accepted) status("This invitation has expired. Ask the operator for a new link.",true);
-  $("approve").textContent = accepted ? "Consent saved in Home Assistant" :
-    receipt ? "Consent signed" : `Approve ${checked ? checked.terms.max_total_sats.toLocaleString()+" sat " : ""}session budget`;
+  $("approve").textContent = accepted ? (spending() ? "Spending approval saved" : "Old consent saved, no spending authority") :
+    receipt ? "Spending approval signed" : !spending() && checked ? "New invitation required to approve spending" :
+    `Approve spending up to ${checked ? checked.terms.max_total_sats.toLocaleString() : "…"} sat`;
 }
 async function api(action, extra={}) {
   const response = await fetch("/api/bsv_settlement/driver",{
@@ -56,7 +59,7 @@ function show(invitation) {
   $("budget").textContent=`${t.max_total_sats.toLocaleString()} sat`;
   $("aud").textContent=`AUD ${(t.max_total_sats/Number(t.satoshis_per_aud)).toFixed(2)} at the displayed conversion rate`;
   $("fee").textContent=`${t.max_fee_sats} sat maximum, included in total`;
-  $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this consent`;
+  $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this approval`;
   $("session").textContent=t.session_mode==="next_session_reservation" ? "One future charging session" : t.session_id;
   $("transaction").textContent=t.transaction_id;
   $("operator").textContent=t.operator_address;
@@ -65,8 +68,10 @@ function show(invitation) {
   $("operator-key").textContent=t.operator_identity;
   $("expiry").textContent=new Date(t.expires_at).toLocaleString();
   $("pricing").textContent=t.pricing_rule;
-  $("tariffs").textContent=`Import tariff: ${t.import_price_entity}. Export tariff: ${t.export_price_entity}.`;
   $("scope").textContent=t.account_scope;
+  $("approval-terms").textContent = spending() ?
+    `By selecting Approve spending, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
+    "This is an old consent-only invitation. It cannot authorise spending. Ask the operator to revoke it and issue a new spending invitation. Existing signatures do not change.";
   $("terms").hidden=false; $("wallet-section").hidden=false;
   $("invitation").value=JSON.stringify(invitation,null,2);
   controls();
@@ -76,11 +81,12 @@ async function refresh(initial=false) {
     const result=await api("read");
     if (checked && result.invitation.payload!==checked.invitation.payload) throw Error("Invitation changed. Reopen the operator's link.");
     if (!checked) show(result.invitation);
-    live=result.prices; accepted=result.state==="consent_verified_not_payment_authority";
+    live=result.prices; accepted=acceptedStates.includes(result.state);
     paintPrices();
     if(accepted) {
       $("wallet-key").textContent=result.driver_identity;
-      status("Budget consent is saved in Home Assistant. No payment or charger control is enabled.");
+      status(spending() ? "Spending approval saved for one session. Wallet transaction permission is still required; automatic collection is not active." :
+        "Old consent is saved. It grants no spending authority. Ask the operator for a new invitation to approve spending.");
     } else if(initial) status("Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
   } catch(e) {
     live=null;paintPrices();status(e.message || "The approval link is unavailable.",true);
@@ -101,10 +107,10 @@ $("load").onclick=()=>{
 $("invitation").oninput=()=>{clear();controls();};
 async function submitReceipt() {
   const result=await api("approve",{receipt});
-  accepted=result.state==="consent_verified_not_payment_authority";
-  if (!accepted || result.driver_identity!==receipt.driver_identity) throw Error("Consent was not accepted for this wallet.");
-  status("Budget consent saved in Home Assistant. You can close this page. No funds moved.");
-  $("result-note").textContent="Your signed receipt is verified and saved in HA. Keep a copy if you wish.";
+  accepted=acceptedStates.includes(result.state);
+  if (!accepted || result.driver_identity!==receipt.driver_identity) throw Error("Approval was not accepted for this wallet.");
+  status("Spending approval saved. No funds moved. Automatic collection still requires a payment adapter and wallet permission.");
+  $("result-note").textContent="Your spending approval is verified and saved by the operator. Keep a copy if you wish.";
 }
 $("approve").onclick=async()=>{
   if($("approve").disabled)return;
@@ -117,7 +123,7 @@ $("approve").onclick=async()=>{
       live=result.prices;paintPrices();
       if(!pricesValid())throw Error("Current Amber prices are unavailable. Try again later.");
     }
-    status("Waiting for BSV Browser. This action connects your identity and signs budget consent only.");
+    status("Waiting for BSV Browser. This action connects your identity and signs your capped spending approval. No payment is made now.");
     const wallet=new WalletClient("auto");
     let timer;
     const identity=(await Promise.race([
@@ -129,7 +135,7 @@ $("approve").onclick=async()=>{
     receipt=await signConsent(wallet,checked,identity);
     $("receipt").value=JSON.stringify(receipt,null,2);$("result").hidden=false;
     if(capability)await submitReceipt();
-    else status("Consent signed. Return the receipt to the operator for verification. No funds moved.");
+    else status("Spending approval signed. Return the receipt to the operator for verification. No funds moved.");
   } catch(e) {
     status(receipt ? `Signed, but saving is not confirmed: ${e.message}. Select Retry saving; do not sign again.` :
       `Approval not completed: ${e.message || e}`,true);

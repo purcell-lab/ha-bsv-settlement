@@ -361,8 +361,8 @@ create_session_budget:
       selector:
         text:
 accept_session_budget:
-  name: Verify driver budget consent
-  description: Verify and persist the signed driver receipt. Does not enable automatic spending.
+  name: Verify driver spending approval
+  description: Verify and persist a versioned driver mandate. Wallet transaction permission is separate; old consent remains consent-only.
   fields:
     config_entry_id:
       required: true

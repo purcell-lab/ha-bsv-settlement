@@ -92,7 +92,7 @@ async def test_private_link_read_approve_replay_and_revoke(tmp_path):
         for _ in range(2):
             r=await client.post(view.url,json=args|{"action":"approve","receipt":receipt})
             assert r.status==200
-            assert (await r.json())["state"]=="consent_verified_not_payment_authority"
+            assert (await r.json())["state"]=="spending_authorised_wallet_permission_required"
         r=await client.post(view.url,json=args|{"action":"approve","receipt":consent(row)})
         assert r.status==400
         await api.budgets.execute("revoke_session_budget",{"budget_id":args["budget_id"]},"admin")

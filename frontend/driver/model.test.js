@@ -1,22 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PrivateKey, ProtoWallet, Signature } from "@bsv/sdk";
-import { canonical, bytes, hex, parseInvitation, signConsent } from "./model.js";
+import { canonical, bytes, parseInvitation, signConsent, paymentAuthority, spendingScope } from "./model.js";
 
 const operator = PrivateKey.fromRandom();
 const driver = new ProtoWallet(PrivateKey.fromRandom());
 const terms = {
-  version:1, budget_id:"11111111-2222-4333-8444-555555555555",session_id:"fictional-session",
+  version:2, budget_id:"11111111-2222-4333-8444-555555555555",session_id:"fictional-session",
   transaction_id:"fictional-proxy-id",network:"BSV mainnet",
   operator_identity:operator.toPublicKey().toString(),operator_address:operator.toPublicKey().toAddress(),
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",
   pricing_rule:"Fictional test only",account_scope:"Entire session",
   import_price_entity:"sensor.demo_import",export_price_entity:"sensor.demo_export",
   created_at:new Date().toISOString(),expires_at:new Date(Date.now()+3600000).toISOString(),
-  scope:"one_session_consent_only_no_payment_or_charger_authority"
+  scope:spendingScope
 };
 function invitation(t = terms) {
-  const payload = canonical(t);
+  const payload = canonical(t.version === 2 ? {...t,payment_authority:t.payment_authority || paymentAuthority(t)} : t);
   return {version:1,payload,signature:operator.sign(bytes(payload)).toDER("hex")};
 }
 test("operator signature and driver receipt verify with official SDK", async () => {
@@ -24,7 +24,25 @@ test("operator signature and driver receipt verify with official SDK", async () 
   const {publicKey} = await driver.getPublicKey({identityKey:true});
   const receipt = await signConsent(driver, checked, publicKey);
   assert.equal(receipt.driver_identity, publicKey);
-  assert.equal(JSON.parse(receipt.payload).no_spending_authority,true);
+  const payload = JSON.parse(receipt.payload);
+  assert.equal(payload.version,2);
+  assert.equal(payload.action,"authorise_one_session_spending");
+  assert.deepEqual(payload.payment_authority,paymentAuthority(terms));
+});
+test("legacy terms remain readable but cannot silently become a spending approval", async () => {
+  const old = {...terms,version:1,scope:"one_session_consent_only_no_payment_or_charger_authority"};
+  const checked = parseInvitation(JSON.stringify(invitation(old)));
+  const {publicKey} = await driver.getPublicKey({identityKey:true});
+  await assert.rejects(signConsent(driver,checked,publicKey), /old invitation/);
+});
+test("operator-signed policy with altered scope, recipient or limits is rejected", () => {
+  for (const patch of [{max_payments:2},{max_total_sats_including_fees:1001},
+      {recipient_address:"other"},{wallet_transaction_permission_required:false},
+      {satoshis_per_aud:"200"},{expires_at:"2099-01-01T00:00:00Z"}]) {
+    assert.throws(()=>parseInvitation(JSON.stringify(invitation({
+      ...terms,payment_authority:{...paymentAuthority(terms),...patch}
+    }))));
+  }
 });
 test("tampering, wrong address, expired and invalid fee limits rejected", () => {
   const item=invitation();item.payload=item.payload.replace('"max_total_sats":1000','"max_total_sats":9999');

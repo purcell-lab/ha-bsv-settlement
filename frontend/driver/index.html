@@ -9,15 +9,15 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header><div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><span class="badge">Driver consent · PoC</span></header>
+<header><div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><span class="badge">Spending approval · PoC</span></header>
 <main id="main">
-  <div class="intro"><p class="eyebrow">YOUR ENERGY. YOUR APPROVAL.</p><h1>Approve before you plug in.</h1><p>Review the operator, current prices and your budget. One approval action connects BSV Browser and signs your consent. Your wallet may show its own permission prompt.</p></div>
-  <p id="status" class="notice" role="status" aria-live="polite">Start with an invitation from your operator. No wallet calls occur until you select Connect.</p>
+  <div class="intro"><p class="eyebrow">YOUR ENERGY. YOUR APPROVAL.</p><h1>Approve before you plug in.</h1><p>Review the operator, current rates and your spending limit. One approval action connects BSV Browser and signs your spending mandate for one session. Your wallet may show its own permission prompt.</p></div>
+  <p id="status" class="notice" role="status" aria-live="polite">Start with an invitation from your operator. No wallet calls occur until you select Approve.</p>
   <div class="layout">
   <div>
     <section id="load-section">
       <div class="section-head"><h2>Open your private approval link</h2></div>
-      <p>Ask the operator for the driver link from the HA budget card. It loads the terms and current Amber prices automatically. Advanced fallback: paste a signed invitation below.</p>
+      <p>This is the fixed entry page. Open your operator's private approval link to load your agreement and current Amber rates. Advanced fallback: paste a signed invitation below.</p>
       <label for="invitation">Operator-signed invitation</label>
       <textarea id="invitation" rows="5" spellcheck="false" placeholder='Paste the invitation JSON. Never enter a seed phrase or private key.'></textarea>
       <div class="actions"><button id="load">Load and check invitation</button><button id="reset" class="secondary">Clear page</button></div>
@@ -26,51 +26,51 @@
       <div class="section-head"><h2>Your charging agreement</h2></div>
       <p><strong id="operator-name"></strong><br><span id="contact"></span></p>
       <div id="prices" hidden>
-        <h2>Amber prices now</h2>
-        <dl class="price-grid"><dt>Energy into your EV</dt><dd id="import-price">Unavailable</dd><dt>Energy from your EV</dt><dd id="export-price">Unavailable</dd></dl>
+        <h2>Live Amber rates</h2>
+        <dl class="price-grid"><dt>Charging rate</dt><dd id="import-price">Unavailable</dd><dt>Export (V2G) rate</dt><dd id="export-price">Unavailable</dd></dl>
         <p class="small" id="price-time"></p><p class="small" id="price-warning"></p>
-        <p class="small">A negative export price is a cost to the driver. A negative import price contributes a credit.</p>
       </div>
+      <div class="notice"><p><strong>Charging:</strong> your wallet will be debited for charging, except when the charging rate is negative. A negative charging rate credits your wallet.</p><p><strong>Export (V2G):</strong> your wallet will be credited for exports, except when the export (V2G) rate is negative. A negative export rate debits your wallet.</p><p>Zero rates add no energy cost. All intervals combine into one final net debit or credit, not a separate transfer for each interval. Credits need a separate operator payment. This preview records spending approval; automatic transfers are not active yet.</p></div>
       <div class="amount"><span>Maximum total spend, including fees</span><strong id="budget"></strong><span id="aud"></span></div>
       <dl>
         <dt>Network fee allowance</dt><dd id="fee"></dd>
         <dt>Conversion rate</dt><dd id="rate"></dd>
-        <dt>Consent expires</dt><dd id="expiry"></dd>
+        <dt>Spending approval expires</dt><dd id="expiry"></dd>
         <dt>Session</dt><dd id="session" class="mono"></dd>
         <dt>Proxy transaction ID</dt><dd id="transaction" class="mono"></dd>
         <dt>Operator receives at</dt><dd id="operator" class="mono"></dd>
       </dl>
-      <details><summary>Pricing rule and operator identity</summary><p id="pricing"></p><p id="tariffs" class="mono"></p><p id="scope"></p><p>The rate is a demonstration conversion, not a market exchange rate. A negative account requires a separate operator credit.</p><p id="operator-key" class="mono"></p></details>
+      <details><summary>Pricing rule and operator identity</summary><p id="pricing"></p><p id="scope"></p><p>The conversion rate is a demonstration rate, not a market exchange rate. A negative final account requires a separate operator credit.</p><p id="operator-key" class="mono"></p></details>
       <p class="small">Use only a link supplied by the operator you intend to authorise. The signature proves control of the displayed operator key, not their real-world identity.</p>
     </section>
     <section id="wallet-section" hidden>
       <div class="section-head"><h2>Approve with BSV Browser</h2></div>
-      <p>By selecting Approve, you accept the displayed operator, dynamic pricing rule, budget and expiry for one session. Your signature is returned to HA automatically when you use a private link.</p>
-      <p><strong>This is consent only.</strong> It does not grant spending access, reserve funds, start charging or enable automatic collection.</p>
-      <button id="approve" disabled>Approve session budget</button>
+      <p id="approval-terms">By selecting Approve spending, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit, including the network fee, must remain within the displayed spending limit and fee cap. The dynamic pricing rule, fixed conversion rate and expiry apply.</p>
+      <p><strong>No payment now.</strong> This signature records your spending authority. It does not reserve funds, start charging or bypass your wallet's transaction permissions. Automatic collection is not connected in this build; it requires a payment adapter and wallet permission.</p>
+      <button id="approve" disabled>Approve spending for one session</button>
       <p id="action-note" class="small"></p>
       <p class="small">Connected public identity</p><p id="wallet-key" class="mono key">Not connected</p>
     </section>
     <section id="result" hidden>
       <div class="section-head"><h2>Your signed receipt</h2></div>
-      <p id="result-note">For a private link, this receipt is sent to HA automatically. If saving fails, retry the same receipt without signing again. For manual invitations, return the receipt to the operator.</p>
-      <label for="receipt">Signed budget receipt</label><textarea id="receipt" rows="6" readonly></textarea>
+      <p id="result-note">For a private link, this receipt is sent to the operator automatically. If saving fails, retry the same receipt without signing again. For manual invitations, return the receipt to the operator.</p>
+      <label for="receipt">Signed spending approval</label><textarea id="receipt" rows="6" readonly></textarea>
       <button id="download" class="secondary" disabled>Download receipt JSON</button>
       <button id="retry" class="secondary" disabled>Retry saving receipt</button>
     </section>
   </div>
   <aside>
     <h2>No payment at this step</h2>
-    <p>This page uses message signatures, not transaction signatures. It makes no payment or wallet spending-permission request.</p>
+    <p>This page signs a spending mandate, not a payment transaction. The mandate names one operator and one session, with a total spending limit and a separate fee cap.</p>
     <ul><li>One future session, or a named open session</li><li>Fixed sat/AUD conversion</li><li>Total and fee limits</li><li>Explicit expiry</li></ul>
     <hr><h2>What comes next</h2>
-    <p>HA verifies the signed receipt. For advance approval, the operator then confirms your presence and binds your consent to the charging transaction. It cannot be assigned to two sessions.</p><p>Automatic collection and charger budget enforcement are not connected yet.</p>
-    <p>Closing or clearing this page does not revoke a saved receipt. Ask the operator to revoke it in HA.</p>
-    <p class="small">Open the direct HA page in BSV Browser for a real wallet connection. An embedded preview may not reach your wallet.</p>
+    <p>The operator verifies the signed receipt. For advance approval, the operator then confirms your presence and binds your approval to the charging transaction. It cannot be assigned to two sessions.</p><p>Your wallet must separately permit a payment transaction. Automatic collection and charger budget enforcement are not connected yet.</p>
+    <p>You may revoke approval before payment submission. Closing or clearing this page does not revoke it. Ask the operator to revoke the saved approval; a submitted payment cannot be cancelled this way.</p>
+    <p class="small">Open the direct driver page in BSV Browser for a real wallet connection. An embedded preview may not reach your wallet.</p>
   </aside>
   </div>
 </main>
-<footer>BSV mainnet identity · No funds reserved · No automatic payment</footer>
+<footer>BSV mainnet · Capped spending approval · No funds moved at approval</footer>
 <script type="module" src="./app.bundle.js"></script>
 </body>
 </html>

@@ -48,11 +48,11 @@
   "services": {
     "create_session_budget": {
       "name": "Create session budget invitation",
-      "description": "Sign consent terms before charging or for a named open session. No funds reservation, payment or charger control."
+      "description": "Create capped spending terms for one session. No funds reservation, payment or charger control."
     },
     "accept_session_budget": {
-      "name": "Verify driver budget consent",
-      "description": "Verify and save a signed BSV Browser receipt. Does not grant spending authority."
+      "name": "Verify driver spending approval",
+      "description": "Verify and save a versioned driver mandate. Wallet transaction permission is separate; old consent remains consent-only."
     },
     "revoke_session_budget": {
       "name": "Revoke session budget consent",

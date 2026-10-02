@@ -292,11 +292,16 @@ The first live milestone should remain a small, supervised operator-to-driver cr
 
 The project's original code and documentation are available under the [MIT licence](LICENSE), copyright 2026 Mark Purcell. Referenced or quoted third-party material, dependencies, names and trademarks retain their respective rights; this repository does not relicense them.
 
-## Driver wallet connection and budget consent
+## Driver wallet connection and spending approval
 
 The [BSV Browser driver page](docs/driver-session-budget.md) supports approval
 before charging. A private link loads the operator terms and live Amber prices;
-one page action connects the wallet, signs consent and returns it to HA.
-The operator then binds the consent to the driver's session. This does not grant
-spending permission, reserve funds, start charging or enable automatic collection.
-The existing manual payment-review flow remains separate.
+one page action connects the wallet, signs a capped spending mandate and returns it
+to the operator. New version 2 mandates authorise one final automatic debit to the
+named operator address, subject to the total limit, fee cap, fixed conversion rate,
+expiry and wallet transaction permission. Old version 1 receipts stay consent-only.
+The operator binds advance approval to the driver's session.
+
+This is signed spending authority, not a wallet transaction signature or a funded
+reservation. Automatic collection is **not connected yet**. The existing manual
+payment-review flow remains separate and does not consume these mandates.
