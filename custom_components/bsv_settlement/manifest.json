@@ -1,0 +1,12 @@
+{
+  "domain": "bsv_settlement",
+  "name": "BSV Settlement (Mock PoC)",
+  "version": "0.1.0",
+  "documentation": "https://github.com/purcell-lab/ha-bsv-settlement",
+  "issue_tracker": "https://github.com/purcell-lab/ha-bsv-settlement/issues",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": [],
+  "codeowners": ["@purcell-lab"],
+  "integration_type": "service"
+}

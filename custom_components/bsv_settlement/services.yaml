@@ -1,0 +1,85 @@
+bind_session:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    session_id:
+      required: true
+      selector:
+        text:
+    started_at:
+      required: true
+      example: "2026-10-02T02:00:00Z"
+      selector:
+        text:
+    driver_binding_id:
+      required: true
+      default: driver-demo-01
+      selector:
+        text:
+add_interval:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    session_id:
+      required: true
+      selector:
+        text:
+    interval:
+      required: true
+      selector:
+        object:
+prepare_session:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    session_id:
+      required: true
+      selector:
+        text:
+    ended_at:
+      required: true
+      selector:
+        text:
+    final_import_wh:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000000
+          mode: box
+          unit_of_measurement: Wh
+    final_export_wh:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000000
+          mode: box
+          unit_of_measurement: Wh
+request_payment:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    session_id:
+      required: true
+      selector:
+        text:
+refresh:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: bsv_settlement

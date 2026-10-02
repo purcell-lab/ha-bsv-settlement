@@ -1,0 +1,14 @@
+services:
+  wallet-mock:
+    build: .
+    ports:
+      # Loopback default. Change intentionally for an isolated mock-only LAN.
+      - "127.0.0.1:8091:8091"
+    environment:
+      MOCK_API_TOKEN: ${MOCK_API_TOKEN:?Set a 24+ character mock API token}
+      MOCK_APPROVAL_TOKEN: ${MOCK_APPROVAL_TOKEN:?Set a distinct 24+ character approval token}
+    volumes:
+      - wallet-data:/data
+    restart: unless-stopped
+volumes:
+  wallet-data:

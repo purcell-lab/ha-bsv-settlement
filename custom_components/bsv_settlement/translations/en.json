@@ -1,0 +1,59 @@
+{
+  "title": "BSV Settlement (Mock PoC)",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to a mock wallet service",
+        "description": "Mock only. No real funds, private keys or wallet approval credentials. HTTP is permitted only for isolated mock testing; use HTTPS on shared networks.",
+        "data": {"service_url": "Service URL", "api_token": "Service API token"}
+      }
+    },
+    "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode."},
+    "abort": {"already_configured": "This mock service is already configured."}
+  },
+  "services": {
+    "bind_session": {
+      "name": "Bind session",
+      "description": "Associate a new session with the synthetic driver wallet.",
+      "fields": {
+        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "session_id": {"name": "Session ID", "description": "Unique site, charger, connector and transaction reference."},
+        "started_at": {"name": "Started at", "description": "ISO timestamp including timezone."},
+        "driver_binding_id": {"name": "Driver binding", "description": "Use driver-demo-01 for this mock."}
+      }
+    },
+    "add_interval": {
+      "name": "Add metered interval",
+      "description": "Persist one validated interval with final directional prices.",
+      "fields": {
+        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "session_id": {"name": "Session ID", "description": "Previously bound session."},
+        "interval": {"name": "Interval", "description": "Full interval object as shown in README."}
+      }
+    },
+    "prepare_session": {
+      "name": "Prepare session",
+      "description": "Reconcile energy, freeze the ledger and prepare a mock settlement; does not approve payment.",
+      "fields": {
+        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "session_id": {"name": "Session ID", "description": "Previously bound session."},
+        "ended_at": {"name": "Ended at", "description": "ISO timestamp including timezone."},
+        "final_import_wh": {"name": "Final import", "description": "Session import delta from validated meter counters, in Wh."},
+        "final_export_wh": {"name": "Final export", "description": "Session export delta from validated meter counters, in Wh."}
+      }
+    },
+    "request_payment": {
+      "name": "Request mock payment",
+      "description": "Request simulated payer approval. This does not approve or send real funds.",
+      "fields": {
+        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "session_id": {"name": "Session ID", "description": "Prepared session."}
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Reconcile existing settlements without approving a payment.",
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."}}
+    }
+  }
+}

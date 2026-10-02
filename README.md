@@ -1,0 +1,233 @@
+# BSV session settlement: runnable mock and HA scaffold
+
+Version 0.1.0 | Prepared for Mark Purcell | 2 October 2026
+
+**A runnable, mock-only implementation of session-end payment or credit.** There is no budget process, prepayment, real wallet connection, private key, blockchain broadcast or real money movement. The HA scaffold collects explicit interval inputs; it does not yet subscribe to an installed OCPP integration.
+
+## Design documents
+
+Start with the [documentation index](docs/README.md), the [current settlement interface](docs/settlement-interface.md) and the [no-budget sequence diagram](docs/settlement-sequence.md). The [research comparison](docs/research/wallet-micropayments-comparison.md) retains its original budget-first framing as background, not as the current implementation requirement.
+
+Earlier budget-based concepts and visuals are preserved under [docs/archive](docs/archive/README.md). They are superseded and must not be used as the current product description.
+
+## What is included
+
+- **Mock wallet service:** FastAPI, persistent SQLite settlements, two synthetic wallet bindings, separate API and approval credentials, immutable amounts, expiring quotes and simulated receipts.
+- **Home Assistant component:** UI configuration, five actions, five sensors, durable interval ledger, status polling and change events.
+- **Replay tools:** a command-line debit/credit/zero demonstration and a Home Assistant sample script.
+- **Tests:** settlement arithmetic, duplicate/concurrent requests, approval roles, quote replacement, persistence and real HA runtime component tests.
+- **Deployment options:** local Python service or Docker Compose. No reverse proxy required.
+
+The service is a new application-specific API, not a BRC-100 wallet server. A later adapter can translate this contract into actual wallet operations; the candidate server documents `createAction`, `signAction` and `internalizeAction`, but those methods are not called by this mock ([candidate wallet server](https://github.com/Calhooon/bsv-wallet-cli)).
+
+## Quick start: local Python
+
+Use Python 3.13 or 3.14. Run all commands from the extracted `bsv-ocpp-poc` directory.
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+
+export MOCK_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export MOCK_APPROVAL_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export MOCK_DB="$PWD/data/wallet.sqlite3"
+
+python -m uvicorn wallet_service.app:create_app --factory \
+  --host 127.0.0.1 --port 8091
+```
+
+Keep those environment variables available to the CLI. Either use a second terminal with the same values or stop the foreground service and restart it using your normal local process manager. Generate the tokens once for a test installation; changing them requires updating HA and any CLI environment.
+
+Do not reuse a real wallet secret as either token. The HA API token cannot access the mock approval endpoints, and the approval token should not be placed in HA.
+
+With the service running, in a shell containing the same token values:
+
+```sh
+. .venv/bin/activate
+python scripts/mock_cli.py demo
+```
+
+This command deliberately simulates approval for three newly generated test sessions. It should print:
+
+| Case | Net AUD account | Direction | Synthetic sats | Result |
+|---|---:|---|---:|---|
+| Debit | +0.60 | Driver to operator | 6,000 | `mock_received` |
+| Credit | -0.30 | Operator to driver | 3,000 | `mock_received` |
+| Zero | 0.00 | None | 0 | `no_payment_due` |
+
+Every run uses new session IDs. Mock receipts start with `MOCK-`; `txid` is always null. The conversion is a synthetic constant of 10,000 satoshis per AUD, not a market rate, and network fees are simulated as zero.
+
+## Docker alternative
+
+Set both token environment variables as above, then:
+
+```sh
+docker compose up --build -d
+docker compose logs -f
+```
+
+The Compose definition binds port 8091 to loopback only and persists SQLite in a named volume. The application runs as a non-root user. The Docker build recipe is supplied but was not built in this sandbox.
+
+For a separate HA device, intentionally change the port binding to an appropriate host/LAN address and firewall access to the test machines. HTTP is permitted by this mock scaffold for an isolated test network; it sends bearer tokens unencrypted. Use direct HTTPS on shared or untrusted networks. This is an exception for mock testing, not a proposed live-payment deployment.
+
+## Install the Home Assistant scaffold
+
+1. Back up your Home Assistant configuration.
+2. Copy `custom_components/bsv_settlement` into `/config/custom_components/bsv_settlement`.
+3. Restart Home Assistant.
+4. Open Settings, Devices & services, Add integration, then search for **BSV Settlement (Mock PoC)**.
+5. Supply the service URL and `MOCK_API_TOKEN`. Do not supply the approval token.
+6. Use the sample script below or call the actions from Developer Tools.
+
+The URL is the service origin, such as `http://192.168.1.20:8091`, with no `/v1` suffix. `127.0.0.1` means the HA process's own network namespace: it will not reach a separate Docker container, HA add-on or another computer. This repository is not an HA OS add-on package.
+
+The component rejects a service whose health response is not `mode: mock`. There is deliberately no live-mode switch.
+
+HA supports custom components under the configuration directory, action descriptions in `services.yaml` and coordinated polling; the scaffold uses these mechanisms ([HA file structure](https://developers.home-assistant.io/docs/creating_integration_file_structure/), [HA service actions](https://developers.home-assistant.io/docs/dev_101_services/)).
+
+### Run the HA credit example
+
+Copy the mapping from `examples/ha_demo_script.yaml` into `scripts.yaml`, preserving your other scripts, then reload scripts. Run **BSV mock credit demonstration** and select the integration config entry.
+
+The script:
+
+1. Binds a synthetic session to `driver-demo-01`.
+2. Records 3 kWh import at AUD0.30/kWh and 2 kWh export at AUD0.60/kWh.
+3. Reconciles the interval sums against the supplied final session deltas.
+4. Prepares an AUD0.30 credit and requests simulated payer approval.
+
+It stops at `awaiting_approval`. Read `settlement_id` from the settlement-status sensor's attributes. On the service machine, explicitly simulate the payer's decision:
+
+```sh
+python scripts/mock_cli.py status <settlement_id>
+python scripts/mock_cli.py approve <settlement_id>
+# Or: python scripts/mock_cli.py decline <settlement_id>
+```
+
+The approval is acted on by the mock service, not a real driver or operator wallet. HA refreshes within about 15 seconds, or you can invoke `bsv_settlement.refresh`.
+
+Optionally simulate a later confirmation:
+
+```sh
+python scripts/mock_cli.py confirm <settlement_id>
+```
+
+This sets `mock_confirmed` and `simulated_confirmations: 1`. Real chain `confirmations` remain zero and `txid` stays null.
+
+## HA interface
+
+All actions require `config_entry_id`. Except for `refresh`, they also require `session_id`.
+
+| Action | Additional input |
+|---|---|
+| `bsv_settlement.bind_session` | `started_at` with timezone; `driver_binding_id: driver-demo-01` |
+| `bsv_settlement.add_interval` | `interval` object below |
+| `bsv_settlement.prepare_session` | `ended_at`, `final_import_wh`, `final_export_wh` |
+| `bsv_settlement.request_payment` | None; uses the stored quote |
+| `bsv_settlement.refresh` | None |
+
+`add_interval` is an explicit addition to the earlier interface draft. It makes the scaffold runnable without guessing OCPP entity names. A future adapter should translate validated meter and tariff data into these actions.
+
+Example interval:
+
+```yaml
+start: "2026-10-02T02:00:00Z"
+end: "2026-10-02T02:30:00Z"
+import_wh: 3000
+export_wh: 2000
+import_price_aud_per_kwh: "0.30"
+export_price_aud_per_kwh: "0.60"
+price_status: final
+tariff_version: demo-v1
+meter_quality: validated
+```
+
+This synthetic 30-minute interval assumes constant prices. For a real session, supply intervals at the actual tariff boundaries. Prices are signed decimal strings in AUD/kWh; directional energy quantities are nonnegative integer Wh.
+
+An exact repeated interval is ignored. Conflicting overlaps, gaps at finalisation, missing timezone, provisional prices, invalid numbers and mismatched final energy totals are rejected. The `validated` label is a caller assertion, not independent physical-meter validation.
+
+The formula is:
+
+```text
+sum(import_kWh × import_price - export_kWh × export_price)
+```
+
+Round the final AUD account once to cents using `ROUND_HALF_UP`. A positive net amount means the driver owes; a negative amount means the operator owes. Negative prices are supported.
+
+### Sensors and events
+
+The device exposes session import energy, session export energy, signed net AUD amount, settlement state and quoted satoshis. It shows the latest selected session; older records remain in storage.
+
+The net AUD sensor is populated after preparation, not as an estimated running cost. The service state and receipt fields distinguish a simulated payment from a blockchain receipt.
+
+The `bsv_settlement_status_changed` event includes session ID, settlement ID, state and `mode: mock`. A restart may re-emit the current status. Events are advisory; storage remains authoritative.
+
+## Wallet-service contract
+
+Authentication is `Authorization: Bearer <token>`. The interactive OpenAPI documentation is available on the local service at `/docs`, with a machine-readable schema at `/openapi.json`; the API itself still requires an Authorization header. The included `openapi.json` is generated from this implementation.
+
+| Endpoint | Credential | Purpose |
+|---|---|---|
+| `GET /v1/health` | API | Mode, network, backend capabilities |
+| `GET /v1/wallet-bindings/{binding_id}` | API | One of the two synthetic identities |
+| `PUT /v1/settlements/{uuid}` | API | Create/reuse immutable settlement |
+| `POST /v1/settlements/{uuid}/request-payment` | API | Create/reuse simulated approval request |
+| `GET /v1/settlements/{uuid}` | API | Read current state and receipt |
+| `POST /v1/settlements/{uuid}/quotes` | API | Replace an expired, unsubmitted quote |
+| `POST /v1/mock/settlements/{uuid}/decision` | Approval | Simulate approve/decline |
+| `POST /v1/mock/settlements/{uuid}/confirm` | Approval | Simulate a later confirmation |
+
+The CLI and tests show complete request examples. `PUT` returns 201 on creation, 200 on an identical repeat, and 409 on conflicting content or a second settlement for the same session. Validation failures return 422; missing/wrong tokens return 401.
+
+The request carries `net_amount_minor` as signed AUD cents, directional Wh totals, a SHA-256 digest of the frozen ledger and a pricing summary. The service checks summary arithmetic but trusts HA for the underlying tariff and meter evidence.
+
+### Approval and quote rules
+
+The fixed synthetic quote expires after five minutes. Approval must identify the current quote and approval request, and stale requests cannot be used after a quote replacement.
+
+In HA, call `prepare_session` again with the original finalisation inputs to replace an expired quote, then call `request_payment`. The frozen energy account and settlement ID remain unchanged.
+
+Repeated approval returns the same receipt. Opposite decisions conflict. A declined account stays outstanding; automatic reopening of declined payments is intentionally not implemented.
+
+### Persistence and recovery
+
+The service uses database transactions and unique session/settlement identifiers. Concurrent approvals serialize and produce one mock receipt. HA saves its settlement UUID and immutable request before calling the service, allowing a timed-out prepare to be retried without creating another record.
+
+Service data lives at `MOCK_DB`; HA data lives in a versioned `.storage` record per config entry. Preserve both if restarting or moving the demonstration. Do not manually edit storage while either service is running.
+
+This mock has no external blockchain side effect. Its successful restart/concurrency tests do not establish exactly-once behaviour for a future live wallet backend.
+
+## Testing
+
+Core tests:
+
+```sh
+python -m pytest -q tests/test_poc.py
+python -m compileall -q wallet_service custom_components scripts
+```
+
+Optional HA runtime tests require a Python version supported by the installed Home Assistant release:
+
+```sh
+python -m pip install "homeassistant==2026.9.4" pytest-asyncio
+python -m pytest -q tests
+```
+
+The HA tests use real Home Assistant classes for action registration, storage, configuration form and sensors, with an in-process HTTP transport to the mock service. They do not connect to your HA instance.
+
+See `TEST_RESULTS.md` for the actual verification performed. Dependency ranges are provided for the mock service; they are not a security-reviewed production lockfile.
+
+## Deliberate omissions before live operation
+
+- **OCPP adapter:** map your actual transaction, connector, meter counters and end-of-session signals. Neither charger control nor CSIP-AUS/HAEO behaviour is changed.
+- **Tariff adapter:** ingest reliable, timestamped final import/export prices and establish defensible interval energy allocation.
+- **Wallet binding and approval:** prove identity possession and integrate the chosen driver wallet's approval/receipt mechanism. Mock identities are not verified real identities.
+- **Live quote and fees:** implement an agreed conversion source, actual fees and wallet minimums. The fixed mock conversion never creates a nonzero sub-satoshi amount.
+- **Transaction lifecycle:** implement actual signing, receipt verification, recipient acceptance, broadcast ambiguity, reconciliation and chain confirmations.
+- **Operational hardening:** authentication review, transport security, rate limits, retention, backup/restore, clock handling and key custody.
+- **Distribution:** no HACS listing, HA OS add-on, live wallet adapter or automatic update channel is supplied.
+
+BRC-29 payment delivery requires transaction and remittance/proof handling, not merely a transaction ID; that is a later wallet-adapter task ([BRC-29](https://bsv.brc.dev/payments/0029)).
+
+The first live milestone should remain a small, supervised operator-to-driver credit followed by the reverse payment. Neither should be enabled by simply renaming `mock_received`.
