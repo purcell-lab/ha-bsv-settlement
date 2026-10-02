@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: Home Assistant OS deployment
+
+- Add a separately installable BSV Wallet Mock app/add-on with persistent storage and internal-only networking.
+- Pin its wallet-service source to the MIT-licensed implementation commit.
+- Verify HACS installation, the official integration configuration flow, synthetic debit/credit/zero sessions and persistence across a mock-service restart.
+- Leave existing HA configuration and charger controls unchanged.
+
 ## 0.1.2: MIT licence
 
 - Add the owner-approved MIT licence for the original code and documentation.

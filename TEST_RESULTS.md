@@ -1,6 +1,6 @@
 # Verification results
 
-Verified in the sandbox on 2 October 2026. No tests contacted a real wallet, blockchain endpoint, charger or the user's Home Assistant installation.
+Verified in the sandbox and subsequently in a Home Assistant OS deployment on 2 October 2026. No test contacted a real wallet or blockchain endpoint, and no test operated a charger.
 
 ## Automated tests
 
@@ -36,6 +36,24 @@ Both nonzero cases returned `MOCK-` receipts and null txids. No actual BSV trans
 
 ## Boundaries of verification
 
-The HA Python components were exercised, not a complete deployed HA UI installation. Docker/Compose recipes have not been built here. Automatic OCPP capture, dynamic tariff ingestion, live wallet approval, live payments and blockchain recovery are not implemented or tested.
+The standalone Docker/Compose recipe has not been built in the sandbox. The separate Home Assistant OS add-on image was built and exercised on its target system as described below. Automatic OCPP capture, dynamic tariff ingestion, live wallet approval, live payments and blockchain recovery are not implemented or tested.
 
 The public repository includes an official HACS validation workflow. Its remote outcome is recorded in GitHub Actions; local metadata tests alone are not evidence of default HACS catalogue acceptance or an end-user installation test.
+
+## Installed Home Assistant OS verification
+
+Installed the integration through HACS at v0.1.2 and built the separate BSV Wallet Mock add-on at 0.1.0 on an amd64 Home Assistant OS 18.3 system running HA 2026.10.0b0. The integration's official configuration flow completed and its config entry reached `loaded` without restarting Home Assistant.
+
+The installed HA actions, rather than only the standalone CLI, produced:
+
+| Synthetic session | HA account | Service outcome |
+|---|---:|---|
+| Driver debit | AUD0.60 | 6,000 synthetic sats, `mock_received` |
+| Zero balance | AUD0.00 | `no_payment_due`, no receipt |
+| Driver credit | AUD-0.30 | 3,000 synthetic sats, `mock_received` |
+
+Repeating each nonzero approval returned the same receipt. Restarting only the new mock add-on preserved the credit record and receipt. The five HA sensors showed 3 kWh import, 2 kWh export, AUD-0.30, `mock_received` and 3,000 synthetic sats for the final test.
+
+The add-on was verified running with automatic start, protection enabled, no host port mapping, no privileged capabilities, and no Supervisor or Home Assistant API permission. Tokens were generated for mock use and were not committed or printed. No git-managed HA configuration, charger control or existing automation was changed.
+
+HACS can retain its generic restart-required notice after download even when this newly added integration has loaded successfully. A complete HA restart was not required for this verification.
