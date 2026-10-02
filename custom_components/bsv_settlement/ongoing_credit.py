@@ -209,6 +209,12 @@ class OngoingCredits(AutomaticCredits):
             try:
                 record = await self.api.collections.source(row)
                 if not record.get("ended_at"):
+                    self.guard(row)
+                    if item:
+                        raise WalletError("Frozen credit account reopened; review it without replacing payment")
+                    route["state"] = "waiting_for_session_end"
+                    route.pop("error", None)
+                    await self.save()
                     continue
                 account = await self.account(row)
                 if decimal(account["net_amount_aud"]) >= 0:
