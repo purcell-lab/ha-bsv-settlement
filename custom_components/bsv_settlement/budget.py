@@ -2,6 +2,7 @@
 import copy
 from datetime import timedelta, datetime
 import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -111,7 +112,8 @@ class SessionBudgets:
 
     def public(self, row):
         result = copy.deepcopy(row)
-        for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by", "driver_token_hash"):
+        for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by",
+                    "driver_token_hash", "driver_link_scheme"):
             result.pop(key, None)
         if row["state"] != "revoked" and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
             result["state"] = "expired"
@@ -119,6 +121,24 @@ class SessionBudgets:
             result["collection"] = self.api.collections.public(collection)
         if hasattr(self.api, "auto_credits"):
             result["automatic_credit"] = self.api.auto_credits.status(row)
+        return result
+
+    def link_token(self, budget_id):
+        """Domain-separated capability; only its hash is persisted."""
+        message = canonical({"purpose": "ha-bsv-settlement:driver-link:v1",
+                             "entry_id": self.api.entry.entry_id, "budget_id": budget_id})
+        raw = hmac.new(bytes.fromhex(self.api.identity["secret_hex"]),
+                       message.encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    def admin_status(self, row):
+        """Only the administrator service may redisplay a pending capability."""
+        result = self.public(row)
+        if (result["state"] == "awaiting_driver_consent" and not row.get("receipt") and
+                row.get("driver_link_scheme") == "hmac-sha256-v1"):
+            token = self.link_token(row["terms"]["budget_id"])
+            if secrets.compare_digest(sha(token), row.get("driver_token_hash", "")):
+                result["driver_link_fragment"] = f"#budget={row['terms']['budget_id']}&token={token}"
         return result
 
     def prices(self, row):
@@ -188,7 +208,7 @@ class SessionBudgets:
         if not row:
             raise WalletError("Budget invitation not found")
         if action == "session_budget_status":
-            return self.public(row)
+            return self.admin_status(row)
         if action == "revoke_session_budget":
             row["state"] = "revoked"
             await self.api.store.async_save(self.api.saved)
@@ -327,10 +347,11 @@ class SessionBudgets:
         operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
         invitation = {"version": 1, "payload": payload,
                       "signature": operator.sign(payload.encode(), hasher=message_hash).hex()}
-        token = secrets.token_urlsafe(32)
+        token = self.link_token(budget_id)
         row = {"terms": terms, "invitation": invitation, "state": "awaiting_driver_consent",
                "session_key": key, "proxy_config_entry_id": data["proxy_config_entry_id"],
-               "created_by": user_id, "receipt": None, "driver_token_hash": sha(token)}
+               "created_by": user_id, "receipt": None, "driver_token_hash": sha(token),
+               "driver_link_scheme": "hmac-sha256-v1"}
         self.api.saved["session_budgets"][budget_id] = row
         self.api.saved["latest_session_budget"] = budget_id
         await self.api.store.async_save(self.api.saved)

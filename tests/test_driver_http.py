@@ -59,7 +59,8 @@ async def test_pre_session_defaults_token_redaction_and_no_backdating(tmp_path):
     assert access(row)["token"] not in json.dumps(saved)
     again=await api.budgets.execute("create_session_budget",data,"admin")
     assert again=={k:v for k,v in row.items() if k!="driver_link_fragment"}
-    assert (await api.budgets.execute("session_budget_status",{},"admin"))==again
+    status=await api.budgets.execute("session_budget_status",{},"admin")
+    assert status==again|{"driver_link_fragment":row["driver_link_fragment"]}
     await api.budgets.execute("accept_session_budget",
         {"budget_id":row["terms"]["budget_id"],"receipt":consent(row)},"admin")
     with pytest.raises(WalletError,match="after consent"):
