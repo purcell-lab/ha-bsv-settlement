@@ -4,7 +4,7 @@ Verified in the sandbox on 2 October 2026. No tests contacted a real wallet, blo
 
 ## Automated tests
 
-`python -m pytest -q tests` completed with **23 passing tests** against Python 3.14.3, Home Assistant 2026.9.4 and FastAPI 0.142.2.
+`python -m pytest -q tests` completed with **26 passing tests** for v0.1.1 against Python 3.14.3, Home Assistant 2026.9.4 and FastAPI 0.142.2. The original v0.1.0 suite contained 23 tests; three distribution checks were added for HACS metadata, manifest requirements, branding and translations.
 
 Coverage includes:
 
@@ -37,3 +37,5 @@ Both nonzero cases returned `MOCK-` receipts and null txids. No actual BSV trans
 ## Boundaries of verification
 
 The HA Python components were exercised, not a complete deployed HA UI installation. Docker/Compose recipes have not been built here. Automatic OCPP capture, dynamic tariff ingestion, live wallet approval, live payments and blockchain recovery are not implemented or tested.
+
+The public repository includes an official HACS validation workflow. Its remote outcome is recorded in GitHub Actions; local metadata tests alone are not evidence of default HACS catalogue acceptance or an end-user installation test.

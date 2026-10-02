@@ -1,6 +1,8 @@
 # BSV session settlement: runnable mock and HA scaffold
 
-Version 0.1.0 | Prepared for Mark Purcell | 2 October 2026
+Version 0.1.1 | Prepared for Mark Purcell | 2 October 2026
+
+![BSV Settlement mock integration icon](brand/icon.png)
 
 **A runnable, mock-only implementation of session-end payment or credit.** There is no budget process, prepayment, real wallet connection, private key, blockchain broadcast or real money movement. The HA scaffold collects explicit interval inputs; it does not yet subscribe to an installed OCPP integration.
 
@@ -71,7 +73,25 @@ The Compose definition binds port 8091 to loopback only and persists SQLite in a
 
 For a separate HA device, intentionally change the port binding to an appropriate host/LAN address and firewall access to the test machines. HTTP is permitted by this mock scaffold for an isolated test network; it sends bearer tokens unencrypted. Use direct HTTPS on shared or untrusted networks. This is an exception for mock testing, not a proposed live-payment deployment.
 
-## Install the Home Assistant scaffold
+## Install with HACS
+
+This repository supports the **HACS custom repository** installation path. It is not included in the default HACS catalogue, and neither HACS nor Home Assistant has certified the payment functionality.
+
+The declared minimum is Home Assistant **2026.9.4**, the version used for the runtime component tests. HACS installs only `custom_components/bsv_settlement`; it does not deploy the separate mock wallet service, install Docker, configure a real wallet or connect your charger.
+
+1. Start the mock wallet service using the local Python or Docker instructions above.
+2. In HACS, open the three-dot menu and choose **Custom repositories**.
+3. Add `https://github.com/purcell-lab/ha-bsv-settlement` and select type **Integration**.
+4. Find **BSV Settlement (Mock PoC)** in HACS and download it.
+5. Restart Home Assistant.
+6. Open Settings, Devices & services, Add integration and choose **BSV Settlement (Mock PoC)**.
+7. Enter the service URL and API token, then run the sample script below.
+
+These menu steps follow the documented [HACS custom-repository process](https://www.hacs.xyz/docs/faq/custom_repositories/). The repository uses the single-integration folder structure and root metadata described by [HACS integration requirements](https://www.hacs.xyz/docs/publish/integration/) and [general requirements](https://www.hacs.xyz/docs/publish/start/).
+
+When a new release is available, update through HACS and restart HA. The service remains a separate deployment; review release notes for API compatibility before updating either side. Back up both the HA storage and service database.
+
+### Manual installation alternative
 
 1. Back up your Home Assistant configuration.
 2. Copy `custom_components/bsv_settlement` into `/config/custom_components/bsv_settlement`.
@@ -226,7 +246,7 @@ See `TEST_RESULTS.md` for the actual verification performed. Dependency ranges a
 - **Live quote and fees:** implement an agreed conversion source, actual fees and wallet minimums. The fixed mock conversion never creates a nonzero sub-satoshi amount.
 - **Transaction lifecycle:** implement actual signing, receipt verification, recipient acceptance, broadcast ambiguity, reconciliation and chain confirmations.
 - **Operational hardening:** authentication review, transport security, rate limits, retention, backup/restore, clock handling and key custody.
-- **Distribution:** no HACS listing, HA OS add-on, live wallet adapter or automatic update channel is supplied.
+- **Distribution:** HACS custom-repository metadata and release-based updates are supplied. There is no default HACS catalogue listing, HA OS add-on or live wallet adapter.
 
 BRC-29 payment delivery requires transaction and remittance/proof handling, not merely a transaction ID; that is a later wallet-adapter task ([BRC-29](https://bsv.brc.dev/payments/0029)).
 
