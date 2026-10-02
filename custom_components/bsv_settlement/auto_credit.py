@@ -14,6 +14,7 @@ MAX_TOTAL = 1000
 FEE = 10
 PROTOCOL = [2, "3241645161d8"]
 PENDING = ("broadcast_unknown", "submitted", "provider_unconfirmed")
+CONFIRMED_RECHECK_SECONDS = 15 * 60
 
 
 class AutomaticCredits:
@@ -219,22 +220,46 @@ class AutomaticCredits:
         await self.save()
         await self.api.refresh_balance_if_due()
 
-    async def reconcile(self, item):
-        if item["state"] not in PENDING:
+    async def reconcile(self, item, *, force=False):
+        if item["state"] not in (*PENDING, "provider_confirmed"):
             return
-        details = await self.api.chain.details(item["txid"])
-        raw = await self.api.chain.request("GET", f"/tx/{item['txid']}/hex", raw=True)
-        if raw != item["signed_raw"] or Transaction.from_hex(raw).txid() != item["txid"]:
-            raise WalletError("Provider credit evidence does not match the signed transaction")
-        confirmations = details.get("confirmations", 0)
-        if type(confirmations) is not int or confirmations < 0:
-            raise WalletError("Invalid confirmation evidence")
+        if item["state"] == "provider_confirmed" and not force:
+            try:
+                age = (now() - datetime.fromisoformat(item["checked_at"])).total_seconds()
+                if 0 <= age < CONFIRMED_RECHECK_SECONDS:
+                    return
+            except (KeyError, TypeError, ValueError):
+                pass  # Old or invalid timestamps require fresh evidence, not assumed finality.
+        previous = item["state"]
+        try:
+            details = await self.api.chain.details(item["txid"])
+            raw = await self.api.chain.request("GET", f"/tx/{item['txid']}/hex", raw=True)
+            if details.get("txid") != item["txid"] or raw != item["signed_raw"]:
+                raise WalletError("Provider credit evidence does not match the signed transaction")
+            try:
+                matches = Transaction.from_hex(raw).txid() == item["txid"]
+            except Exception:
+                matches = False
+            if not matches:
+                raise WalletError("Provider credit transaction is invalid")
+            confirmations = details.get("confirmations")
+            if type(confirmations) is not int or confirmations < 0:
+                raise WalletError("Invalid confirmation evidence")
+        except WalletError:
+            item.update(state="broadcast_unknown", confirmations=None,
+                        error="Credit evidence unavailable or inconsistent. Reconcile this txid; never replace it.")
+            item.pop("receipt", None)
+            self.api.invalidate_balance("credit_evidence_requires_reconciliation")
+            await self.save()
+            raise WalletError(item["error"]) from None
+        # A proof cached for a previous block must never survive reassessment.
+        item.pop("receipt", None)
         item.update(state="provider_confirmed" if confirmations else "provider_unconfirmed",
                     confirmations=confirmations, checked_at=now().isoformat(), error=None)
-        if confirmations:
-            self.api.invalidate_balance("refresh_required_after_confirmation")
+        if item["state"] != previous:
+            self.api.invalidate_balance("refresh_required_after_confirmation_change")
         await self.save()
-        if confirmations:
+        if item["state"] != previous:
             await self.api.refresh_balance_if_due()
 
     async def tick(self):
@@ -270,6 +295,8 @@ class AutomaticCredits:
         return await self.receipt_for_item(row, item)
 
     async def receipt_for_item(self, row, item):
+        if item and item.get("txid"):
+            await self.reconcile(item, force=True)
         if not item or item["state"] != "provider_confirmed":
             raise WalletError("Credit receipt awaits provider confirmation")
         if not item.get("receipt"):

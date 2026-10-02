@@ -18,6 +18,12 @@ class CreditChain(FictionalChain):
     async def request(self, method, path, raw=False):
         if self.fail:
             raise WalletError("Provider unavailable")
+        if path.endswith("/proof/tsc"):
+            return [{"txOrId":Transaction.from_hex(self.posts[-1]).txid(),
+                     "index":0, "nodes":[], "target":"22"*32}]
+        if path.startswith("/block/hash/"):
+            return {"hash":"22"*32, "height":800000,
+                    "merkleroot":Transaction.from_hex(self.posts[-1]).txid()}
         return self.posts[-1]
 
 
