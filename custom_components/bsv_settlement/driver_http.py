@@ -56,6 +56,6 @@ class DriverBudgetView(HomeAssistantView):
                     await coord.api.budgets.accept(row, data.get("receipt"), "driver_capability")
                 result = coord.api.budgets.driver_view(row)
             return web.json_response(result,headers=headers)
-        except (ValueError, TypeError, WalletError) as exc:
+        except (ValueError, TypeError, RecursionError, WalletError) as exc:
             message = str(exc) if isinstance(exc,WalletError) else "Invalid request"
             return web.json_response({"error":message},status=400,headers=headers)

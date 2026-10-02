@@ -66,6 +66,8 @@ class SessionBudgets:
                 if state is None or state.attributes.get("unit_of_measurement") not in ("$/kWh", "AUD/kWh"):
                     raise ValueError()
                 value = decimal(state.state)
+                if abs(value) > 1000000:
+                    raise ValueError()
                 start, end = (state.attributes.get(x) for x in ("start_time", "end_time"))
                 start = start if isinstance(start, datetime) else datetime.fromisoformat(start)
                 end = end if isinstance(end, datetime) else datetime.fromisoformat(end)

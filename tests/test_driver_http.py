@@ -115,6 +115,8 @@ async def test_http_auth_limits_and_tariff_failure(tmp_path):
         assert r.status==403
         r=await client.post(view.url,data=b" "*20001,headers={"Content-Type":"application/json"})
         assert r.status==413
+        r=await client.post(view.url,data=b"["*2000+b"]"*2000,headers={"Content-Type":"application/json"})
+        assert r.status==400
         hass.states.async_set("sensor.demo_import_price","unavailable")
         r=await client.post(view.url,json=args|{"action":"read"})
         assert (await r.json())["prices"]["valid"] is False
