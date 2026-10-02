@@ -64,4 +64,16 @@ The offline self-test remains a fictional-source transaction and never uses real
 
 Automated tests use real SDK signatures with fictional chain responses. They exercise exact approval checks, invalid identity/address rejection, expiry, immutable references, changed drivers, spent-input checks, restart persistence, admin-only services, timeout recovery and duplicate-call suppression. Passing tests are not evidence of a live mainnet transfer.
 
+### Activated HA deployment
+
+On 2 October 2026, the development branch was installed through HACS and activated after an authorised restart. A separate mainnet entry loaded on HA 2026.10.0b0 with guarded broadcasting enabled. The 45-test suite and official HACS validation passed ([CI run](https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/36964759591)).
+
+The installed mainnet wallet passed its offline identity, fictional-transaction signing and script-verification checks. Native text input actions accepted a temporary public identity and mainnet receiving address; the test values were then cleared. The operator public identity and receiving address survived an integration-entry reload. Existing testnet and mock entries remained loaded and refreshed successfully.
+
+The private HA dashboard now shows separate mainnet, offline testnet and mock sections. Mainnet has owner identity and receiving address, two native driver-entry dialogs, guarded broadcast status and a read-only chain refresh button. There is no one-click send-money button.
+
+The provider returned HTTP 404 for the newly generated, unfunded operator address. The integration retained an **unknown** balance and a chain-check error rather than claiming a verified zero balance. Receiving details remain locally valid, but live funding discovery and transaction submission have not been demonstrated.
+
+No mainnet payment was prepared, funded or broadcast during deployment. Public documentation deliberately omits the operator identity/address and private site/config-entry identifiers. Make and verify a protected recovery backup before funding.
+
 The integration code remains MIT. The BSV SDK dependency retains its own [Open BSV licence](https://github.com/bsv-blockchain/py-sdk/blob/master/LICENSE.txt).
