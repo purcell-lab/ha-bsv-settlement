@@ -49,6 +49,8 @@ async def test_initial_credit_shared_exclusion_restart_and_receipt_scope(tmp_pat
     receipt = await restored.ongoing_credits.driver_receipt(row, route["route_id"])
     assert receipt["budget_id"] == row["terms"]["budget_id"]
     assert receipt["remittance"] == row["terms"]["credit_receiving"]
+    assert receipt["energy_account"]["session_id"] == item["session_id"]
+    assert receipt["energy_account"]["net_amount_aud"] == "-1.89"
     stranger = copy.deepcopy(row); stranger["terms"]["budget_id"] = "different-registration"
     with pytest.raises(WalletError, match="does not belong"):
         await restored.ongoing_credits.driver_receipt(stranger, route["route_id"])

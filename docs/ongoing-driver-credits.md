@@ -67,6 +67,21 @@ Receipt import does not send another payment. Access is capability-scoped,
 including after spending approval expires, so the driver can receive completed
 credits without giving new spending authority.
 
+### Wallet transaction title
+
+Newly imported credits include total session energy and the average net credit,
+for example `EV session credit | 10.00 kWh exported | avg net credit A$0.2800/kWh`.
+For two-way sessions, total energy is import plus export, with both amounts shown.
+The average is the settled AUD credit divided by total energy. It excludes the
+BSV transaction fee and is not a charging tariff, export tariff or BSV exchange rate.
+
+Energy comes from the frozen payment account. For older payments, the server
+uses retained history only if its hash matches that original account. Missing
+or invalid metadata keeps the original generic title rather than inventing
+energy or a rate. This is wallet description metadata, not a change to the
+transaction, amount or recipient. Previously imported wallet entries are not
+automatically renamed; importing a receipt again is not used to force a rename.
+
 ## Configuration
 
 Use administrator-only `bsv_settlement.configure_ongoing_credit` with:

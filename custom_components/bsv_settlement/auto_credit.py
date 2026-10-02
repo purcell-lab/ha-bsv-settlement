@@ -177,6 +177,7 @@ class AutomaticCredits:
                 "session_id": account["session_id"], "transaction_id": account["ocpp_transaction_id"],
                 "recipient_address": row["credit_destination"]["address"],
                 "amount_sats": amount, "fee_sats": FEE, "net_amount_aud": str(aud),
+                "account": copy.deepcopy(account),
                 "source_hash": digest(account), "created_at": now().isoformat(),
                 "policy_enabled_at": self.policy["enabled_at"],
             }
@@ -283,7 +284,25 @@ class AutomaticCredits:
             item["receipt"] = {"raw_tx": item["signed_raw"], "proof": proof[0],
                                "block": {k: block.get(k) for k in ("hash", "height", "merkleroot")}}
             await self.save()
+        # Descriptive energy metadata is not part of the blockchain transaction.
+        # Older payments can recover it only from the exact frozen source hash.
+        account = item.get("account")
+        if account is None:
+            try:
+                account = await self.api.reviews.source(
+                    row["proxy_config_entry_id"], item["session_id"])
+            except WalletError:
+                account = None
+        if (account is not None and
+                (digest(account) != item["source_hash"] or
+                 account.get("session_id") != item["session_id"] or
+                 account.get("ocpp_transaction_id") != item["transaction_id"] or
+                 account.get("net_amount_aud") != item["net_amount_aud"])):
+            account = None
         return self.public(item) | copy.deepcopy(item["receipt"]) | {
             "remittance": row["terms"]["credit_receiving"],
             "sender_identity": self.api.identity["public_key"],
+            "energy_account": ({k: copy.deepcopy(account[k]) for k in (
+                "session_id", "ocpp_transaction_id", "import_kwh", "export_kwh",
+                "net_amount_aud", "currency")} if account else None),
         }

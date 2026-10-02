@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { PrivateKey, ProtoWallet, PublicKey, Transaction, P2PKH } from "@bsv/sdk";
-import { registerCredit, creditTransaction, importCredit } from "./credit.js";
+import { registerCredit, creditTransaction, importCredit, creditDescription } from "./credit.js";
 import { canonical } from "./model.js";
 
 const operator=PrivateKey.fromRandom(), driver=PrivateKey.fromRandom();
@@ -41,6 +41,42 @@ test("confirmed credit imports Atomic BEEF without creating a payment",async()=>
   assert.equal(Transaction.fromAtomicBEEF(imported.tx).id("hex"),receipt.txid);
   assert.equal(imported.outputs[0].protocol,"wallet payment");
   assert.equal(imported.outputs[0].paymentRemittance.senderIdentityKey,terms.operator_identity);
+  assert.equal(imported.description,"EV session energy credit");
+});
+function energyReceipt(imported,exported,net="-2.80"){
+  return {session_id:"session-1",transaction_id:"proxy-1",net_amount_aud:net,
+    energy_account:{session_id:"session-1",ocpp_transaction_id:"proxy-1",currency:"AUD",
+      import_kwh:imported,export_kwh:exported,net_amount_aud:net}};
+}
+test("wallet credit title includes total energy and net average, not the fee or FX rate",()=>{
+  const r=energyReceipt(0,10);
+  assert.equal(creditDescription({...r,fee_sats:10,amount_sats:280}),
+    "EV session credit | 10.00 kWh exported | avg net credit A$0.2800/kWh");
+  assert.equal(creditDescription(energyReceipt(2,8)),
+    "EV session credit | 10.00 kWh total (2.00 in, 8.00 out) | avg net credit A$0.2800/kWh");
+  assert.equal(creditDescription(energyReceipt(10,0)),
+    "EV session credit | 10.00 kWh charged | avg net credit A$0.2800/kWh");
+});
+test("missing, invalid or mismatched energy never fabricates a wallet average",()=>{
+  for(const change of [
+    {import_kwh:null},{export_kwh:""},{export_kwh:NaN},{import_kwh:-1},
+    {import_kwh:0,export_kwh:0},{export_kwh:Infinity},{net_amount_aud:"0"},
+    {net_amount_aud:"-9"},{currency:"USD"},{session_id:"another"},{ocpp_transaction_id:"another"},
+  ]){
+    const r=energyReceipt(0,10);Object.assign(r.energy_account,change);
+    assert.equal(creditDescription(r),"EV session energy credit");
+  }
+  assert.equal(creditDescription(energyReceipt(0,0.00001)),"EV session energy credit");
+});
+test("receiving wallet gets the enriched title without changing the credit transaction",async()=>{
+  const {receipt}=await fixture();
+  Object.assign(receipt,energyReceipt(0,10,"-1.89"));
+  let imported;
+  wallet.internalizeAction=async x=>{imported=x;return {accepted:true};};
+  await importCredit(wallet,checked,receipt);
+  assert.equal(imported.description,
+    "EV session credit | 10.00 kWh exported | avg net credit A$0.1890/kWh");
+  assert.equal(Transaction.fromAtomicBEEF(imported.tx).id("hex"),receipt.txid);
 });
 test("wrong destination, amount, txid and Merkle root fail closed",async()=>{
   const {address,receipt}=await fixture();

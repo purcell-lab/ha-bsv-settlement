@@ -62,6 +62,28 @@ async def test_pays_without_browser_or_per_payment_approval_and_freezes_rate(tmp
     assert (await api.collections.status(row))["direction"] == "operator_to_driver"
     assert "signed_raw" not in canonical(api.auto_credits.summary())
 
+async def test_credit_receipt_energy_is_frozen_and_legacy_recovery_is_hash_checked(tmp_path):
+    _, api, proxy, row, _, _ = await ready(tmp_path)
+    record = proxy.data["latest_session"]
+    record.update(import_kwh=2, export_kwh=8)
+    await api.auto_credits.tick()
+    await api.auto_credits.tick()
+    item = api.auto_credits.get(row)
+    item["receipt"] = {"raw_tx":item["signed_raw"], "proof":{}, "block":{}}
+    r = await api.auto_credits.receipt(row)
+    assert r["energy_account"]["import_kwh"] == 2
+    assert r["energy_account"]["export_kwh"] == 8
+    assert r["energy_account"]["net_amount_aud"] == "-1.89"
+    record["export_kwh"] = 99
+    assert (await api.auto_credits.receipt(row))["energy_account"]["export_kwh"] == 8
+    item.pop("account")  # An older payment, before frozen energy metadata was saved.
+    assert (await api.auto_credits.receipt(row))["energy_account"] is None
+    record["export_kwh"] = 8
+    assert (await api.auto_credits.receipt(row))["energy_account"]["export_kwh"] == 8
+    proxy.data["latest_session"] = None
+    assert (await api.auto_credits.receipt(row))["energy_account"] is None
+    assert len(api.chain.posts) == 1
+
 
 async def test_unknown_submission_and_restart_never_rebroadcast(tmp_path):
     hass, api, _, row, _, _ = await ready(tmp_path)
