@@ -50,3 +50,16 @@ The live dashboard configuration was read back after deployment and matched
 the previous configuration with only this card added. Live HA screenshot
 verification was unavailable. Refresh the dashboard frontend to load a newly
 registered resource; no HA restart is needed.
+
+## Session payment review card
+
+`bsv-session-review-card.js` is the source for the separate review workflow.
+Build it with the same pinned QR generator and esbuild versions, preserving
+the MIT banner, and copy the bundle to
+`custom_components/bsv_settlement/frontend/session-review-card.js`.
+
+The integration serves the installed bundle at
+`/bsv_settlement/session-review-card.js`. Register that URL as a dashboard
+module resource after activating the updated integration. See the
+[session payment review guide](../docs/session-payment-review.md) for card
+configuration, permissions, approval boundaries and limitations.

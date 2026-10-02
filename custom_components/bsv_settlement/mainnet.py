@@ -186,6 +186,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.saved.setdefault("active_payment", None)
         self.saved.setdefault("chain", {"balance_sats": None, "checked_at": None, "error": None})
         self.chain = WoCClient(async_get_clientsession(self.hass))
+        from .session_review import SessionReviews
+        self.reviews = SessionReviews(self)
 
     def status(self):
         result = super().status()
@@ -200,6 +202,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             driver_identity_status="submitted_unverified" if self.saved["driver"]["driver_public_identity"] else "not_submitted",
             last_payment=self.public_payment(payment) if payment else None,
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
+            latest_session_review=self.reviews.latest() if hasattr(self, "reviews") else None,
         )
         return result
 
@@ -208,7 +211,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             return None
         return {key: copy.deepcopy(payment.get(key)) for key in (
             "draft_id", "reference", "recipient_address", "amount_sats", "fee_sats",
-            "change_sats", "expires_at", "state", "txid", "approved_at", "confirmations")}
+            "change_sats", "expires_at", "state", "txid", "approved_at", "confirmations",
+            "session_review_id")}
 
     async def set_driver(self, field, value):
         if field not in self.saved["driver"]:
@@ -254,6 +258,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         fingerprint = hashlib.sha256(json.dumps(driver, sort_keys=True).encode()).hexdigest()
         for old in self.saved["payments"].values():
             if old["reference"] == reference:
+                if old.get("session_review_id") != data.get("session_review_id"):
+                    raise WalletError("Payment reference belongs to a different review workflow")
                 if (old["amount_sats"], old["fee_sats"], old["driver_fingerprint"]) != (amount, fee, fingerprint):
                     raise WalletError("Payment reference already used with different terms")
                 return self.public_payment(old)
@@ -286,6 +292,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             "source_value": source["value"], "source_hex": raw,
             "change_sats": checked["change_sats"], "expires_at": (utcnow() + timedelta(minutes=10)).isoformat(),
             "txid": None, "signed_raw": None,
+            "session_review_id": data.get("session_review_id"),
         }
         self.saved["payments"][draft_id] = payment
         self.saved["active_payment"] = draft_id
@@ -298,6 +305,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             raise WalletError("Explicit administrator approval is required")
         if p is None:
             raise WalletError("Prepare the payment first")
+        if p.get("session_review_id") and data.get("session_review_id") != p["session_review_id"]:
+            raise WalletError("Use the session-linked credit approval action for this draft")
         for field in ("recipient_address", "amount_sats", "fee_sats"):
             if data[field] != p[field]:
                 raise WalletError("Approval does not match the prepared recipient, amount and fee")
@@ -316,6 +325,11 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         if not any((r["tx_hash"], r["tx_pos"], r["value"]) ==
                    (p["source_txid"], p["source_index"], p["source_value"]) for r in rows):
             raise WalletError("Funding output is no longer available")
+        if p.get("session_review_id"):
+            review = self.saved["session_reviews"].get(p["session_review_id"])
+            if (not review or review["state"] != "credit_review_approved"
+                    or utcnow() >= datetime.fromisoformat(review["expires_at"])):
+                raise WalletError("Session account approval expired before signing")
         signed = await self.hass.async_add_executor_job(
             build_transaction, self.identity["secret_hex"], p["source_hex"], p["source_index"],
             p["recipient_address"], p["amount_sats"], p["fee_sats"], True)

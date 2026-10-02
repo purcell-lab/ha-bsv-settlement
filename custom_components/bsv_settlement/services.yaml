@@ -1,3 +1,135 @@
+prepare_session_review:
+  name: Freeze session payment review
+  description: Administrator only. Freeze a closed, fully priced proxy account, rate and driver details. No payment is requested or sent.
+  fields:
+    config_entry_id: &review_entry
+      name: Mainnet operator wallet entry
+      required: true
+      selector:
+        text:
+    proxy_config_entry_id:
+      name: Read-only session recorder entry
+      required: true
+      selector:
+        text:
+    session_id:
+      required: true
+      selector:
+        text:
+    conversion_rate_entity:
+      name: Conversion rate sensor in sat/AUD
+      required: true
+      selector:
+        entity:
+          domain: sensor
+approve_session_review:
+  name: Approve frozen session account
+  description: Administrator attestation of the account and driver details. Creates a manual driver request or permits unsigned credit preparation. Does not sign or broadcast.
+  fields:
+    config_entry_id: *review_entry
+    review_id: &review_id
+      required: true
+      selector:
+        text:
+    terms_hash: &terms_hash
+      name: Exact frozen terms hash
+      required: true
+      selector:
+        text:
+    recipient_address: &recipient
+      name: Exact recipient address (null for a zero account)
+      required: true
+      selector:
+        text:
+    amount_sats: &sats
+      name: Exact recipient amount
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+    confirm_account_review:
+      name: I reviewed the account and provisional metering allocation
+      required: true
+      selector:
+        boolean:
+    confirm_driver_details:
+      name: I independently confirmed driver details (not cryptographic proof)
+      required: true
+      selector:
+        boolean:
+prepare_session_credit:
+  name: Prepare unsigned session credit
+  description: Prepare the exact reviewed operator-to-driver credit. Administrator only; no signing or broadcasting.
+  fields:
+    config_entry_id: *review_entry
+    review_id: *review_id
+    terms_hash: *terms_hash
+    fee_sats: &review_fee
+      name: Exact network fee (not a fee estimate)
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
+broadcast_session_credit:
+  name: Approve and broadcast session credit
+  description: REAL MAINNET FUNDS. Administrator must repeat the reviewed hash, draft, recipient, amount and fee. Never call automatically.
+  fields:
+    config_entry_id: *review_entry
+    review_id: *review_id
+    terms_hash: *terms_hash
+    draft_id:
+      required: true
+      selector:
+        text:
+    recipient_address: *recipient
+    amount_sats: *sats
+    fee_sats: *review_fee
+    confirm_mainnet_payment:
+      name: I approve this exact real mainnet transfer and fee
+      required: true
+      selector:
+        boolean:
+verify_session_driver_payment:
+  name: Verify driver-reported payment output
+  description: Read-only provider checks of the exact output. Administrator must independently attest the driver's reference. Does not prove payer identity or independent chain finality.
+  fields:
+    config_entry_id: *review_entry
+    review_id: *review_id
+    txid:
+      name: Driver-supplied blockchain transaction ID
+      required: true
+      selector:
+        text:
+    output_index:
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    confirm_driver_payment_reference:
+      name: I independently confirmed this payment reference with the driver
+      required: true
+      selector:
+        boolean:
+cancel_session_review:
+  name: Cancel unsigned session review
+  description: Cancel an unissued driver request or an unsigned operator credit. Issued driver requests and signed credits cannot be cancelled or silently replaced.
+  fields:
+    config_entry_id: *review_entry
+    review_id: *review_id
+session_review_status:
+  name: Read session review status
+  description: Administrator-only local status read. Does not refresh provider evidence or broadcast.
+  fields:
+    config_entry_id: *review_entry
+    review_id:
+      required: false
+      selector:
+        text:
 bind_session:
   fields:
     config_entry_id:

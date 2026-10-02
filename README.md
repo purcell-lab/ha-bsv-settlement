@@ -24,6 +24,13 @@ The embedded backend has now been activated on HA 2026.10.0b0, with offline sign
 
 ## Design documents
 
+**Session-linked review:** development code also provides a frozen-account
+review card, a manually fulfilled driver payment request and separately
+approved operator credits. The driver wallet remains external, identity
+attestation is manual and no automatic payment is enabled. Read the
+[payment request and credit review guide](docs/session-payment-review.md)
+before configuring or using it.
+
 **Live read-only session recorder:** the development branch now includes a
 separate `sensor_proxy` backend for cumulative charger import/export counters,
 Sigen-style running states and historical interval-price sensors. It provides

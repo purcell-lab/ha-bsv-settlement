@@ -1,4 +1,5 @@
 """Mock settlement and isolated, broadcast-disabled embedded operator wallet."""
+from pathlib import Path
 import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.core import SupportsResponse
@@ -8,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.importlib import async_import_module
 
 from .api import WalletAPI
-from .const import DOMAIN, SERVICES
+from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
@@ -16,6 +17,13 @@ PLATFORMS = [Platform.SENSOR, Platform.TEXT]
 
 async def async_setup(hass, config):
     hass.data.setdefault(DOMAIN, {})
+    if getattr(hass, "http", None) is not None and not hass.data.get(DOMAIN + "_frontend"):
+        from homeassistant.components.http import StaticPathConfig
+        await hass.http.async_register_static_paths([StaticPathConfig(
+            "/bsv_settlement/session-review-card.js",
+            str(Path(__file__).parent / "frontend" / "session-review-card.js"),
+            cache_headers=False)])
+        hass.data[DOMAIN + "_frontend"] = True
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
@@ -45,10 +53,36 @@ async def async_setup(hass, config):
         },
         "cancel_operator_payment": {**common, vol.Required("draft_id"): str},
     }
+    review = {**common, vol.Required("review_id"): str}
+    hashed = {**review, vol.Required("terms_hash"): str}
+    exact = {
+        **hashed, vol.Required("recipient_address"): vol.Any(str, None),
+        vol.Required("amount_sats"): vol.All(int, vol.Range(min=0, max=100000)),
+    }
+    schemas.update({
+        "prepare_session_review": {
+            **per_session, vol.Required("proxy_config_entry_id"): str,
+            vol.Required("conversion_rate_entity"): str},
+        "approve_session_review": {
+            **exact, vol.Required("confirm_account_review"): vol.In([True]),
+            vol.Required("confirm_driver_details"): vol.In([True])},
+        "prepare_session_credit": {
+            **hashed, vol.Required("fee_sats"): vol.All(int, vol.Range(min=1, max=1000))},
+        "broadcast_session_credit": {
+            **exact, vol.Required("draft_id"): str,
+            vol.Required("fee_sats"): vol.All(int, vol.Range(min=1, max=1000)),
+            vol.Required("confirm_mainnet_payment"): vol.In([True])},
+        "verify_session_driver_payment": {
+            **review, vol.Required("txid"): vol.Match(r"^[0-9a-f]{64}$"),
+            vol.Required("output_index"): vol.All(int, vol.Range(min=0)),
+            vol.Required("confirm_driver_payment_reference"): vol.In([True])},
+        "cancel_session_review": review,
+        "session_review_status": {**common, vol.Optional("review_id"): str},
+    })
 
     async def handle(call):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
-                            "cancel_operator_payment", "wallet_refresh_chain"):
+                            "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
             user = (await hass.auth.async_get_user(call.context.user_id)
                     if call.context.user_id else None)

@@ -56,6 +56,12 @@ One pending payment is allowed at a time. A unique reference cannot be reused wi
 
 ## What is not implemented
 
+Development code now also provides a [session-linked account review](session-payment-review.md):
+it freezes a closed proxy account and conversion-rate sensor, issues a manually
+fulfilled driver payment request, and separately prepares/approves an operator
+credit. This is an additional explicit review path, not automatic charging
+settlement or integrated driver-wallet authorisation.
+
 The budget gate, proof of driver identity possession, BRC-29/BEEF receipt delivery, driver-authorised debits, automatic session-to-payment mapping, fiat exchange-rate feeds, independent chain-proof verification, reorg-safe finality policy and production wallet recovery/export remain future work. These gaps are not hidden behind a “paid” status.
 
 The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path.

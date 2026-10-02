@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 import logging
 
 from .api import WalletError
-from .const import DOMAIN
+from .const import DOMAIN, SESSION_REVIEW_SERVICES
 from .ledger import freeze, timestamp, validate_interval
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +68,15 @@ class SettlementCoordinator(DataUpdateCoordinator):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
+                if action in SESSION_REVIEW_SERVICES:
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the separate mainnet operator wallet for session review")
+                    try:
+                        result = await self.api.reviews.execute(action, data, approving_user_id)
+                    finally:
+                        self.async_set_updated_data({
+                            **(self.data or {}), "health": self.api.status()})
+                    return result
                 wallet_actions = ("wallet_status", "wallet_self_test", "wallet_refresh_chain",
                                   "prepare_operator_payment", "broadcast_operator_payment",
                                   "cancel_operator_payment")

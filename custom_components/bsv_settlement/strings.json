@@ -46,6 +46,34 @@
     "abort": {"already_configured": "This backend is already configured."}
   },
   "services": {
+    "prepare_session_review": {
+      "name": "Freeze session payment review",
+      "description": "Freeze a closed, fully priced account, conversion rate and driver details. Administrator only. No request, signing or broadcast."
+    },
+    "approve_session_review": {
+      "name": "Approve frozen session account",
+      "description": "Attest the account and driver details to issue a manual driver request or permit unsigned credit preparation. This does not sign or send."
+    },
+    "prepare_session_credit": {
+      "name": "Prepare unsigned session credit",
+      "description": "Prepare the reviewed credit with an exact fee. No signing or broadcasting."
+    },
+    "broadcast_session_credit": {
+      "name": "Approve and broadcast session credit",
+      "description": "REAL MAINNET FUNDS. Repeat the exact reviewed terms, draft, recipient, amount and fee. Explicit administrator approval only."
+    },
+    "verify_session_driver_payment": {
+      "name": "Verify driver-reported payment output",
+      "description": "Check provider evidence and the exact recipient output. Requires an independent driver-reference attestation, not cryptographic payer proof."
+    },
+    "cancel_session_review": {
+      "name": "Cancel unsigned session review",
+      "description": "Cancel an unissued request or an unsigned credit. Never cancel or silently replace issued requests or signed payments."
+    },
+    "session_review_status": {
+      "name": "Read session review status",
+      "description": "Read local frozen terms and state. Does not refresh chain evidence, sign or broadcast."
+    },
     "wallet_refresh_chain": {
       "name": "Refresh mainnet wallet",
       "description": "Administrator-only read of confirmed UTXOs and submitted transaction status from WhatsOnChain. Never broadcasts.",
