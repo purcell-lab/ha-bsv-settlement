@@ -1,6 +1,6 @@
-"""Narrow capability endpoint: read invitation/rates or submit signed consent.
+"""Capability endpoint for terms, signed approval and one-use collection permits.
 
-No HA tokens, arbitrary service calls, private keys or payment actions exposed.
+No HA tokens, arbitrary services, private keys or operator-wallet broadcast exposed.
 """
 from collections import deque
 import json
@@ -37,7 +37,9 @@ class DriverBudgetView(HomeAssistantView):
                 return web.json_response({"error":"Request too large"},status=413,headers=headers)
         try:
             data = json.loads(body)
-            if not isinstance(data, dict) or data.get("action") not in ("read", "approve"):
+            if not isinstance(data, dict) or data.get("action") not in (
+                    "read", "approve", "collection_status", "claim_collection",
+                    "authorise_collection", "report_collection", "reconcile_collection"):
                 raise WalletError("Unsupported action")
             budget_id, token = data.get("budget_id"), data.get("token")
             if not isinstance(budget_id,str) or len(budget_id) != 36:
@@ -48,7 +50,18 @@ class DriverBudgetView(HomeAssistantView):
             if coord is None:
                 raise WalletError("Invalid driver link")
             async with coord.lock:
-                row = coord.api.budgets.driver_access(budget_id, token)
+                action = data["action"]
+                row = coord.api.budgets.driver_access(budget_id, token, allow_terminal=action in (
+                    "collection_status", "report_collection", "reconcile_collection"))
+                handlers = {
+                    "collection_status": lambda: coord.api.collections.status(row),
+                    "claim_collection": lambda: coord.api.collections.claim(row, data),
+                    "authorise_collection": lambda: coord.api.collections.authorise(row, data),
+                    "report_collection": lambda: coord.api.collections.report(row, data),
+                    "reconcile_collection": lambda: coord.api.collections.reconcile(row),
+                }
+                if action in handlers:
+                    return web.json_response(await handlers[action](), headers=headers)
                 if data["action"] == "approve":
                     # Retry an already accepted receipt even if live rates are temporarily unavailable.
                     if not row.get("receipt") and not coord.api.budgets.prices(row)["valid"]:

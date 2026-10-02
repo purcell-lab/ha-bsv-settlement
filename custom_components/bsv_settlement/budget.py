@@ -99,6 +99,8 @@ class SessionBudgets:
             result.pop(key, None)
         if row["state"] != "revoked" and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
             result["state"] = "expired"
+        if hasattr(self.api, "collections") and (collection := self.api.collections.get(row)):
+            result["collection"] = self.api.collections.public(collection)
         return result
 
     def prices(self, row):
@@ -127,12 +129,12 @@ class SessionBudgets:
             result[name] = item
         return result
 
-    def driver_access(self, budget_id, token):
+    def driver_access(self, budget_id, token, allow_terminal=False):
         row = self.api.saved["session_budgets"].get(budget_id)
         if (row is None or not isinstance(token, str) or len(token) != 43
                 or not secrets.compare_digest(row.get("driver_token_hash", ""), sha(token))):
             raise WalletError("Invalid driver link")
-        if self.public(row)["state"] in ("revoked", "expired"):
+        if not allow_terminal and self.public(row)["state"] in ("revoked", "expired"):
             raise WalletError("Driver link is expired or revoked")
         return row
 

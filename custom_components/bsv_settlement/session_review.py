@@ -147,6 +147,8 @@ class SessionReviews:
 
     async def prepare(self, data, user_id):
         session_key = data["proxy_config_entry_id"] + "|" + data["session_id"]
+        if self.api.saved.get("driver_collection_index", {}).get(session_key):
+            raise WalletError("Automatic collection already owns this session; reconcile that attempt instead")
         existing = self.api.saved["session_review_index"].get(session_key)
         if existing and self.get(existing)["state"] != "cancelled":
             self.api.saved["latest_session_review"] = existing

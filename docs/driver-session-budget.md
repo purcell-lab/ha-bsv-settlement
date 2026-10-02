@@ -11,9 +11,10 @@ The total debit includes the network fee and must stay within the signed cap.
 The separate fee cap, fixed conversion rate, expiry and revocation also apply.
 
 This is application-level spending authority, not wallet transaction permission.
-It does **not** reserve funds, make a payment, start charging or enforce a budget
-on the charger. Automatic collection is **not connected in this build**. A payment
-adapter and BSV Browser transaction permission are still required.
+Approval itself does **not** reserve funds, make a payment, start charging or
+enforce a budget on the charger. Browser-open automatic collection is implemented:
+the driver page requests a payment after the approved, bound session ends.
+BSV Browser must remain open and may show its own permission prompts.
 
 Existing version 1 invitations and receipts remain consent-only. The new page
 can display them, but will not sign them as spending approvals. Revoke an unused
@@ -38,7 +39,7 @@ not hardcoded in the public repository.
 
 Dynamic settlement uses each interval's charging and export (V2G) rates.
 The driver page shows current Amber rates as indicative information, not fixed
-session tariffs. Actual automatic settlement remains a separate implementation.
+session tariffs. Automatic collection applies only to a positive final net account.
 
 | Energy direction | Positive rate | Negative rate |
 |---|---|---|
@@ -67,12 +68,17 @@ expose other drivers' approvals through a public shared link.
 3. Select **Approve spending up to [limit] sat**. No separate Connect button, checkboxes,
    JSON copying or manual receipt return is required for the link flow.
 4. Allow any prompts shown by the wallet. HA independently checks the returned
-   signature and saves the spending mandate. This makes no transaction call.
+   signature and saves the spending mandate. Approval makes no transaction call.
+5. Keep this page open. The operator must bind the correct session; after the
+   session ends, collection proceeds within the signed limits. Wallet-native
+   transaction permissions may require another prompt.
 
 If receipt submission fails, the page retains the existing signature and offers
 **Retry saving receipt**. It does not sign a second consent. A reload can confirm
 that HA accepted it, but the downloaded receipt is only available while held by
-the page or from the administrator's saved record.
+the page or from the administrator's saved record. After a reload, select
+**Resume automatic collection** to reconnect the same driver wallet. This never
+restarts an already reserved wallet/payment attempt.
 
 The page has an advanced manual JSON fallback for earlier invitations. This
 fallback requires manual receipt return and has no live-price API access.
@@ -103,8 +109,8 @@ create a replacement. Do not publish the link or put it in public issues.
 
 Repeated creation preserves the existing unexpired, unrevoked, unbound
 pre-session invitation. Form edits do not silently replace its signed terms.
-The card reloads the latest saved approval status when opened, but cannot recover
-a lost capability. Refresh budget status after the driver approves.
+The card reloads the latest saved approval status when opened and refreshes the
+displayed approval every 15 seconds, but cannot recover a lost capability.
 
 When the vehicle session opens, select **Bind approval to latest session** and
 confirm that this session belongs to the consenting driver. HA requires:
@@ -189,20 +195,31 @@ Its signatures cannot be replayed as version 2. Neither restart nor receipt repl
 migrates old consent into spending authority.
 
 The [wallet permission specification](https://hub.bsvblockchain.org/brc/wallet/0116)
-describes application-scoped monthly spending permissions. No standing spending
-permission or `createAction` / `signAction` call is made here. Calling
-`createSignature` alone does not configure the wallet's spending permissions.
+describes application-scoped monthly spending permissions. Calling `createSignature`
+alone does not configure those permissions. The collection adapter calls
+`createAction` and `signAction` under the wallet's own permission checks. It does
+not change monthly wallet policy or promise zero wallet prompts.
 
 ## Narrow driver endpoint
 
 `POST /api/bsv_settlement/driver` accepts JSON with `budget_id`, `token` and
-`action`. Only `read` and `approve` are implemented. Approval additionally
-requires the correctly signed receipt. The token is scoped to that invitation,
-expires with it and stops working when revoked.
+`action`. `read` and `approve` serve the agreement and signed receipt.
+`collection_status`, `claim_collection`, `authorise_collection`, `report_collection`
+and `reconcile_collection` serve the bounded payment flow. Approval requires a
+correctly signed receipt; claiming requires a second proof from the same approved
+driver identity. Later steps require the secret per-attempt token from that claim.
+Only its hash is stored.
 
-There is no public invitation-creation, session-binding, wallet-status or payment
-endpoint. The driver response contains only the invitation, current rates,
-consent state, consenting public identity and binding. Responses are `no-store`;
+Expired or revoked approval blocks new collection. Status and reconciliation
+remain possible for an already submitted transaction through the original
+capability. Revocation cannot reverse a broadcast transaction.
+
+There is no anonymous invitation creation, session binding, arbitrary wallet
+method, private-key access or operator-wallet signing endpoint. A capability
+alone cannot collect a payment. The driver response contains the agreement,
+current rates, approval state, public identity, binding and scoped collection
+record. Signed raw transaction bytes and attempt secrets are not returned.
+Responses are `no-store`;
 the page uses `no-referrer`, omits credentials, and sends no capability in query
 parameters. It has no CDN, analytics or browser local storage.
 
@@ -213,22 +230,69 @@ It is not production-grade abuse protection or a guaranteed available public ser
 Signed consent can only fill an unclaimed invitation; another driver cannot
 overwrite it. HA serialises operations under the existing coordinator lock.
 
-## What remains separate
+## Automatic collection
 
-The existing manual payment-review flow is unchanged. It does not consume or
-enforce these mandates. Version 2 authorises a capped driver debit under the
-signed conditions, but no payment executor consumes that authority yet. It does
-not verify the existing manually entered driver credit address or authorise
-operator wallet credits.
+1. The page checks the bound session while open, normally every 30 seconds.
+   An open session, missing binding, or invalid account cannot produce a payment.
+2. The server requires a closed record with complete, non-estimated tariff
+   accounting and permitted quality flags. It freezes the account, uses the
+   mandate's fixed sat/AUD rate, and signs the exact operator payment quote.
+3. The approved driver wallet signs a quote-bound claim. The server persists one
+   attempt before the page can call any transaction method. Another tab, reload
+   or lost response cannot reserve a replacement.
+4. `createAction` uses `signAndProcess: false` and `noSend: true`. The page checks
+   the unsigned draft, exact amount and fee from its supporting transactions.
+   The server independently checks provider-confirmed funding transaction
+   amounts and the exact recipient, then persists one signing permit.
+5. `signAction` also uses `noSend: true`. The wallet may prompt, but must not
+   broadcast. The page checks that the signed transaction has the same inputs,
+   outputs, version and locktime as the authorised draft.
+6. The server rechecks account, expiry, revocation and mainnet enablement after
+   wallet signing. It persists signed bytes, transaction ID and `broadcast_unknown`
+   **before** the one network submission. A repeat report only reconciles that
+   same transaction ID; it never broadcasts again.
+7. Provider evidence advances the state to `provider_unconfirmed` or
+   `provider_confirmed`. These are provider-reported states, not independent SPV.
 
-Before automatic collection, connect settlement to the exact bound consent,
-check the exact recipient, frozen rate, account quality, total debit, fees, expiry
-and revocation, implement driver-side payment policy and wallet transport, and
-reconcile chain outcomes without duplicate payment. Reject a second payment
-attempt after an uncertain submission. Never infer funds availability from the
-mandate signature. Charger admission/stopping requires a separate authorised
-control path. Actual BSV Browser prompts and background availability still need
-device testing; simulated browser transport tests are not that validation.
+The proof of concept accepts version 1 Bitcoin transactions, locktime zero,
+final input sequences, at most four inputs, and the operator output plus at most
+one wallet-created P2PKH change output. Funding parents must be confirmed according
+to the configured chain provider. It trusts the wallet's builder to return its
+own change output; this is not a general untrusted transaction-construction API.
+Wallets using other change scripts, omitted funding data, delayed broadcasts or
+different transaction versions fail closed instead of receiving a relaxed limit.
+
+The fee allowance is reserved conservatively: account plus maximum fee must fit
+the total cap before quoting. The actual network fee is then checked on the
+unsigned transaction. A changed rate sensor never changes the signed conversion.
+The initial 100 sat/AUD setting remains a demonstration conversion, not market FX.
+
+Manual payment review and automatic collection share a per-session exclusion.
+Once a quote reserves a session for collection, the manual flow cannot issue a
+second request. A non-cancelled manual review prevents automatic collection.
+
+## Recovery and operating limits
+
+- **Browser closed or suspended before an attempt:** no collection occurs. Reopen
+  the private link and select Resume before the mandate expires.
+- **Wallet refusal, draft failure or interrupted reserved attempt:** stop for
+  operator reconciliation. There is no automatic reset or replacement transaction.
+  A wallet may retain an unsigned reservation or a signed no-send transaction.
+- **Lost report response while this page remains open:** Reconcile signed payment
+  resends the exact retained signed bytes. The server either submits them once
+  (if never received and still authorised) or checks the already recorded ID.
+- **Unknown broadcast outcome:** poll the same transaction's evidence. Do not
+  pay manually or issue another invitation as a workaround.
+- **Negative final account:** use the operator-credit review flow. A driver
+  signature cannot authorise operator funds or validate a manually entered
+  receiving address.
+
+This is not unattended server custody of the driver's wallet. It needs an open
+BSV Browser page, compatible unsigned/no-send APIs, wallet permissions and funding.
+No real-wallet transaction has been validated by the automated tests; a supervised
+device trial is still needed. Charger admission and budget-based stopping remain
+separate. Session measurements are still a provisional DC-sensor proxy, not a
+certified OCPP billing meter.
 
 ## Validation and build
 
@@ -236,7 +300,10 @@ Tests cover versioned signatures, old-consent isolation, correctly signed altere
 mandate rejection, cross-SDK compatibility, pre-session defaults, immutable
 terms, capability authentication and redaction, request limits, live-price
 freshness, negative prices, expiry, revocation, replay and one-session binding.
-Tests use fictional keys and do not contact a broadcaster.
+Collection tests add one-use claims and permits, duplicate suppression, exact
+unsigned/signed transaction matching, fee/recipient checks, manual-flow exclusion,
+late revocation/expiry, durable restart recovery and uncertain outcomes.
+Tests use fictional keys and a recording fake chain; they do not contact a real broadcaster.
 
 Build with `npm ci && npm test && npm run build` in `frontend/driver`. Copy
 `index.html`, `style.css` and the SDK licence alongside the HACS-shipped bundle.

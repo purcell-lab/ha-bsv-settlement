@@ -6,7 +6,7 @@ class BSVBudgetCard extends HTMLElement {
     this.config = config; this.budget=null; this.initialRead=false;
     if (!this.shadowRoot) this.attachShadow({mode:"open"});
     this.shadowRoot.innerHTML = `<ha-card header="Driver session budget"><div class="body">
-      <p>Approve spending before plugging in. New invitations request a capped mandate for one final session debit. The driver reviews live Amber rates and approves once in BSV Browser. Wallet transaction permission and a payment adapter are still required; automatic collection and charger control remain inactive.</p>
+      <p>Automatic collection is available for a version 2 spending approval. The driver must keep the approval page open in BSV Browser, and you must bind the correct charging session. After it ends, the wallet prepares and signs within the approved limits; the server submits the payment once. Wallet permission prompts may still appear. Net credits remain operator-reviewed.</p>
       <p id="session"></p>
       <label>Operator name<input id="name" maxlength="100"></label>
       <label>Operator contact<input id="contact" maxlength="200" placeholder="Contact email or phone"></label>
@@ -17,7 +17,7 @@ class BSVBudgetCard extends HTMLElement {
       <button id="create">Create pre-session approval link</button>
       <label>Private driver link<input id="driver-link" readonly></label>
       <p><a id="open-link" hidden target="_blank" rel="noopener noreferrer">Open this driver's approval page</a></p>
-      <p>Share only with the intended driver. The link can read these terms and submit one signed spending approval; it cannot move funds. Old consent receipts do not become spending approvals.</p>
+      <p>Share only with the intended driver. The link alone cannot spend: collection also requires the approved driver wallet and a valid signed transaction. Old consent receipts do not become spending approvals.</p>
       <p><a href="/bsv_settlement/driver/index.html" target="_blank" rel="noopener">Open driver approval page</a></p>
       <details><summary>Manual JSON fallback</summary>
       <label>Invitation JSON<textarea id="invitation" rows="5" readonly></textarea></label>
@@ -28,6 +28,7 @@ class BSVBudgetCard extends HTMLElement {
       <button id="bind" disabled>Bind approval to latest session</button>
       <button id="revoke" disabled>Revoke this approval</button>
       <p id="status" role="status" aria-live="polite">Create an invitation before the charging session opens.</p>
+      <p id="collection"></p>
       <p>The private link is returned once. Keep it before leaving this card. Automatic session binding is deliberately disabled to avoid assigning another driver's session.</p>
     </div></ha-card><style>
       .body{padding:0 20px 20px;color:var(--primary-text-color)}p{line-height:1.5;overflow-wrap:anywhere}
@@ -48,7 +49,7 @@ class BSVBudgetCard extends HTMLElement {
     };
     this.$("refresh").onclick = () => this.perform("session_budget_status", {budget_id:this.budget.terms.budget_id});
     this.$("bind").onclick = () => {
-      if (confirm("Confirm the latest charging session belongs to the driver who signed this consent. No payment or charger action will occur."))
+      if (confirm("Confirm the latest session belongs to this driver. For a version 2 spending approval, binding enables automatic collection after the session ends, within the signed limits. No charger control is performed."))
         this.perform("bind_session_budget", {budget_id:this.budget.terms.budget_id,
           session_id:this.session.session_id, confirm_driver_present:true});
     };
@@ -57,6 +58,13 @@ class BSVBudgetCard extends HTMLElement {
         this.perform("revoke_session_budget", {budget_id:this.budget.terms.budget_id});
     };
   }
+  connectedCallback() {
+    if(!this.refreshTimer)this.refreshTimer=setInterval(()=>{
+      if(this.budget && this._hass?.user?.is_admin && !this.busy)
+        this.perform("session_budget_status",{budget_id:this.budget.terms.budget_id});
+    },15000);
+  }
+  disconnectedCallback() {clearInterval(this.refreshTimer);this.refreshTimer=null;}
   $(id) { return this.shadowRoot.getElementById(id); }
   number(id) { const v = this.$(id).value; return v.trim() ? Number(v) : null; }
   set hass(hass) {
@@ -93,7 +101,9 @@ class BSVBudgetCard extends HTMLElement {
         this.$("open-link").href=link.href;this.$("open-link").hidden=false;
       }
       this.$("invitation").value = JSON.stringify(this.budget.invitation, null, 2);
-      this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. ${this.budget.terms.version === 2 ? "Capped spending mandate; wallet transaction permission still required." : "Legacy consent only; revoke and create a new invitation to approve spending."} Automatic collection and charger control are not active.`;
+      this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. ${this.budget.terms.version === 2 ? "Automatic collection requires the driver's open page and wallet permission." : "Legacy consent only; revoke and create a new invitation to approve spending."} No charger control.`;
+      const c=this.budget.collection;
+      this.$("collection").textContent=c ? `Collection: ${c.state}${c.fee_sats!==undefined ? ". Fee: "+c.fee_sats+" sat" : ""}${c.txid ? ". BSV transaction: "+c.txid : ""}${c.error ? ". "+c.error : ""}` : "No collection attempt yet. Status refreshes every 15 seconds.";
       if(service==="create_session_budget"&&!this.budget.driver_link_fragment&&!this.$("driver-link").value)
         this.$("status").textContent += " Existing invitation retained. If you lost its link, revoke it before creating a replacement.";
     } catch (e) { this.$("status").textContent = e.message || "Budget operation failed."; }

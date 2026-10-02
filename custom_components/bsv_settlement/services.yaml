@@ -402,7 +402,7 @@ session_budget_status:
         text:
 bind_session_budget:
   name: Bind advance consent to a session
-  description: Explicitly associate verified advance consent with the consenting driver's session. No payment or charger control.
+  description: Confirm the driver and bind advance approval to their session. A version 2 mandate enables session-end collection through the open driver page. No charger control.
   fields:
     config_entry_id:
       required: true

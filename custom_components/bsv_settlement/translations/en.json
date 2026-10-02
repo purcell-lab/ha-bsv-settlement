@@ -64,7 +64,7 @@
     },
     "bind_session_budget": {
       "name": "Bind advance consent to a session",
-      "description": "Confirm the driver and bind advance consent to a session opened after approval. No payment or charger action."
+      "description": "Confirm the driver and bind advance approval to their session. A version 2 mandate enables session-end collection through the open driver page. No charger control."
     },
     "prepare_session_review": {
       "name": "Freeze session payment review",

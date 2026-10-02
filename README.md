@@ -302,6 +302,16 @@ named operator address, subject to the total limit, fee cap, fixed conversion ra
 expiry and wallet transaction permission. Old version 1 receipts stay consent-only.
 The operator binds advance approval to the driver's session.
 
-This is signed spending authority, not a wallet transaction signature or a funded
-reservation. Automatic collection is **not connected yet**. The existing manual
-payment-review flow remains separate and does not consume these mandates.
+This is signed spending authority, not a funded reservation. **Browser-open automatic
+collection** now consumes the version 2 mandate after the bound session ends.
+The wallet prepares an unsigned draft, the server validates the exact recipient,
+account and fee, and the wallet signs with `noSend: true`. After a final
+expiry/revocation check, the server persists the signed transaction and submits
+it once. Ambiguous outcomes are reconciled, never automatically rebroadcast.
+
+The driver must keep the page open in BSV Browser and allow its native wallet
+prompts. After a reload, Resume reconnects only if no attempt was already reserved.
+Manual reviews and automatic collection cannot own the same session. Net credits
+still use the separately approved operator-credit flow. See the
+[collection operating limits](docs/driver-session-budget.md#automatic-collection)
+before a supervised real-wallet trial.

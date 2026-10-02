@@ -1,8 +1,9 @@
 """Guarded, single-input mainnet P2PKH operator payments.
 
-Identity submission is not identity verification. This backend cannot debit a
-driver wallet. Signing and broadcast only happen after exact administrator
-approval. No automatic retry can create or send a second transaction.
+Identity submission is not identity verification. Operator-wallet signing and
+broadcast require exact administrator approval. DriverCollections separately
+accepts driver-wallet-signed transactions under capped session mandates; it never
+holds driver keys. No automatic retry creates or sends a second transaction.
 """
 import asyncio
 import copy
@@ -190,6 +191,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.reviews = SessionReviews(self)
         from .budget import SessionBudgets
         self.budgets = SessionBudgets(self)
+        from .collection import DriverCollections
+        self.collections = DriverCollections(self)
 
     def status(self):
         result = super().status()
