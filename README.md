@@ -2,15 +2,23 @@
 
 Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 
-![BSV Settlement mock integration icon](brand/icon.png)
-
 **A runnable, mock-only implementation of session-end payment or credit.** There is no budget process, prepayment, real wallet connection, private key, blockchain broadcast or real money movement. The HA scaffold collects explicit interval inputs; it does not yet subscribe to an installed OCPP integration.
+
+## End-to-end concept
+
+![Bidirectional EV wallet settlement concept: BSV budget approval gates session start, OCPP measures imports and exports, Home Assistant applies dynamic prices, and wallets settle the final payment or credit. The budget gate and real wallet connection are planned, not implemented.](docs/images/settlement-infographic.png)
+
+[Open the full-resolution infographic](docs/images/settlement-infographic.png).
+
+**Target design:** retain the BSV budget gate before session start, then meter and price energy dynamically and settle the final payment or credit. Budget authorisation is not a prepayment or a guarantee of available funds. The planned controller must monitor spend and pause or obtain renewed approval before the limit is reached, while preserving charger and grid safety controls.
+
+**Running implementation:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate, automatic OCPP meter feed and real wallet adapter are not implemented. In particular, this service is **not yet wired to `bsv-wallet-cli`** and cannot move real BSV.
 
 ## Design documents
 
-Start with the [documentation index](docs/README.md), the [current settlement interface](docs/settlement-interface.md) and the [no-budget sequence diagram](docs/settlement-sequence.md). The [research comparison](docs/research/wallet-micropayments-comparison.md) retains its original budget-first framing as background, not as the current implementation requirement.
+Start with the [documentation index](docs/README.md), the [implemented settlement interface](docs/settlement-interface.md) and the [no-budget mock sequence diagram](docs/settlement-sequence.md). These describe the existing scaffold; the infographic above restores the budget gate to the target design without claiming that it is implemented. The [research comparison](docs/research/wallet-micropayments-comparison.md) is background research, not a statement of implemented capabilities.
 
-Earlier budget-based concepts and visuals are preserved under [docs/archive](docs/archive/README.md). They are superseded and must not be used as the current product description.
+Earlier concepts and visuals are preserved under [docs/archive](docs/archive/README.md). Use the infographic above for the current target concept and the implementation documentation for what the mock actually does.
 
 ## What is included
 
