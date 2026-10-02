@@ -313,7 +313,7 @@ cancel_operator_payment:
         text:
 create_session_budget:
   name: Create session budget invitation
-  description: Sign an invitation for one open session. No payment, funds reservation or charger control.
+  description: Sign an invitation before charging, or for a named open session. No payment, funds reservation or charger control.
   fields:
     config_entry_id:
       required: true
@@ -324,7 +324,7 @@ create_session_budget:
       selector:
         text:
     session_id:
-      required: true
+      required: false
       selector:
         text:
     conversion_rate_entity:
@@ -333,26 +333,33 @@ create_session_budget:
         entity:
           domain: sensor
     max_total_sats:
-      required: true
+      default: 1000
       selector:
         number:
           min: 1
           max: 100000
           mode: box
     max_fee_sats:
-      required: true
+      default: 10
       selector:
         number:
           min: 0
           max: 1000
           mode: box
     valid_minutes:
-      required: true
+      default: 720
       selector:
         number:
           min: 1
           max: 1440
           mode: box
+    operator_name:
+      default: Charging operator
+      selector:
+        text:
+    operator_contact:
+      selector:
+        text:
 accept_session_budget:
   name: Verify driver budget consent
   description: Verify and persist the signed driver receipt. Does not enable automatic spending.
@@ -390,6 +397,26 @@ session_budget_status:
       selector:
         text:
     budget_id:
+      required: false
+      selector:
+        text:
+bind_session_budget:
+  name: Bind advance consent to a session
+  description: Explicitly associate verified advance consent with the consenting driver's session. No payment or charger control.
+  fields:
+    config_entry_id:
       required: true
       selector:
         text:
+    budget_id:
+      required: true
+      selector:
+        text:
+    session_id:
+      required: true
+      selector:
+        text:
+    confirm_driver_present:
+      required: true
+      selector:
+        boolean:

@@ -56,7 +56,7 @@ async def test_invitation_signature_limits_and_idempotence(tmp_path):
     assert "session_key" not in row
     hass.states.async_set("sensor.demo_rate", "200", {"unit_of_measurement":"sat/AUD"})
     again = await api.budgets.execute("create_session_budget", data | {"max_total_sats":2000}, "admin")
-    assert again == row
+    assert again == {k:v for k,v in row.items() if k != "driver_link_fragment"}
     assert api.chain.posts == []
 
 
@@ -145,6 +145,8 @@ async def test_all_budget_services_admin_only(tmp_path):
         "session_budget_status": {"budget_id":row["terms"]["budget_id"]},
         "revoke_session_budget": {"budget_id":row["terms"]["budget_id"]},
         "accept_session_budget": {"budget_id":row["terms"]["budget_id"],"receipt":consent(row)},
+        "bind_session_budget": {"budget_id":row["terms"]["budget_id"],
+                               "session_id":"future-session","confirm_driver_present":True},
     }
     hass.auth = SimpleNamespace(async_get_user=AsyncMock(return_value=SimpleNamespace(is_admin=False)))
     for name, fields in actions.items():
@@ -168,5 +170,5 @@ async def test_driver_distribution_and_no_payment_calls():
     assert (root/"frontend/bsv-budget-card.js").read_bytes() == (root/"custom_components/bsv_settlement/frontend/budget-card.js").read_bytes()
     for name in ("app.js","model.js"):
         code = (root/"frontend/driver"/name).read_text()
-        for forbidden in ("createAction(", "signAction(", "internalizeAction(", "fetch(", "localStorage"):
+        for forbidden in ("createAction(", "signAction(", "internalizeAction(", "localStorage"):
             assert forbidden not in code

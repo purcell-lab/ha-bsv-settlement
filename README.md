@@ -294,8 +294,9 @@ The project's original code and documentation are available under the [MIT licen
 
 ## Driver wallet connection and budget consent
 
-The [BSV Browser driver page](docs/driver-session-budget.md) can connect a wallet,
-check an operator-signed invitation and sign a consent record for one open
-session. HA independently verifies the returned receipt. This does not grant
+The [BSV Browser driver page](docs/driver-session-budget.md) supports approval
+before charging. A private link loads the operator terms and live Amber prices;
+one page action connects the wallet, signs consent and returns it to HA.
+The operator then binds the consent to the driver's session. This does not grant
 spending permission, reserve funds, start charging or enable automatic collection.
 The existing manual payment-review flow remains separate.

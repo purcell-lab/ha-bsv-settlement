@@ -1,66 +1,56 @@
-# BSV Browser connection and session-budget consent
+# BSV Browser pre-session approval
 
-This page connects to BSV Browser using BRC-100 and signs a bounded consent
-record for one existing, open sensor-proxy session. HA can verify and save the
-receipt. It does **not** request wallet spending permission, reserve coins, make
-a transaction, start charging or enforce a budget on the charger.
+The driver can approve a budget **before plugging in**. The operator shares a
+private link from HA. That link loads the signed terms and current Amber prices.
+One page action connects BSV Browser, signs consent and returns the receipt to
+HA. The wallet may still display its own identity or signature permission prompts.
 
-## Wallet target
+This is consent capture. It does **not** reserve funds, grant spending access,
+make a payment, start charging or enforce a budget on the charger.
 
-The [demonstration instructions](https://todriguez.com/cfb/) name BSV Browser for
-phones and BSV Desktop for computers. Its
-[application](https://todriguez.com/cfb/app.js) uses `WalletClient("auto")` and
-`getPublicKey({identityKey:true})`. This page uses the same interface with the
-pinned `@bsv/sdk` 2.0.13.
+## Default agreement
 
-The [BSV permission specification](https://hub.bsvblockchain.org/brc/wallet/0116)
-describes application-scoped monthly spending permissions, not an EV
-session-specific funds reservation. No spending manifest or standing wallet
-permission is requested by this implementation.
+The operator can edit these defaults before creating the invitation:
 
-## What the driver approves
+| Field | Default |
+|---|---|
+| Total budget, including network fees | 1,000 sat |
+| Maximum network fee | 10 sat, included in the total |
+| Validity | 720 minutes (12 hours) |
+| Session scope | One future session on the configured recorder |
+| Conversion | Current positive `sat/AUD` sensor value, frozen in the agreement |
+| Operator | Configurable name and contact, with a generic repository default |
 
-An HA administrator creates an invitation for an open session. It fixes:
+At 100 sat/AUD, 1,000 sat equals AUD10. This is a demonstration conversion,
+not market FX. Contact details belong in the private HA dashboard configuration,
+not hardcoded in the public repository.
 
-- The session and proxy transaction IDs.
-- The operator's public identity and mainnet P2PKH address.
-- A total maximum in satoshis **including fees**, and a separate fee ceiling.
-- The conversion-rate sensor value, tariff entity IDs and dynamic net-pricing rule.
-- A random budget ID and expiry, no more than 24 hours.
-- Consent-only scope and the fact that the account covers the entire named
-  session, including energy already recorded before consent.
+Dynamic settlement uses each interval's import and export prices, including
+negative prices. The driver page shows current rates as indicative information,
+not fixed session tariffs. Actual automatic settlement remains a later task.
 
-The operator signs the invitation as an ordinary message. The page checks the
-signature and that the public key matches the address. This proves possession
-of that key, not the operator's real-world identity. The driver must compare
-the address against the trusted HA dashboard or another trusted channel.
+## Driver experience
 
-The driver connects their wallet, reviews the terms, checks both acknowledgement
-boxes and selects **Sign session-budget consent**. The wallet signs the invitation
-hash, budget ID and driver identity, with explicit `no_spending_authority: true`.
-The page checks the signature before offering a downloadable JSON receipt.
+1. Open the operator's private link inside BSV Browser.
+2. Review the operator contact, current Amber prices, maximum spend, fee ceiling,
+   conversion rate and expiry.
+3. Select **Approve session budget**. No separate Connect button, checkboxes,
+   JSON copying or manual receipt return is required for the link flow.
+4. Allow any prompts shown by the wallet. HA independently checks the returned
+   signature and saves the consent.
 
-No `createAction`, `signAction`, `internalizeAction`, payment broadcast or
-standing-spend request is called. Keys never leave the wallets. Public identities,
-session IDs and signed consent are personal transaction data: share them only
-with the intended driver/operator.
+If receipt submission fails, the page retains the existing signature and offers
+**Retry saving receipt**. It does not sign a second consent. A reload can confirm
+that HA accepted it, but the downloaded receipt is only available while held by
+the page or from the administrator's saved record.
+
+The page has an advanced manual JSON fallback for earlier invitations. This
+fallback requires manual receipt return and has no live-price API access.
 
 ## Operator workflow
 
-After installing the update and an authorised restart:
-
-1. Register `/bsv_settlement/budget-card.js` as a module resource.
-2. Add the card below to the settlement dashboard.
-3. Wait for an **open** recorded session. Closed sessions cannot receive
-   retrospective budget consent.
-4. Enter a total satoshi budget, fee ceiling and validity period. Create the
-   invitation and copy its JSON to the driver through a trusted channel.
-5. The driver opens `/bsv_settlement/driver/index.html` on your HA origin inside
-   BSV Browser, pastes the invitation and signs consent.
-6. Paste the returned receipt into the card and select **Verify and save driver
-   consent**. HA independently verifies the BRC-43 signature against the claimed
-   driver identity and the exact stored invitation.
-7. Use **Refresh budget status** or **Revoke this budget consent** as needed.
+After installing the update and an authorised HA restart, register
+`/bsv_settlement/budget-card.js` as a module resource and configure:
 
 ```yaml
 type: custom:bsv-budget-card
@@ -68,28 +58,67 @@ config_entry_id: MAINNET_OPERATOR_ENTRY
 proxy_config_entry_id: SENSOR_RECORDER_ENTRY
 proxy_entity: sensor.YOUR_RECORDER_STATUS
 rate_entity: sensor.bsv_satoshis_per_aud
+operator_name: Charging operator
+operator_contact: YOUR_CONTACT_DETAILS
 grid_options:
   columns: 12
   rows: auto
 ```
 
-The static driver page requires no HA token or administrator login. There is
-no anonymous write endpoint and no automatic receipt upload. Only authenticated
-HA administrators can create, accept, inspect or revoke saved budget records.
-The page contains no invitation until the driver pastes one. It uses no CDN,
-analytics, local storage or server-side driver session. The SDK may probe local
-wallet transports after the user selects Connect.
+Create a pre-session approval link and send it only to the intended driver.
+It contains a random capability in the URL fragment. The full capability is
+returned only once and is not stored in plain text by HA. The saved record
+contains only its SHA-256 hash. If the link is lost, revoke the invitation and
+create a replacement. Do not publish the link or put it in public issues.
 
-The card can recover a saved invitation when a receipt is imported again.
-Repeated creation for the same open session returns the existing unexpired,
-unrevoked invitation; changing form values does not silently change its terms.
-Revoke it first to replace it. Signed receipt replays for the same identity
-are idempotent; a different identity cannot overwrite an accepted receipt.
+Repeated creation preserves the existing unexpired, unrevoked, unbound
+pre-session invitation. Form edits do not silently replace its signed terms.
+The card reloads the latest saved budget status when opened, but cannot recover
+a lost capability. Refresh budget status after the driver approves.
 
-## Signature and storage contract
+When the vehicle session opens, select **Bind consent to latest session** and
+confirm that this session belongs to the consenting driver. HA requires:
 
-Invitations carry a canonical UTF-8 JSON string signed with the embedded
-operator key using ECDSA/SHA-256. Driver receipts use BRC-43:
+- Verified, unexpired and unrevoked driver consent.
+- The original recorder.
+- A session that opened after consent was accepted and before expiry.
+- No existing binding to another session, and no other budget already bound
+  to this session on that recorder.
+
+The signed reservation terms remain unchanged. HA stores the selected session
+and proxy transaction IDs in a separate binding record. Automatic assignment of
+the next observed session is deliberately disabled: an unrelated driver might
+plug in first. Named existing open sessions remain supported through the HA
+service, but closed sessions cannot receive retrospective invitations.
+
+## Live Amber prices
+
+The private link reads the configured import and feed-in sensors when opened,
+every 30 seconds while the page is open, and immediately before wallet approval.
+HA reads them again before accepting a first receipt. The page displays AUD
+cents/kWh, including negative feed-in values and an estimated-rate label.
+
+Only numeric `$/kWh` or `AUD/kWh` readings with a valid effective time interval
+are accepted. Missing readings, wrong units and expired intervals beyond a
+90-second update grace period pause approval. An already saved receipt can be
+reconciled idempotently during a later price outage.
+
+Prices are not frozen into a payment quote. The signed agreement fixes the
+dynamic calculation rule and conversion rate; its current-price display changes.
+
+## Wallet and signature contract
+
+The [demonstration](https://todriguez.com/cfb/) specifies BSV Browser on phones
+and BSV Desktop on computers. Its [application](https://todriguez.com/cfb/app.js)
+uses `WalletClient("auto")` and `getPublicKey({identityKey:true})`. This page
+uses the same interface, pinned to `@bsv/sdk` 2.0.13.
+
+HA signs canonical UTF-8 invitation terms with ECDSA and a single SHA-256.
+The page verifies the signature and that the public key matches the operator
+address. This proves key control, not a real-world business identity.
+
+Driver consent signs the exact invitation hash, budget UUID and driver identity
+with `no_spending_authority: true`, using:
 
 ```json
 {
@@ -100,42 +129,54 @@ operator key using ECDSA/SHA-256. Driver receipts use BRC-43:
 }
 ```
 
-The public counterparty allows signature verification using the driver's
-identity public key without granting access to any private key. The HA verifier
-derives the matching BRC-42 child public key with public counterparty private
-scalar 1 and invoice `2-ha ev session budget-<budget UUID>`.
+HA derives the BRC-42 public child using counterparty scalar 1 and invoice
+`2-ha ev session budget-<budget UUID>`. Python/TypeScript interoperability is
+tested. No private driver key, seed phrase or HA administrator token is requested.
 
-Consent lives in the existing private, atomic HA wallet store. Status is
-`awaiting_driver_consent`, `consent_verified_not_payment_authority`, `revoked`
-or `expired`. Restart preserves it. Revocation acts on this HA record only;
-there is no wallet spending permission to revoke. Closing or clearing the
-page does not revoke a previously imported receipt.
+The [wallet permission specification](https://hub.bsvblockchain.org/brc/wallet/0116)
+describes application-scoped monthly spending permissions. No standing spending
+permission or `createAction` / `signAction` call is made here.
 
-## Boundaries before automatic collection
+## Narrow driver endpoint
 
-This is **budget consent capture**, not the complete charging budget gate.
-The existing payment-review workflow remains separate, keeps its manual
-approvals and is not constrained or authorised by this record. It must not be
-presented as budget-enforced. The receipt does not update the existing manual
-driver credit address or prove ownership of that address.
+`POST /api/bsv_settlement/driver` accepts JSON with `budget_id`, `token` and
+`action`. Only `read` and `approve` are implemented. Approval additionally
+requires the correctly signed receipt. The token is scoped to that invitation,
+expires with it and stops working when revoked.
 
-Before collection can be automated, implement an exact session-to-consent check
-at payment time, fixed-rate reconciliation, fee and cumulative-spend checks,
-driver-side policy enforcement, revocation/expiry checks, chain reconciliation,
-duplicate prevention and a wallet payment transport. Charging admission or
-stopping also requires a separate, explicitly authorised control path. Wallet
-availability and prompt behavior must be tested in the actual BSV Browser;
-neither background operation nor automatic payment is claimed.
+There is no public invitation-creation, session-binding, wallet-status or payment
+endpoint. The driver response contains only the invitation, current rates,
+consent state, consenting public identity and binding. Responses are `no-store`;
+the page uses `no-referrer`, omits credentials, and sends no capability in query
+parameters. It has no CDN, analytics or browser local storage.
 
-## Validation
+Requests are limited to 20 KB and 120 requests/minute across this endpoint.
+Cross-site browser requests are rejected. This is a small supervised PoC,
+and capability-link approval is disabled inside embedded frames.
+It is not production-grade abuse protection or a guaranteed available public service.
+Signed consent can only fill an unclaimed invitation; another driver cannot
+overwrite it. HA serialises operations under the existing coordinator lock.
 
-Backend tests cover invitation signatures, frozen terms, limits, open-session
-rules, driver identity binding, receipt tampering, expiry, revocation, persistence
-and no broadcaster calls. JavaScript tests use the official SDK with fictional
-wallet keys. Browser QA uses a mocked wallet transport and real SDK message
-signatures, not the user's BSV Browser or funds.
+## What remains separate
 
-Build with `npm ci && npm test && npm run build` in `frontend/driver`.
-The bundled page ships in the HACS custom component. Copy `index.html`,
-`style.css` and the SDK licence alongside the bundle after changing them.
-The approval page is fully local except for the selected wallet transport.
+The existing manual payment-review flow is unchanged. It does not consume or
+enforce these budgets. Signed consent does not verify the existing manually
+entered driver credit address, nor does it authorise any transfer.
+
+Before automatic collection, connect settlement to the exact bound consent,
+check rate, cumulative spend, fees, expiry and revocation, implement driver-side
+payment policy and wallet transport, and reconcile chain outcomes without
+duplicate payment. Charger admission/stopping requires a separate authorised
+control path. Actual BSV Browser prompts and background availability still need
+device testing; simulated browser transport tests are not that validation.
+
+## Validation and build
+
+Tests cover signatures, cross-SDK compatibility, pre-session defaults, immutable
+terms, capability authentication and redaction, request limits, live-price
+freshness, negative prices, expiry, revocation, replay and one-session binding.
+Tests use fictional keys and do not contact a broadcaster.
+
+Build with `npm ci && npm test && npm run build` in `frontend/driver`. Copy
+`index.html`, `style.css` and the SDK licence alongside the HACS-shipped bundle.
+The static driver page and capability endpoint run within the HA integration.

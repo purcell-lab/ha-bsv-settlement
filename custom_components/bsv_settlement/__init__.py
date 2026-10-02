@@ -30,6 +30,8 @@ async def async_setup(hass, config):
             str(Path(__file__).parent / "frontend" / "budget-card.js"),
             cache_headers=False)])
         hass.data[DOMAIN + "_frontend"] = True
+        from .driver_http import DriverBudgetView
+        hass.http.register_view(DriverBudgetView(hass))
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
@@ -67,15 +69,21 @@ async def async_setup(hass, config):
     }
     schemas.update({
         "create_session_budget": {
-            **per_session, vol.Required("proxy_config_entry_id"): str,
+            **common, vol.Optional("session_id"): vol.All(str,vol.Length(min=1,max=200)),
+            vol.Required("proxy_config_entry_id"): str,
             vol.Required("conversion_rate_entity"): str,
-            vol.Required("max_total_sats"): vol.All(int, vol.Range(min=1, max=100000)),
-            vol.Required("max_fee_sats"): vol.All(int, vol.Range(min=0, max=1000)),
-            vol.Required("valid_minutes"): vol.All(int, vol.Range(min=1, max=1440))},
+            vol.Optional("operator_name",default="Charging operator"): vol.All(str,vol.Length(max=100)),
+            vol.Optional("operator_contact",default=""): vol.All(str,vol.Length(max=200)),
+            vol.Optional("max_total_sats",default=1000): vol.All(int, vol.Range(min=1, max=100000)),
+            vol.Optional("max_fee_sats",default=10): vol.All(int, vol.Range(min=0, max=1000)),
+            vol.Optional("valid_minutes",default=720): vol.All(int, vol.Range(min=1, max=1440))},
+        "bind_session_budget": {
+            **common, vol.Required("budget_id"): str, vol.Required("session_id"): str,
+            vol.Required("confirm_driver_present"): vol.In([True])},
         "accept_session_budget": {
             **common, vol.Required("budget_id"): str, vol.Required("receipt"): dict},
         "revoke_session_budget": {**common, vol.Required("budget_id"): str},
-        "session_budget_status": {**common, vol.Required("budget_id"): str},
+        "session_budget_status": {**common, vol.Optional("budget_id"): str},
         "prepare_session_review": {
             **per_session, vol.Required("proxy_config_entry_id"): str,
             vol.Required("conversion_rate_entity"): str},

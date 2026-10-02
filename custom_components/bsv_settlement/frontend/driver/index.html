@@ -11,20 +11,27 @@
 <a class="skip" href="#main">Skip to content</a>
 <header><div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><span class="badge">Driver consent · PoC</span></header>
 <main id="main">
-  <div class="intro"><p class="eyebrow">YOUR ENERGY. YOUR APPROVAL.</p><h1>Set the boundary for one session.</h1><p>Connect your BSV wallet and sign a session budget. Your keys stay in your wallet. This page cannot make a payment.</p></div>
+  <div class="intro"><p class="eyebrow">YOUR ENERGY. YOUR APPROVAL.</p><h1>Approve before you plug in.</h1><p>Review the operator, current prices and your budget. One approval action connects BSV Browser and signs your consent. Your wallet may show its own permission prompt.</p></div>
   <p id="status" class="notice" role="status" aria-live="polite">Start with an invitation from your operator. No wallet calls occur until you select Connect.</p>
   <div class="layout">
   <div>
     <section id="load-section">
-      <div class="section-head"><span class="step">01</span><h2>Load your session</h2></div>
-      <p>Ask the operator for a budget invitation from Home Assistant. Paste the complete JSON record here.</p>
+      <div class="section-head"><h2>Open your private approval link</h2></div>
+      <p>Ask the operator for the driver link from the HA budget card. It loads the terms and current Amber prices automatically. Advanced fallback: paste a signed invitation below.</p>
       <label for="invitation">Operator-signed invitation</label>
       <textarea id="invitation" rows="5" spellcheck="false" placeholder='Paste the invitation JSON. Never enter a seed phrase or private key.'></textarea>
       <div class="actions"><button id="load">Load and check invitation</button><button id="reset" class="secondary">Clear page</button></div>
     </section>
     <section id="terms" hidden>
-      <div class="section-head"><span class="step">02</span><h2>Review your budget</h2></div>
-      <div class="amount"><span>Maximum total spend, including fees</span><strong id="budget"></strong></div>
+      <div class="section-head"><h2>Your charging agreement</h2></div>
+      <p><strong id="operator-name"></strong><br><span id="contact"></span></p>
+      <div id="prices" hidden>
+        <h2>Amber prices now</h2>
+        <dl class="price-grid"><dt>Energy into your EV</dt><dd id="import-price">Unavailable</dd><dt>Energy from your EV</dt><dd id="export-price">Unavailable</dd></dl>
+        <p class="small" id="price-time"></p><p class="small" id="price-warning"></p>
+        <p class="small">A negative export price is a cost to the driver. A negative import price contributes a credit.</p>
+      </div>
+      <div class="amount"><span>Maximum total spend, including fees</span><strong id="budget"></strong><span id="aud"></span></div>
       <dl>
         <dt>Network fee allowance</dt><dd id="fee"></dd>
         <dt>Conversion rate</dt><dd id="rate"></dd>
@@ -34,29 +41,30 @@
         <dt>Operator receives at</dt><dd id="operator" class="mono"></dd>
       </dl>
       <details><summary>Pricing rule and operator identity</summary><p id="pricing"></p><p id="tariffs" class="mono"></p><p id="scope"></p><p>The rate is a demonstration conversion, not a market exchange rate. A negative account requires a separate operator credit.</p><p id="operator-key" class="mono"></p></details>
-      <label class="check"><input type="checkbox" id="trusted"><span>I checked the operator receiving address against a trusted source, such as the operator's HA dashboard.</span></label>
+      <p class="small">Use only a link supplied by the operator you intend to authorise. The signature proves control of the displayed operator key, not their real-world identity.</p>
     </section>
     <section id="wallet-section" hidden>
-      <div class="section-head"><span class="step">03</span><h2>Connect and approve</h2></div>
-      <p>Open this page inside BSV Browser. Connecting asks for a public identity only.</p>
-      <button id="connect" class="secondary" disabled>Connect BSV Browser</button>
+      <div class="section-head"><h2>Approve with BSV Browser</h2></div>
+      <p>By selecting Approve, you accept the displayed operator, dynamic pricing rule, budget and expiry for one session. Your signature is returned to HA automatically when you use a private link.</p>
+      <p><strong>This is consent only.</strong> It does not grant spending access, reserve funds, start charging or enable automatic collection.</p>
+      <button id="approve" disabled>Approve session budget</button>
+      <p id="action-note" class="small"></p>
       <p class="small">Connected public identity</p><p id="wallet-key" class="mono key">Not connected</p>
-      <label class="check"><input type="checkbox" id="consent"><span>I accept the displayed session terms and budget. I understand that this signs consent only. It does not grant spending access, reserve funds or start charging.</span></label>
-      <button id="approve" disabled>Sign session-budget consent</button>
     </section>
     <section id="result" hidden>
-      <div class="section-head"><span class="step">04</span><h2>Return your signed receipt</h2></div>
-      <p>The signature has been checked locally. Send this receipt to the operator, who must import and verify it in HA. It is not submitted automatically.</p>
+      <div class="section-head"><h2>Your signed receipt</h2></div>
+      <p id="result-note">For a private link, this receipt is sent to HA automatically. If saving fails, retry the same receipt without signing again. For manual invitations, return the receipt to the operator.</p>
       <label for="receipt">Signed budget receipt</label><textarea id="receipt" rows="6" readonly></textarea>
       <button id="download" class="secondary" disabled>Download receipt JSON</button>
+      <button id="retry" class="secondary" disabled>Retry saving receipt</button>
     </section>
   </div>
   <aside>
     <h2>No payment at this step</h2>
     <p>This page uses message signatures, not transaction signatures. It makes no payment or wallet spending-permission request.</p>
-    <ul><li>One named session</li><li>Fixed sat/AUD conversion</li><li>Total and fee limits</li><li>Explicit expiry</li></ul>
+    <ul><li>One future session, or a named open session</li><li>Fixed sat/AUD conversion</li><li>Total and fee limits</li><li>Explicit expiry</li></ul>
     <hr><h2>What comes next</h2>
-    <p>The operator verifies your receipt in HA. Automatic collection and charger budget enforcement are not connected yet.</p>
+    <p>HA verifies the signed receipt. For advance approval, the operator then confirms your presence and binds your consent to the charging transaction. It cannot be assigned to two sessions.</p><p>Automatic collection and charger budget enforcement are not connected yet.</p>
     <p>Closing or clearing this page does not revoke a saved receipt. Ask the operator to revoke it in HA.</p>
     <p class="small">Open the direct HA page in BSV Browser for a real wallet connection. An embedded preview may not reach your wallet.</p>
   </aside>

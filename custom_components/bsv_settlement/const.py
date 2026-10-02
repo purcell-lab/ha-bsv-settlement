@@ -1,7 +1,7 @@
 """Constants."""
 DOMAIN = "bsv_settlement"
 BUDGET_SERVICES = ("create_session_budget", "accept_session_budget",
-                   "revoke_session_budget", "session_budget_status")
+                   "revoke_session_budget", "session_budget_status", "bind_session_budget")
 SESSION_REVIEW_SERVICES = (
     "prepare_session_review", "approve_session_review", "prepare_session_credit",
     "broadcast_session_credit", "verify_session_driver_payment",

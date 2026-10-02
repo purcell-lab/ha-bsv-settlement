@@ -321,7 +321,7 @@ async def test_frontend_registered_once_and_hacs_bundle_matches():
         root / "frontend/bsv-session-review-card.bundle.js").read_bytes()
     metadata = yaml.safe_load((package / "services.yaml").read_text())
     assert set(SERVICES) <= set(metadata)
-    hass = SimpleNamespace(data={}, http=SimpleNamespace(async_register_static_paths=AsyncMock()),
+    hass = SimpleNamespace(data={}, http=SimpleNamespace(async_register_static_paths=AsyncMock(), register_view=Mock()),
                            services=SimpleNamespace(async_register=Mock()))
     await async_setup(hass, {})
     await async_setup(hass, {})

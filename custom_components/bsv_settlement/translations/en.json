@@ -48,7 +48,7 @@
   "services": {
     "create_session_budget": {
       "name": "Create session budget invitation",
-      "description": "Sign consent terms for one open session. No funds reservation, payment or charger control."
+      "description": "Sign consent terms before charging or for a named open session. No funds reservation, payment or charger control."
     },
     "accept_session_budget": {
       "name": "Verify driver budget consent",
@@ -61,6 +61,10 @@
     "session_budget_status": {
       "name": "Read session budget status",
       "description": "Read the local invitation and consent. No chain or driver-wallet request."
+    },
+    "bind_session_budget": {
+      "name": "Bind advance consent to a session",
+      "description": "Confirm the driver and bind advance consent to a session opened after approval. No payment or charger action."
     },
     "prepare_session_review": {
       "name": "Freeze session payment review",
