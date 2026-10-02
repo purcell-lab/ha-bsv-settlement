@@ -29,6 +29,8 @@ from .embedded import EmbeddedWalletAPI
 MAX_PAYMENT_SATS = 100000
 MAX_FEE_SATS = 1000
 MIN_CHANGE_SATS = 546
+BALANCE_REFRESH_SECONDS = 300
+PENDING_BALANCE_REFRESH_SECONDS = 60
 TXID = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -200,6 +202,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.saved.setdefault("payments", {})
         self.saved.setdefault("active_payment", None)
         self.saved.setdefault("chain", {"balance_sats": None, "checked_at": None, "error": None})
+        # Refresh once on startup, including stores written before this feature.
+        self._balance_next_refresh = 0.0
+        self._balance_refresh_required = True
         self.chain = WoCClient(async_get_clientsession(self.hass))
         from .session_review import SessionReviews
         self.reviews = SessionReviews(self)
@@ -220,6 +225,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             balance_sats=chain.get("balance_sats"), balance_verified=False,
             balance_source="WhatsOnChain confirmed UTXOs, not independently SPV verified",
             chain_checked_at=chain.get("checked_at"), chain_error=chain.get("error"),
+            chain_attempted_at=chain.get("attempted_at"),
+            pending_change_sats=self.pending_change(),
+            pending_change_source="Locally signed operator change; not confirmed or spendable",
             driver_identity_status="submitted_unverified" if self.saved["driver"]["driver_public_identity"] else "not_submitted",
             last_payment=self.public_payment(payment) if payment else None,
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
@@ -252,13 +260,62 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.saved["driver"][field] = normalized
         await self.store.async_save(self.saved)
 
-    async def refresh_chain(self):
+    def signed_payments(self):
+        """Only public transaction metadata is exposed by callers."""
+        return [p for group in ("payments", "automatic_credits")
+                for p in self.saved.get(group, {}).values() if p.get("txid")]
+
+    def pending_change(self):
+        """Show expected change separately, never add it to spendable funds."""
+        total, seen = 0, set()
+        for p in self.signed_payments():
+            if p["state"] not in ("broadcast_unknown", "submitted", "provider_unconfirmed"):
+                continue
+            if p["txid"] in seen:
+                continue
+            seen.add(p["txid"])
+            try:
+                tx = Transaction.from_hex(p["signed_raw"])
+                if tx.txid() != p["txid"]:
+                    return None
+                owned = P2PKH().lock(self.identity["address"]).hex()
+                total += sum(o.satoshis for o in tx.outputs if o.locking_script.hex() == owned)
+            except Exception:
+                return None
+        return total
+
+    def invalidate_balance(self, reason):
+        self.saved["chain"] = {"balance_sats": None, "checked_at": None, "error": reason}
+        self._balance_refresh_required = True
+
+    async def refresh_balance_if_due(self):
+        """Read-only maintenance; failures must never change payment outcomes."""
+        if not self._balance_refresh_required and time.monotonic() < self._balance_next_refresh:
+            return
+        try:
+            await self.refresh_chain(reconcile_payment=False)
+        except WalletError:
+            # refresh_chain persists unavailable/error and sets bounded backoff.
+            pass
+
+    async def refresh_chain(self, reconcile_payment=True):
+        pending = any(p["state"] in ("broadcast_unknown", "submitted", "provider_unconfirmed")
+                      for p in self.signed_payments())
+        self._balance_refresh_required = False
+        self._balance_next_refresh = time.monotonic() + (
+            PENDING_BALANCE_REFRESH_SECONDS if pending else BALANCE_REFRESH_SECONDS)
+        attempted_at = utcnow().isoformat()
         try:
             rows = await self.chain.unspent(self.identity["address"])
+            # A lagging indexer can still return a signed input. Do not count it
+            # as spendable, even when submission outcome is unknown.
+            used = {(p["source_txid"], p["source_index"]) for p in self.signed_payments()}
+            rows = [r for r in rows if (r["tx_hash"], r["tx_pos"]) not in used]
             self.saved["chain"] = {"balance_sats": sum(r["value"] for r in rows),
-                                   "checked_at": utcnow().isoformat(), "error": None}
+                                   "checked_at": utcnow().isoformat(),
+                                   "attempted_at": attempted_at, "error": None}
             p = self.saved["payments"].get(self.saved["active_payment"])
-            if p and p.get("txid") and p["state"] in (
+            if reconcile_payment and p and p.get("txid") and p["state"] in (
                 "broadcast_unknown", "submitted", "provider_unconfirmed", "provider_confirmed"):
                 details = await self.chain.details(p["txid"])
                 confirmations = details.get("confirmations", 0)
@@ -270,7 +327,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             return self.status()
         except WalletError:
             self.saved["chain"] = {"balance_sats": None, "checked_at": None,
-                                   "error": "chain_check_failed"}
+                                   "attempted_at": attempted_at, "error": "chain_check_failed"}
             await self.store.async_save(self.saved)
             raise
 
@@ -362,8 +419,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             p["recipient_address"], p["amount_sats"], p["fee_sats"], True)
         p.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                  approved_at=utcnow().isoformat(), approving_user_id=approving_user_id)
-        self.saved["chain"] = {"balance_sats": None, "checked_at": None,
-                               "error": "refresh_required_after_submission"}
+        self.invalidate_balance("refresh_required_after_submission")
         # Commit exact signed bytes and input reservation BEFORE touching network.
         await self.store.async_save(self.saved)
         try:
@@ -375,6 +431,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         except WalletError:
             # Preserve ambiguous state across restarts; never release or retry.
             raise WalletError("Broadcast outcome uncertain; refresh chain status, do not prepare a replacement") from None
+        finally:
+            await self.refresh_balance_if_due()
         return self.public_payment(p)
 
     async def cancel_payment(self, data):

@@ -38,6 +38,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
             try:
                 if self.mode == "embedded_mainnet":
                     await self.api.auto_credits.tick()
+                    await self.api.refresh_balance_if_due()
                 health = await self.api.call("GET", "/v1/health")
                 # A timed-out prepare is replayed with the same ID and frozen payload.
                 for session in self.saved["sessions"].values():

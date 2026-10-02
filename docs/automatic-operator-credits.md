@@ -85,6 +85,29 @@ reserve driver funds or guarantee collection when the browser is closed.
 
 ## Evidence and limits
 
+### Operator balance refresh
+
+The existing **Confirmed wallet balance** sensor counts confirmed outputs that
+are not spent in the provider's mempool or reserved by a locally signed payment.
+It does not count unconfirmed change as spendable money. Its `pending_change_sats`
+attribute shows expected change from locally signed, unresolved operator payments
+separately. An unknown broadcast is included in this estimate, not asserted as
+received. No combined "available balance" is calculated.
+
+The integration refreshes this balance on startup, after an operator submission,
+and when an automatic credit first confirms. It also checks every five minutes,
+or every minute while an operator payment is unresolved, on the existing
+15-second coordinator cycle. These checks only read chain data. They do not sign,
+resubmit or replace payments. A provider error makes the balance unavailable,
+sets `chain_error`, records `chain_attempted_at`, and uses the same bounded retry
+interval. Payment confirmation and signed-input reservations remain unchanged.
+The administrator's **Refresh chain** action remains available.
+
+For example, spending a 5,000 sat output to pay 280 sat plus a 10 sat fee leaves
+4,710 sat in pending change. If another 76 sat output is untouched, the sensor
+temporarily reads 76 sat, with 4,710 sat pending. After confirmation and provider
+indexing, the confirmed balance becomes 4,786 sat and pending change becomes zero.
+
 The provider supplies transaction confirmations, the TSC proof and its block
 header data. A matching Merkle root is checked before wallet import, but this
 service does not independently validate the header chain. See the provider's

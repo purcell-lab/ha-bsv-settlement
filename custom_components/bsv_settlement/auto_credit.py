@@ -207,6 +207,7 @@ class AutomaticCredits:
             raise WalletError("Session account changed after signing; no submission")
         item.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                     source_txid=source["tx_hash"], source_index=source["tx_pos"], error=None)
+        self.api.invalidate_balance("refresh_required_after_submission")
         await self.save()  # Signed bytes and input reservation MUST precede network submission.
         try:
             if await self.api.chain.broadcast(signed["raw"]) != signed["txid"]:
@@ -215,6 +216,7 @@ class AutomaticCredits:
         except WalletError:
             item["error"] = "Submission outcome uncertain. Reconcile this txid; never replace it."
         await self.save()
+        await self.api.refresh_balance_if_due()
 
     async def reconcile(self, item):
         if item["state"] not in PENDING:
@@ -228,7 +230,11 @@ class AutomaticCredits:
             raise WalletError("Invalid confirmation evidence")
         item.update(state="provider_confirmed" if confirmations else "provider_unconfirmed",
                     confirmations=confirmations, checked_at=now().isoformat(), error=None)
+        if confirmations:
+            self.api.invalidate_balance("refresh_required_after_confirmation")
         await self.save()
+        if confirmations:
+            await self.api.refresh_balance_if_due()
 
     async def tick(self):
         """Coordinator lock serialises this worker with all wallet services."""
