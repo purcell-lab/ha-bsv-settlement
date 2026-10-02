@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from custom_components.bsv_settlement.proxy_ledger import build_records, select_prices, instant
-from custom_components.bsv_settlement.proxy import ProxyCoordinator, SOURCE_KEYS
+from custom_components.bsv_settlement.proxy import ProxyCoordinator, SOURCE_KEYS, normalize
 from custom_components.bsv_settlement.sensor import ProxySensor
 from custom_components.bsv_settlement.config_flow import BSVSettlementConfigFlow
 
@@ -100,6 +100,15 @@ def test_proxy_partial_start_and_unknown_state_are_explicit():
     r = build_records(h, "sensor.state", stamp(15))[0]
     assert "unknown_running_state" in r["quality_flags"]
     assert not r["billing_eligible"]
+
+
+def test_native_datetime_price_attributes_are_normalized():
+    state = State("sensor.price", ".1", {
+        "unit_of_measurement": "$/kWh", "start_time": instant(stamp(0)),
+        "end_time": instant(stamp(5)), "estimate": False})
+    prices, issues = select_prices([normalize(state)])
+    assert not issues and len(prices) == 1
+    assert prices[0]["rate"] == Decimal(".1")
 
 
 def config_entry():

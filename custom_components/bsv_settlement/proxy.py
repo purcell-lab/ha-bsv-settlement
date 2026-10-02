@@ -1,6 +1,6 @@
 """Persistent read-only HA recorder, isolated from wallet and charger actions."""
 import copy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 import logging
 import time
@@ -25,7 +25,8 @@ def normalize(state):
     return {
         "t": dt_util.as_local(state.last_updated).isoformat(), "value": state.state,
         **({"unit": attrs["unit_of_measurement"]} if "unit_of_measurement" in attrs else {}),
-        **{key: attrs[field] for key, field in (
+        **{key: attrs[field].isoformat() if isinstance(attrs[field], datetime) else attrs[field]
+           for key, field in (
             ("start", "start_time"), ("end", "end_time"), ("estimate", "estimate"))
            if field in attrs},
     }
