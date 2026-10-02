@@ -64,17 +64,33 @@ class SettlementCoordinator(DataUpdateCoordinator):
             except WalletError as exc:
                 raise UpdateFailed(str(exc)) from exc
 
-    async def execute(self, action, data):
+    async def execute(self, action, data, approving_user_id=None):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
-                if action in ("wallet_status", "wallet_self_test"):
-                    if self.mode != "embedded_testnet":
+                wallet_actions = ("wallet_status", "wallet_self_test", "wallet_refresh_chain",
+                                  "prepare_operator_payment", "broadcast_operator_payment",
+                                  "cancel_operator_payment")
+                if action in wallet_actions:
+                    if not self.mode.startswith("embedded_"):
                         raise WalletError("Select the embedded operator wallet entry")
                     if action == "wallet_self_test":
                         result = await self.api.self_test()
-                    else:
+                    elif action == "wallet_status":
                         result = self.api.status()
+                    else:
+                        if self.mode != "embedded_mainnet":
+                            raise WalletError("Select the separate mainnet operator wallet")
+                        if not approving_user_id:
+                            raise WalletError("An explicit administrator context is required")
+                        if action == "wallet_refresh_chain":
+                            result = await self.api.refresh_chain()
+                        elif action == "prepare_operator_payment":
+                            result = await self.api.prepare_payment(data)
+                        elif action == "broadcast_operator_payment":
+                            result = await self.api.broadcast_payment(data, approving_user_id)
+                        else:
+                            result = await self.api.cancel_payment(data)
                     self.async_set_updated_data({
                         **(self.data or {}), "health": self.api.status()})
                     return result
@@ -122,8 +138,8 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     elif action == "prepare_session":
                         payload = freeze(session, data["ended_at"], data["final_import_wh"],
                                          data["final_export_wh"])
-                        if self.mode == "embedded_testnet":
-                            payload["operator_binding_id"] = "embedded-operator-testnet"
+                        if self.mode.startswith("embedded_"):
+                            payload["operator_binding_id"] = "embedded-operator-" + self.api.network
                         if session.get("payload") and session["payload"] != payload:
                             raise ValueError("Frozen ledger cannot be changed")
                         session.setdefault("settlement_id", str(uuid4()))
@@ -137,8 +153,8 @@ class SettlementCoordinator(DataUpdateCoordinator):
                             session["remote"] = await self.api.call("GET", f"/v1/settlements/{sid}")
                         await self.persist()
                     elif action == "request_payment":
-                        if self.mode == "embedded_testnet":
-                            raise WalletError("Payments are disabled in the embedded wallet validation stage")
+                        if self.mode.startswith("embedded_"):
+                            raise WalletError("Automatic session payments are disabled; use the guarded operator-payment workflow")
                         if not session.get("remote"):
                             raise ValueError("Prepare the session first")
                         sid = session["settlement_id"]

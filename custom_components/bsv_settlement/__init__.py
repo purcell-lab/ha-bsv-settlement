@@ -11,7 +11,7 @@ from .api import WalletAPI
 from .const import DOMAIN, SERVICES
 from .coordinator import SettlementCoordinator
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.TEXT]
 
 
 async def async_setup(hass, config):
@@ -30,13 +30,34 @@ async def async_setup(hass, config):
         "refresh": common,
         "wallet_status": common,
         "wallet_self_test": common,
+        "wallet_refresh_chain": common,
+        "prepare_operator_payment": {
+            **common, vol.Required("reference"): vol.All(str, vol.Length(min=6, max=100)),
+            vol.Required("amount_sats"): vol.All(int, vol.Range(min=1, max=100000)),
+            vol.Required("fee_sats"): vol.All(int, vol.Range(min=1, max=1000)),
+        },
+        "broadcast_operator_payment": {
+            **common, vol.Required("draft_id"): str,
+            vol.Required("recipient_address"): str,
+            vol.Required("amount_sats"): vol.All(int, vol.Range(min=1, max=100000)),
+            vol.Required("fee_sats"): vol.All(int, vol.Range(min=1, max=1000)),
+            vol.Required("confirm_mainnet_payment"): vol.In([True]),
+        },
+        "cancel_operator_payment": {**common, vol.Required("draft_id"): str},
     }
 
     async def handle(call):
+        if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
+                            "cancel_operator_payment", "wallet_refresh_chain"):
+            # Unlike the generic admin wrapper, refuse context-free automation.
+            user = (await hass.auth.async_get_user(call.context.user_id)
+                    if call.context.user_id else None)
+            if user is None or not user.is_admin:
+                raise HomeAssistantError("An authenticated HA administrator must perform this wallet action")
         coordinator = hass.data[DOMAIN].get(call.data["config_entry_id"])
         if coordinator is None:
             raise HomeAssistantError("The selected BSV config entry is not loaded")
-        result = await coordinator.execute(call.service, call.data)
+        result = await coordinator.execute(call.service, call.data, call.context.user_id)
         return result if call.return_response else None
 
     for name in SERVICES:
@@ -46,10 +67,12 @@ async def async_setup(hass, config):
 
 
 async def async_setup_entry(hass, entry):
-    if entry.data.get("backend") == "embedded_testnet":
+    if entry.data.get("backend") in ("embedded_testnet", "embedded_mainnet"):
         from .api import WalletError
-        module = await async_import_module(hass, f"custom_components.{DOMAIN}.embedded")
-        api = module.EmbeddedWalletAPI(hass, entry)
+        is_mainnet = entry.data["backend"] == "embedded_mainnet"
+        module = await async_import_module(
+            hass, f"custom_components.{DOMAIN}.{'mainnet' if is_mainnet else 'embedded'}")
+        api = (module.MainnetWalletAPI if is_mainnet else module.EmbeddedWalletAPI)(hass, entry)
         try:
             await api.load()
         except WalletError as exc:

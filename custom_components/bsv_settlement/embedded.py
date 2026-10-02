@@ -18,15 +18,16 @@ from .const import DOMAIN
 MODE = "embedded_testnet"
 
 
-def _identity(secret=None):
-    key = PrivateKey(bytes.fromhex(secret) if secret else None, network=Network.TESTNET)
+def _identity(secret=None, network="testnet"):
+    key = PrivateKey(bytes.fromhex(secret) if secret else None,
+                     network=Network.MAINNET if network == "mainnet" else Network.TESTNET)
     if not key._is_valid_secret(key.serialize()):
         raise ValueError("Invalid key")
     return {
         "secret_hex": key.hex(),
         "public_key": key.public_key().hex(),
         "address": key.address(),
-        "network": "testnet",
+        "network": network,
     }
 
 
@@ -70,6 +71,7 @@ class EmbeddedWalletAPI:
     """Local implementation of only the safe subset of the settlement API."""
 
     mode = MODE
+    network = "testnet"
 
     def __init__(self, hass, entry):
         self.hass = hass
@@ -82,7 +84,7 @@ class EmbeddedWalletAPI:
         self.saved = {"records": {}, "last_self_test": None}
 
     async def load(self):
-        if (self.entry.data.get("network") != "testnet"
+        if (self.entry.data.get("network") != self.network
                 or self.entry.data.get("acknowledge_key_custody") is not True):
             raise WalletError("Embedded backend requires testnet and key-custody acknowledgement")
         try:
@@ -91,13 +93,13 @@ class EmbeddedWalletAPI:
             if stored is None and expected:
                 raise ValueError("Missing key; restore backup rather than rotate")
             if stored is not None:
-                if stored.get("network") != "testnet":
+                if stored.get("network") != self.network:
                     raise ValueError("Unexpected wallet network")
-                identity = await self.hass.async_add_executor_job(_identity, stored["secret_hex"])
+                identity = await self.hass.async_add_executor_job(_identity, stored["secret_hex"], self.network)
                 if identity != stored:
                     raise ValueError("Corrupt wallet identity")
             else:
-                identity = await self.hass.async_add_executor_job(_identity)
+                identity = await self.hass.async_add_executor_job(_identity, None, self.network)
             if expected and identity["public_key"] != expected:
                 raise ValueError("Wallet identity changed")
             if stored is None:
@@ -114,9 +116,10 @@ class EmbeddedWalletAPI:
 
     def status(self):
         return {
-            "mode": MODE, "network": "testnet", "backend": "bsv-sdk",
+            "mode": self.mode, "network": self.network, "backend": "bsv-sdk",
             "state": "ready_broadcast_disabled", "broadcast_enabled": False,
             "operator_public_key": self.identity["public_key"],
+            "receive_address": self.identity["address"],
             "balance_sats": None, "balance_verified": False,
             "budget_gate_implemented": False, "driver_wallet_external": True,
             "last_self_test": copy.deepcopy(self.saved["last_self_test"]),
@@ -154,7 +157,7 @@ class EmbeddedWalletAPI:
                     raise WalletError("Session already has a settlement draft")
                 amount = data["net_amount_minor"]
                 record = {
-                    "mode": MODE, "network": "testnet", "settlement_id": sid,
+                    "mode": self.mode, "network": self.network, "settlement_id": sid,
                     "session_id": data["session_id"], "net_amount_minor": amount,
                     "state": "no_payment_due" if amount == 0 else "blocked_live_settlement",
                     "direction": "none" if amount == 0 else (

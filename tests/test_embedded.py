@@ -126,7 +126,8 @@ async def test_standalone_ledger_drafts_and_payment_block(tmp_path, import_wh, e
         assert response["broadcast"] is False
         sensor = SettlementSensor(coord, entry, "operator_wallet_status", "Wallet", None)
         assert sensor.native_value == "ready_broadcast_disabled"
-        assert "operator_public_key" not in sensor.extra_state_attributes
+        assert sensor.extra_state_attributes["operator_public_key"] == api.identity["public_key"]
+        assert "secret_hex" not in sensor.extra_state_attributes
         restored = EmbeddedWalletAPI(hass, entry)
         await restored.load()
         assert record == await restored.call("GET", f"/v1/settlements/{record['settlement_id']}")

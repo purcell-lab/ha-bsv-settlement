@@ -99,3 +99,83 @@ wallet_self_test:
       required: true
       selector:
         text:
+wallet_refresh_chain:
+  name: Refresh mainnet wallet
+  description: Read provider-reported confirmed UTXOs and payment status. Administrator only; does not broadcast.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+prepare_operator_payment:
+  name: Prepare operator payment
+  description: Prepare an unsigned mainnet payment to the submitted driver address. Administrator only.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    reference:
+      required: true
+      selector:
+        text:
+    amount_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100000
+          mode: box
+    fee_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
+broadcast_operator_payment:
+  name: Approve and broadcast operator payment
+  description: REAL MONEY. Repeat the exact prepared recipient, amount and fee. Administrator approval required.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    draft_id:
+      required: true
+      selector:
+        text:
+    recipient_address:
+      required: true
+      selector:
+        text:
+    amount_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100000
+          mode: box
+    fee_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
+    confirm_mainnet_payment:
+      required: true
+      selector:
+        boolean:
+cancel_operator_payment:
+  name: Cancel unsigned operator payment
+  description: Cancel an unsigned prepared or expired draft. A submitted payment cannot be cancelled here.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    draft_id:
+      required: true
+      selector:
+        text:

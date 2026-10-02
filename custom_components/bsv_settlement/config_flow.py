@@ -15,9 +15,11 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input["backend"] == "embedded_testnet":
                 return await self.async_step_embedded()
+            if user_input["backend"] == "embedded_mainnet":
+                return await self.async_step_mainnet()
             return await self.async_step_mock()
         return self.async_show_form(step_id="user", data_schema=vol.Schema({
-            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet"]),
+            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet", "embedded_mainnet"]),
         }))
 
     async def async_step_embedded(self, user_input=None):
@@ -35,6 +37,26 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="embedded", data_schema=vol.Schema({
             vol.Required("acknowledge_key_custody", default=False): bool,
         }), errors=errors)
+
+    async def async_step_mainnet(self, user_input=None):
+        errors = {}
+        if user_input is not None:
+            if not all(user_input.get(k) is True for k in (
+                "acknowledge_key_custody", "acknowledge_mainnet", "enable_broadcast")):
+                errors["base"] = "acknowledgement_required"
+            else:
+                await self.async_set_unique_id("embedded-operator-mainnet")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title="BSV Operator Wallet (Mainnet)",
+                    data={"backend": "embedded_mainnet", "network": "mainnet",
+                          "acknowledge_key_custody": True, "acknowledge_mainnet": True,
+                          "enable_broadcast": True})
+        return self.async_show_form(step_id="mainnet", errors=errors, data_schema=vol.Schema({
+            vol.Required("acknowledge_key_custody", default=False): bool,
+            vol.Required("acknowledge_mainnet", default=False): bool,
+            vol.Required("enable_broadcast", default=False): bool,
+        }))
 
     async def async_step_mock(self, user_input=None):
         errors = {}

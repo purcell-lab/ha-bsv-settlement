@@ -4,13 +4,22 @@
     "step": {
       "user": {
         "title": "Select settlement backend",
-        "description": "Keep the existing mock service, or create a separate unfunded testnet operator wallet inside Home Assistant. Embedded broadcasting is disabled.",
+        "description": "Keep the mock service, use the offline testnet wallet, or create a separate mainnet operator wallet with guarded broadcasting.",
         "data": {"backend": "Backend"}
       },
       "embedded": {
         "title": "Embedded testnet operator wallet",
         "description": "Creates a real private key on this Home Assistant. It is stored in an owner-only local file, not encrypted or hardware protected. HA administrators and backups can access it. Keep backups secure. Do not fund this validation wallet. Broadcasting, driver payment approval and the budget gate are not implemented. The driver wallet stays external.",
         "data": {"acknowledge_key_custody": "I accept local operator-key custody and will not fund this wallet"}
+      },
+      "mainnet": {
+        "title": "Mainnet operator wallet: real funds",
+        "description": "Creates a separate mainnet key stored locally in an owner-only file, not encrypted or hardware-protected. HA administrators and backups can access it. Protect and verify a backup before funding. Identity submission is unverified; a separate receiving address and exact administrator approval are required for each operator payment. Network checks disclose the operator address to WhatsOnChain. Driver debits and automatic charging-session settlement remain disabled.",
+        "data": {
+          "acknowledge_key_custody": "I accept local hot-wallet custody and backup responsibility",
+          "acknowledge_mainnet": "I understand this wallet uses real BSV mainnet funds",
+          "enable_broadcast": "Enable guarded broadcasting with exact payment approval"
+        }
       },
       "mock": {
         "title": "Connect to a mock wallet service",
@@ -23,6 +32,41 @@
     "abort": {"already_configured": "This backend is already configured."}
   },
   "services": {
+    "wallet_refresh_chain": {
+      "name": "Refresh mainnet wallet",
+      "description": "Administrator-only read of confirmed UTXOs and submitted transaction status from WhatsOnChain. Never broadcasts.",
+      "fields": {"config_entry_id": {"name": "Mainnet wallet", "description": "The mainnet operator entry."}}
+    },
+    "prepare_operator_payment": {
+      "name": "Prepare operator payment",
+      "description": "Prepare, but do not sign or send, a mainnet P2PKH payment to the submitted driver receiving address. Public identity ownership is not verified. One confirmed input is required; the exact fee is chosen by the administrator.",
+      "fields": {
+        "config_entry_id": {"name": "Mainnet wallet", "description": "The mainnet operator entry."},
+        "reference": {"name": "Unique payment reference", "description": "Never reuse a reference for different payment terms."},
+        "amount_sats": {"name": "Recipient amount", "description": "1 to 100000 satoshis received by the driver."},
+        "fee_sats": {"name": "Exact network fee", "description": "1 to 1000 satoshis paid additionally by the operator; not a market fee estimate."}
+      }
+    },
+    "broadcast_operator_payment": {
+      "name": "Approve and broadcast operator payment",
+      "description": "REAL MONEY. An authenticated administrator must repeat the exact prepared recipient, amount and fee. Do not call from an automation. Submission is not confirmation; uncertain results must be reconciled.",
+      "fields": {
+        "config_entry_id": {"name": "Mainnet wallet", "description": "The mainnet operator entry."},
+        "draft_id": {"name": "Prepared draft", "description": "Unexpired draft ID returned by prepare."},
+        "recipient_address": {"name": "Confirmed recipient address", "description": "Exact mainnet P2PKH address shown in the draft; check with the driver independently."},
+        "amount_sats": {"name": "Approved recipient amount", "description": "Must exactly match the draft."},
+        "fee_sats": {"name": "Approved exact fee", "description": "Must exactly match the draft."},
+        "confirm_mainnet_payment": {"name": "Approve real mainnet payment", "description": "True explicitly authorises signing and submission of this exact transaction."}
+      }
+    },
+    "cancel_operator_payment": {
+      "name": "Cancel unsigned operator payment",
+      "description": "Cancel only an unsigned prepared or expired draft. Never cancels a submitted transaction.",
+      "fields": {
+        "config_entry_id": {"name": "Mainnet wallet", "description": "The mainnet operator entry."},
+        "draft_id": {"name": "Prepared draft", "description": "The unsigned draft to cancel."}
+      }
+    },
     "wallet_status": {
       "name": "Operator wallet status",
       "description": "Read public embedded-wallet status. No network request or key export.",

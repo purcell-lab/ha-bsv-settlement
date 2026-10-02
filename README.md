@@ -4,6 +4,8 @@ Version 0.1.2 | Prepared for Mark Purcell | 2 October 2026
 
 **Session-end settlement proof of concept with two separate backends.** Release v0.1.2 provides the original mock service. The development branch also provides an embedded Python SDK operator wallet for **unfunded, offline testnet validation**, without a separate service or CLI. It creates a real operator key locally, but cannot broadcast or move funds. Neither backend implements the budget gate or automatic OCPP capture yet.
 
+**Mainnet development:** a third, separate operator-wallet backend now supports public driver-input dialogs and exact-approval mainnet P2PKH payments. Read the [mainnet safety and payment guide](docs/mainnet-operator-wallet.md) before configuring or funding it. This is an experimental hot wallet, not an audited or complete charging-settlement product.
+
 See [embedded operator-wallet setup and safety boundaries](docs/embedded-operator-wallet.md). No new version or release tag has been created.
 
 ## End-to-end concept
@@ -14,7 +16,7 @@ See [embedded operator-wallet setup and safety boundaries](docs/embedded-operato
 
 **Target design:** retain the BSV budget gate before session start, then meter and price energy dynamically and settle the final payment or credit. Budget authorisation is not a prepayment or a guarantee of available funds. The planned controller must monitor spend and pause or obtain renewed approval before the limit is reached, while preserving charger and grid safety controls.
 
-**Original mock:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate and automatic OCPP meter feed are not implemented. Neither backend is wired to `bsv-wallet-cli` or able to move real BSV.
+**Original mock:** the Home Assistant integration, mock service and settlement dashboard exercise synthetic session-end settlement only. The budget gate and automatic OCPP meter feed are not implemented. No backend is wired to `bsv-wallet-cli`; the separate mainnet backend uses the Python SDK and can send real BSV only through its explicit administrator-approved workflow.
 
 **New development milestone:** the standalone embedded backend uses `bsv-sdk==2.4.0`, not `bsv-wallet-cli`. It provides persistent operator identity, real offline signature tests and local settlement drafts. This is not yet a completed live-payment adapter; the infographic's real-payment and budget steps remain target capabilities.
 

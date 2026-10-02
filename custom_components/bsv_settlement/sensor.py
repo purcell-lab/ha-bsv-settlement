@@ -15,8 +15,10 @@ SENSORS = [
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     specs = SENSORS
-    if coordinator.mode == "embedded_testnet":
+    if coordinator.mode.startswith("embedded_"):
         specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None)]
+    if coordinator.mode == "embedded_mainnet":
+        specs = [*specs, ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
     async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in specs)
 
 
@@ -30,11 +32,12 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_info = {"identifiers": {(DOMAIN, entry.entry_id)},
-                                  "name": ("BSV Operator Wallet (Testnet)"
-                                           if coordinator.mode == "embedded_testnet"
+                                  "name": (f"BSV Operator Wallet ({coordinator.api.network.title()})"
+                                           if coordinator.mode.startswith("embedded_")
                                            else "BSV Settlement (Mock)"),
                                   "manufacturer": "Proof of concept",
-                                  "model": ("Embedded SDK, broadcast disabled"
+                                  "model": ("Embedded SDK, guarded mainnet" if coordinator.mode == "embedded_mainnet"
+                                            else "Embedded SDK, broadcast disabled"
                                             if coordinator.mode == "embedded_testnet"
                                             else "Simulated settlement only")}
 
@@ -47,6 +50,8 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         if self.key == "operator_wallet_status":
             return (self.coordinator.data or {}).get("health", {}).get("state")
+        if self.key == "confirmed_wallet_balance":
+            return (self.coordinator.data or {}).get("health", {}).get("balance_sats")
         session = self.session
         remote = session.get("remote", {})
         if self.key == "settlement_status":
@@ -66,11 +71,14 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        if self.key == "operator_wallet_status":
+        if self.key in ("operator_wallet_status", "confirmed_wallet_balance"):
             health = (self.coordinator.data or {}).get("health", {})
             return {key: health.get(key) for key in (
                 "mode", "network", "backend", "broadcast_enabled", "balance_verified",
-                "budget_gate_implemented", "driver_wallet_external", "last_self_test")}
+                "budget_gate_implemented", "driver_wallet_external", "last_self_test",
+                "receive_address", "operator_public_key", "driver_identity_status",
+                "chain_checked_at", "chain_error", "balance_source", "last_payment",
+                "max_payment_sats", "max_fee_sats")}
         remote = self.session.get("remote", {})
         return {"mode": self.coordinator.mode, "session_id": self.session.get("session_id"),
                 "settlement_id": remote.get("settlement_id"),
