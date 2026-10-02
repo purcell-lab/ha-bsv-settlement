@@ -20,6 +20,9 @@ async def async_setup(hass, config):
     if getattr(hass, "http", None) is not None and not hass.data.get(DOMAIN + "_frontend"):
         from homeassistant.components.http import StaticPathConfig
         await hass.http.async_register_static_paths([StaticPathConfig(
+            "/bsv_settlement/operator-card.js",
+            str(Path(__file__).parent / "frontend" / "operator-card.js"),
+            cache_headers=False), StaticPathConfig(
             "/bsv_settlement/session-review-card.js",
             str(Path(__file__).parent / "frontend" / "session-review-card.js"),
             cache_headers=False), StaticPathConfig(

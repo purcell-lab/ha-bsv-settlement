@@ -233,10 +233,37 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
             latest_session_review=self.reviews.latest() if hasattr(self, "reviews") else None,
             automatic_credit=self.auto_credits.summary() if hasattr(self, "auto_credits") else None,
+            driver_approvals=self.budgets.summary() if hasattr(self, "budgets") else [],
+            session_payments=self.payment_summary(),
         )
         if hasattr(self, "auto_credits") and self.auto_credits.policy.get("enabled"):
             result["state"] = "broadcast_enabled_capped_automatic_credits"
         return result
+
+    def payment_summary(self):
+        """Compact authenticated display records. Never include signed payloads."""
+        rows = []
+        for review in list(self.saved.get("session_reviews", {}).values())[-20:]:
+            r = self.reviews.public(review)
+            p = r.get("credit_draft") or r.get("receipt") or {}
+            rows.append({
+                "session_id": r["account"]["session_id"],
+                "transaction_id": r["account"]["ocpp_transaction_id"],
+                "state": p.get("state", r["state"]),
+                "direction": r["direction"], "amount_sats": r["amount_sats"],
+                "fee_sats": p.get("fee_sats"), "txid": p.get("txid"),
+                "error": p.get("verification_error"), "source": "manual",
+            })
+        for budget_id, item in list(self.saved.get("driver_collections", {}).items())[-20:]:
+            row = self.saved["session_budgets"].get(budget_id)
+            if row:
+                rows.append({
+                    "session_id": self.collections.session_id(row),
+                    "state": item["state"], "direction": "driver_to_operator",
+                    "txid": item.get("txid"), "error": item.get("error"),
+                    "source": "driver",
+                })
+        return rows
 
     def public_payment(self, payment):
         if payment is None:
@@ -288,12 +315,12 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.saved["chain"] = {"balance_sats": None, "checked_at": None, "error": reason}
         self._balance_refresh_required = True
 
-    async def refresh_balance_if_due(self):
+    async def refresh_balance_if_due(self, reconcile_payment=False):
         """Read-only maintenance; failures must never change payment outcomes."""
         if not self._balance_refresh_required and time.monotonic() < self._balance_next_refresh:
             return
         try:
-            await self.refresh_chain(reconcile_payment=False)
+            await self.refresh_chain(reconcile_payment=reconcile_payment)
         except WalletError:
             # refresh_chain persists unavailable/error and sets bounded backoff.
             pass

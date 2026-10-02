@@ -5,3 +5,8 @@ __pycache__/
 .env
 *.egg-info/
 node_modules/
+preview/operator-card.js
+preview/budget-card.js
+preview/session-review-card.js
+preview/*.woff2
+preview/DM-SANS-LICENSE.txt

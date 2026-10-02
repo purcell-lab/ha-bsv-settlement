@@ -94,6 +94,21 @@ class SessionBudgets:
         self.api = api
         api.saved.setdefault("session_budgets", {})
 
+    def summary(self):
+        """Non-capability summaries for authenticated operator dashboards."""
+        rows = []
+        for row in list(self.api.saved["session_budgets"].values())[-20:]:
+            t = row["terms"]
+            rows.append({
+                "budget_id": t["budget_id"], "session_id": self.api.collections.session_id(row),
+                "state": self.public(row)["state"], "version": t["version"],
+                "approved": bool(row.get("receipt")), "expires_at": t["expires_at"],
+                "created_at": t["created_at"],
+                "receiving_registered_at": (row.get("credit_destination") or {}).get("registered_at"),
+                "credit_terms": bool(t.get("credit_receiving")),
+            })
+        return rows
+
     def public(self, row):
         result = copy.deepcopy(row)
         for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by", "driver_token_hash"):
@@ -142,8 +157,18 @@ class SessionBudgets:
         return row
 
     def driver_view(self, row):
+        session_id = self.api.collections.session_id(row)
+        proxy = self.api.hass.data.get(DOMAIN, {}).get(row["proxy_config_entry_id"])
+        data = getattr(proxy, "data", None) or {}
+        record = next((s for s in [data.get("latest_session"), data.get("previous_session"),
+                                  *getattr(proxy, "archive", [])]
+                       if s and s.get("session_id") == session_id), None)
+        session = ({k: copy.deepcopy(record.get(k)) for k in (
+            "session_id", "running_state", "ended_at", "import_kwh", "export_kwh", "net_cost_aud")}
+            if record and not data.get("issues") else None)
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
                 "prices": self.prices(row),
+                "session": session,
                 "driver_identity": (row.get("receipt") or {}).get("driver_identity"),
                 "binding": copy.deepcopy(row.get("binding")),
                 "credit_destination_registered": bool(row.get("credit_destination")),

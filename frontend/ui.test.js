@@ -1,0 +1,28 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {sessionStatus,num,esc} from "./ui.js";
+const s={session_id:"new-session",net_cost_aud:-1.24};
+test("previous session approval cannot imply readiness",()=>{
+ assert.equal(sessionStatus(s,{driver_approvals:[{session_id:"old",approved:true}]}).label,"Driver approval needed");
+});
+test("submitted and confirmed payments override metering not_requested",()=>{
+ const ended={...s,ended_at:"2026-10-02T00:00:00Z",payment_state:"not_requested"};
+ const health={session_payments:[{session_id:s.session_id,state:"provider_unconfirmed",txid:"abc"}]};
+ assert.equal(sessionStatus(ended,health).label,"Awaiting confirmation");
+ health.session_payments[0].state="provider_confirmed";
+ assert.equal(sessionStatus(ended,health).label,"Confirmed on chain");
+});
+test("credit readiness needs live approval, policy and receiving registration",()=>{
+ const now=Date.now(),a={session_id:s.session_id,version:2,approved:true,state:"spending_authorised_wallet_permission_required",
+   expires_at:new Date(now+10000).toISOString(),created_at:new Date(now-5000).toISOString(),credit_terms:true};
+ const h={driver_approvals:[a],automatic_credit:{enabled:true,enabled_at:new Date(now-10000).toISOString()}};
+ assert.equal(sessionStatus(s,h,now).label,"Credit not ready");
+ a.receiving_registered_at=new Date(now-1000).toISOString();
+ assert.equal(sessionStatus(s,h,now).label,"Automatic credit checks enabled");
+ a.expires_at=new Date(now-1).toISOString();
+ assert.equal(sessionStatus(s,h,now).label,"Driver approval needed");
+});
+test("missing numbers remain unavailable and HTML values are escaped",()=>{
+ assert.equal(num(null),"Unavailable");assert.equal(num("unavailable"),"Unavailable");
+ assert.equal(num(0),"0");assert.equal(esc('<img onerror="x">'),"&lt;img onerror=&quot;x&quot;&gt;");
+});

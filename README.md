@@ -24,6 +24,8 @@ The embedded backend has now been activated on HA 2026.10.0b0, with offline sign
 
 ## Design documents
 
+- [Operator and driver UX review, validation and rollout](docs/ux-review.md)
+
 **Session-linked review:** development code also provides a frozen-account
 review card, a manually fulfilled driver payment request and separately
 approved operator credits as a manual exception path. The driver wallet remains

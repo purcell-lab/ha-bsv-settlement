@@ -169,7 +169,7 @@ async def test_driver_distribution_and_no_payment_calls():
     root = Path(__file__).resolve().parents[1]
     for name in ("index.html","style.css"):
         assert (root/"frontend/driver"/name).read_bytes() == (root/"custom_components/bsv_settlement/frontend/driver"/name).read_bytes()
-    assert (root/"frontend/bsv-budget-card.js").read_bytes() == (root/"custom_components/bsv_settlement/frontend/budget-card.js").read_bytes()
+    assert (root/"frontend/bsv-budget-card.bundle.js").read_bytes() == (root/"custom_components/bsv_settlement/frontend/budget-card.js").read_bytes()
     for name in ("app.js","model.js"):
         code = (root/"frontend/driver"/name).read_text()
         for forbidden in ("createAction(", "signAction(", "internalizeAction(", "localStorage"):

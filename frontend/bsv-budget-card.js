@@ -1,117 +1,136 @@
-/** Administrative invitation/receipt transfer. Never invokes a payment action. */
+import qrcode from "qrcode-generator";
+import {styles,esc,stamp,short,stateLabel} from "./ui.js";
 class BSVBudgetCard extends HTMLElement {
   setConfig(config) {
-    if (!config.config_entry_id || !config.proxy_config_entry_id || !config.proxy_entity || !config.rate_entity)
-      throw Error("Configure wallet, recorder and conversion-rate entities.");
-    this.config = config; this.budget=null; this.initialRead=false;
-    if (!this.shadowRoot) this.attachShadow({mode:"open"});
-    this.shadowRoot.innerHTML = `<ha-card header="Driver session budget"><div class="body">
-      <p>For driver payments, keep the approval page open in BSV Browser and bind the correct charging session. For automatic operator credits, enable the operator policy before creating a new invitation and register the driver's receiving wallet before session end. Eligible negative balances are paid by the server without per-payment approval, even with the browser closed. Wallet permission prompts may still appear.</p>
-      <p id="session"></p>
-      <label>Operator name<input id="name" maxlength="100"></label>
-      <label>Operator contact<input id="contact" maxlength="200" placeholder="Contact email or phone"></label>
-      <label>Total budget, including fees (sat)<input id="total" type="number" min="1" max="100000" step="1" value="1000"></label>
-      <label>Maximum network fee (sat)<input id="fee" type="number" min="0" max="1000" step="1" value="10"></label>
-      <label>Spending approval valid for (minutes)<input id="minutes" type="number" min="1" max="1440" step="1" value="720"></label>
-      <p id="rate"></p>
-      <button id="create">Create pre-session approval link</button>
-      <label>Private driver link<input id="driver-link" readonly></label>
-      <p><a id="open-link" hidden target="_blank" rel="noopener noreferrer">Open this driver's approval page</a></p>
-      <p>Share only with the intended driver. The link alone cannot spend: collection also requires the approved driver wallet and a valid signed transaction. Old consent receipts do not become spending approvals.</p>
-      <p><a href="/bsv_settlement/driver/index.html" target="_blank" rel="noopener">Open driver approval page</a></p>
-      <details><summary>Manual JSON fallback</summary>
-      <label>Invitation JSON<textarea id="invitation" rows="5" readonly></textarea></label>
-      <label>Signed receipt from driver<textarea id="receipt" rows="5" placeholder="Paste receipt JSON"></textarea></label>
-      <button id="accept" disabled>Verify and save driver approval</button>
+    for(const key of ["config_entry_id","proxy_config_entry_id","proxy_entity","rate_entity"])if(!config[key])throw Error(`${key} is required`);
+    this.config=config;this.budget=null;this.initialRead=false;this.busy=false;this.linkBudget=null;
+    if(!this.shadowRoot)this.attachShadow({mode:"open"});
+    this.shadowRoot.innerHTML=`<style>${styles}</style><ha-card>
+      <div class="head"><div><p class="eyebrow">Driver setup</p><h2>One driver. One session.</h2></div><ha-icon icon="mdi:account-check-outline"></ha-icon></div>
+      <p class="note">Invite the driver, receive approval, then confirm the matching charging session.</p>
+      <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
+      <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
+      <p id="status" class="note" role="status" aria-live="polite"></p>
+      <div id="link-panel" hidden class="section">
+        <h3>Share with this driver only</h3><label>Private approval link<input id="driver-link" readonly></label>
+        <div class="actions"><button id="copy" class="primary">Copy driver link</button><a id="open-link" class="button" target="_blank" rel="noopener noreferrer">Open driver page</a></div>
+        <details><summary>Show QR for the driver</summary><div id="qr" class="qr"></div></details>
+        <p class="note">Open inside BSV Browser. Save this link now; it is only returned when created.</p>
+      </div>
+      <div class="actions"><button id="bind" class="primary" hidden>Confirm driver and match session</button><button id="refresh" hidden>Check approval</button></div>
+      <p id="session" class="note" style="margin-top:12px"></p>
+      <details id="create-panel" open><summary>Create a driver invitation</summary>
+        <label>Use this approval for<select id="scope"><option value="next">The next session</option><option id="current-option" value="current" disabled>The current open session</option></select></label>
+        <div class="notice"><strong id="defaults">1,000 sat total limit · 10 sat maximum fee · 12 hours</strong><span id="rate"></span></div>
+        <details><summary>Change limits or operator contact</summary><div class="form-grid">
+          <label>Total spending limit (sat)<input id="total" type="number" min="1" max="100000" value="1000"></label>
+          <label>Maximum fee (sat)<input id="fee" type="number" min="0" max="1000" value="10"></label>
+          <label>Approval duration (minutes)<input id="minutes" type="number" min="1" max="1440" value="720"></label>
+          <label>Operator name<input id="name" maxlength="100"></label>
+          <label class="full">Operator contact<input id="contact" maxlength="200"></label>
+        </div></details>
+        <button id="create" class="primary" style="margin-top:16px">Create private driver link</button>
+        <p class="note" style="margin-top:12px">Creating a link does not authorise payment or start charging. The driver must approve in their wallet.</p>
       </details>
-      <button id="refresh" disabled>Refresh budget status</button>
-      <button id="bind" disabled>Bind approval to latest session</button>
-      <button id="revoke" disabled>Revoke this approval</button>
-      <p id="status" role="status" aria-live="polite">Create an invitation before the charging session opens.</p>
-      <p id="collection"></p>
-      <p>The private link is returned once. Keep it before leaving this card. Automatic session binding is deliberately disabled to avoid assigning another driver's session.</p>
-    </div></ha-card><style>
-      .body{padding:0 20px 20px;color:var(--primary-text-color)}p{line-height:1.5;overflow-wrap:anywhere}
-      label{display:block;margin:14px 0;font-size:14px}input,textarea{box-sizing:border-box;width:100%;margin-top:5px;padding:10px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit}
-      textarea{font-family:monospace;font-size:12px;resize:vertical}button{min-height:44px;padding:8px 14px;margin:4px 4px 4px 0;border:1px solid var(--primary-color);background:transparent;color:var(--primary-color);border-radius:4px;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}a{color:var(--primary-color)}:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px}
-    </style>`;
-    this.$("name").value = config.operator_name || "Charging operator";
-    this.$("contact").value = config.operator_contact || "";
-    this.$("create").onclick = () => this.perform("create_session_budget", {
-      proxy_config_entry_id: config.proxy_config_entry_id,
-      conversion_rate_entity: config.rate_entity, max_total_sats: this.number("total"),
-      max_fee_sats: this.number("fee"), valid_minutes: this.number("minutes"),
-      operator_name: this.$("name").value, operator_contact: this.$("contact").value});
-    this.$("accept").onclick = () => {
-      try { const receipt = JSON.parse(this.$("receipt").value);
-        return this.perform("accept_session_budget", {budget_id:receipt.budget_id, receipt});
-      } catch (_) { this.$("status").textContent = "Paste a valid receipt JSON record."; }
+      <details><summary>Approval details and recovery</summary>
+        <p id="collection" class="note"></p>
+        <p class="note">Driver charges need the open BSV Browser page. Registered operator credits run on the server; the driver returns to import the receipt. Matching a session is never automatic.</p>
+        <p id="lost-link" class="note"></p>
+        <button id="revoke" class="danger" disabled>Revoke this approval</button>
+        <details><summary>Advanced: transfer JSON manually</summary>
+          <label>Signed invitation<textarea id="invitation" rows="4" readonly></textarea></label>
+          <label>Driver's signed approval<textarea id="receipt" rows="4"></textarea></label>
+          <button id="accept" disabled>Verify and save approval</button>
+        </details>
+      </details>
+    </ha-card>`;
+    this.$("name").value=config.operator_name||"Charging operator";this.$("contact").value=config.operator_contact||"";
+    for(const id of ["total","fee","minutes"])this.$(id).oninput=()=>{
+      this.$("defaults").textContent=`${this.$("total").value || "?"} sat total limit · ${this.$("fee").value || "?"} sat maximum fee · ${this.$("minutes").value || "?"} minutes`;
     };
-    this.$("refresh").onclick = () => this.perform("session_budget_status", {budget_id:this.budget.terms.budget_id});
-    this.$("bind").onclick = () => {
-      if (confirm("Confirm the latest session belongs to this driver. For a version 2 spending approval, binding enables automatic collection after the session ends, within the signed limits. No charger control is performed."))
-        this.perform("bind_session_budget", {budget_id:this.budget.terms.budget_id,
-          session_id:this.session.session_id, confirm_driver_present:true});
-    };
-    this.$("revoke").onclick = () => {
-      if (confirm("Revoke this session budget consent in HA? This does not reverse any payment."))
-        this.perform("revoke_session_budget", {budget_id:this.budget.terms.budget_id});
-    };
-  }
-  connectedCallback() {
-    if(!this.refreshTimer)this.refreshTimer=setInterval(()=>{
-      if(this.budget && this._hass?.user?.is_admin && !this.busy)
-        this.perform("session_budget_status",{budget_id:this.budget.terms.budget_id});
-    },15000);
-  }
-  disconnectedCallback() {clearInterval(this.refreshTimer);this.refreshTimer=null;}
-  $(id) { return this.shadowRoot.getElementById(id); }
-  number(id) { const v = this.$(id).value; return v.trim() ? Number(v) : null; }
-  set hass(hass) {
-    this._hass = hass;
-    if (!this.config) return;
-    const state = hass.states[this.config.proxy_entity];
-    this.session = state?.attributes.latest_session;
-    this.$("session").textContent = this.session ? `Session: ${this.session.ocpp_transaction_id} (${this.session.ended_at ? "closed" : "open"})` : "Waiting for a recorded session.";
-    const admin = !!hass.user?.is_admin;
-    this.$("rate").textContent = `Conversion: ${hass.states[this.config.rate_entity]?.state || "unavailable"} sat/AUD. Default 1,000 sat equals AUD10 only at 100 sat/AUD.`;
-    this.$("create").disabled = this.busy || !admin || !state || ["unknown","unavailable"].includes(state.state);
-    this.$("accept").disabled = this.busy || !admin;
-    this.$("refresh").disabled = this.busy || !admin || !this.budget;
-    this.$("revoke").disabled = this.busy || !admin || !this.budget || this.budget.state === "revoked";
-    this.$("bind").disabled = this.busy || !admin || !this.session ||
-      !["consent_verified_not_payment_authority","spending_authorised_wallet_permission_required"].includes(this.budget?.state) || !!this.budget?.binding;
-    if (admin && !this.initialRead) {
-      this.initialRead=true;
-      this.perform("session_budget_status",{});
-    }
-  }
-  async perform(service, data) {
-    if (this.busy || !this._hass?.user?.is_admin) return;
-    this.busy = true; this.hass = this._hass;
-    this.$("status").textContent = "Waiting for Home Assistant…";
-    try {
-      const result = await this._hass.callWS({type:"call_service",domain:"bsv_settlement",
-        service,service_data:{config_entry_id:this.config.config_entry_id,...data},return_response:true});
-      this.budget = result.response;
-      if (this.budget.driver_link_fragment) {
-        const link = new URL("/bsv_settlement/driver/index.html",location.origin);
-        link.hash = this.budget.driver_link_fragment.slice(1);
-        this.$("driver-link").value=link.href;
-        this.$("open-link").href=link.href;this.$("open-link").hidden=false;
+    this.$("create").onclick=()=>{
+      const n=id=>Number(this.$(id).value);
+      if(![["total",1,100000],["fee",0,1000],["minutes",1,1440]].every(([id,min,max])=>this.$(id).value!==""&&Number.isInteger(n(id))&&n(id)>=min&&n(id)<=max)){
+        this.$("status").textContent="Enter whole-number limits within the displayed ranges.";return;
       }
-      this.$("invitation").value = JSON.stringify(this.budget.invitation, null, 2);
-      this.$("status").textContent = `${this.budget.state}${this.budget.binding ? " · bound to "+this.budget.binding.transaction_id : ""}. ${this.budget.terms.version === 2 ? "Automatic collection requires the driver's open page and wallet permission." : "Legacy consent only; revoke and create a new invitation to approve spending."} No charger control.`;
-      const c=this.budget.collection;
-      this.$("collection").textContent=c ? `Collection: ${c.state}${c.fee_sats!==undefined ? ". Fee: "+c.fee_sats+" sat" : ""}${c.txid ? ". BSV transaction: "+c.txid : ""}${c.error ? ". "+c.error : ""}` : "No collection attempt yet. Status refreshes every 15 seconds.";
-      const credit=this.budget.automatic_credit;
-      if(credit && (this.budget.credit_destination || credit.txid))
-        this.$("collection").textContent+=` Operator credit: ${credit.state}${credit.amount_sats ? ", "+credit.amount_sats+" sat" : ""}${credit.txid ? ". BSV transaction: "+credit.txid : ""}${credit.error ? ". "+credit.error : ""}`;
-      if(service==="create_session_budget"&&!this.budget.driver_link_fragment&&!this.$("driver-link").value)
-        this.$("status").textContent += " Existing invitation retained. If you lost its link, revoke it before creating a replacement.";
-    } catch (e) { this.$("status").textContent = e.message || "Budget operation failed."; }
-    finally {this.busy = false; this.hass = this._hass;}
+      const data={proxy_config_entry_id:config.proxy_config_entry_id,conversion_rate_entity:config.rate_entity,
+        max_total_sats:n("total"),max_fee_sats:n("fee"),valid_minutes:n("minutes"),
+        operator_name:this.$("name").value,operator_contact:this.$("contact").value};
+      if(this.$("scope").value==="current"){
+        if(!this.session||this.session.ended_at){this.$("status").textContent="That session has ended. Create a next-session invitation instead.";return;}
+        data.session_id=this.session.session_id;
+      }
+      this.perform("create_session_budget",data);
+    };
+    this.$("refresh").onclick=()=>this.perform("session_budget_status",this.budget?{budget_id:this.budget.terms.budget_id}:{});
+    this.$("bind").onclick=()=>{
+      if(confirm(`Confirm this driver is using session ${this.session.ocpp_transaction_id}. This enables settlement checks within the signed limits, not charger control.`))
+        this.perform("bind_session_budget",{budget_id:this.budget.terms.budget_id,session_id:this.session.session_id,confirm_driver_present:true});
+    };
+    this.$("revoke").onclick=()=>{
+      if(confirm("Revoke this approval? This prevents a new payment, but cannot reverse a signed or submitted transaction."))
+        this.perform("revoke_session_budget",{budget_id:this.budget.terms.budget_id});
+    };
+    this.$("accept").onclick=()=>{
+      try{const receipt=JSON.parse(this.$("receipt").value);this.perform("accept_session_budget",{budget_id:receipt.budget_id,receipt});}
+      catch(e){this.$("status").textContent="Paste a valid signed approval JSON record.";}
+    };
+    this.$("copy").onclick=async()=>{
+      try{await navigator.clipboard.writeText(this.$("driver-link").value);this.$("status").textContent="Private link copied. Share only with this driver.";}
+      catch(e){this.$("driver-link").focus();this.$("driver-link").select();this.$("status").textContent="Link selected. Use your device's Copy command.";}
+    };
   }
-  getCardSize() { return 12; }
+  $(id){return this.shadowRoot.getElementById(id);}
+  connectedCallback(){if(!this.timer)this.timer=setInterval(()=>{if(this.budget&&!this.busy&&this._hass?.user?.is_admin)this.perform("session_budget_status",{budget_id:this.budget.terms.budget_id},true);},15000);}
+  disconnectedCallback(){clearInterval(this.timer);this.timer=null;}
+  getCardSize(){return 7;}
+  set hass(h){this._hass=h;if(!this.config)return;this.session=h.states[this.config.proxy_entity]?.attributes.latest_session;this.paint();
+    if(h.user?.is_admin&&!this.initialRead){this.initialRead=true;this.perform("session_budget_status",{},true);}
+  }
+  paint(){
+    const h=this._hass;if(!h)return;const b=this.budget,admin=!!h.user?.is_admin;
+    const usable=h.states[this.config.proxy_entity]&&!["unknown","unavailable"].includes(h.states[this.config.proxy_entity].state);
+    const accepted=b?.state==="spending_authorised_wallet_permission_required";
+    const bound=!!b?.binding||b?.terms.session_mode==="existing_session";
+    this.$("current").hidden=!b;
+    this.$("step1").className=b?"done":"";this.$("step2").className=accepted?"done":"";this.$("step3").className=bound?"done":"";
+    this.$("current-option").disabled=!this.session||!!this.session.ended_at;
+    this.$("session").textContent=this.session?`Recorder: ${this.session.ended_at?"closed":"open"} session ${short(this.session.ocpp_transaction_id)} · ${stamp(this.session.ended_at||this.session.opened_at)}`:"No session recorded yet.";
+    this.$("rate").textContent=`${h.states[this.config.rate_entity]?.state||"Unavailable"} sat per AUD. This is the demonstration conversion rate.`;
+    if(b){
+      this.$("state-title").textContent=stateLabel(b.state);
+      this.$("next-step").textContent=!accepted?(b.state==="awaiting_driver_consent"?"Ask the driver to open their private link in BSV Browser and approve.":"This approval is not active. Create a fresh invitation for a future session."):!bound?"Driver approved. Confirm the correct open session below.":b.credit_destination?"Session matched and receiving wallet registered. Final account and payment checks still apply.":"Session matched. Ask the driver to reconnect before session end to register their receiving wallet.";
+      this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your private link is shown above.":"The private link is not recoverable from this card. The saved approval still exists. Do not pay or reapprove an already-settled session.";
+    }
+    this.$("create").disabled=this.busy||!admin||!usable;
+    this.$("accept").disabled=this.busy||!admin;
+    this.$("refresh").hidden=false;this.$("refresh").disabled=this.busy||!admin;
+    this.$("revoke").disabled=this.busy||!admin||!b||["revoked","expired"].includes(b.state)||!!b.automatic_credit?.txid||!!b.collection?.txid;
+    this.$("bind").hidden=!b||!accepted||bound;
+    this.$("bind").disabled=this.busy||!admin||!usable||!this.session||!!this.session.ended_at;
+  }
+  async perform(service,data,silent=false){
+    if(this.busy||!this._hass?.user?.is_admin)return;this.busy=true;this.paint();
+    if(!silent)this.$("status").textContent="Working…";
+    try{
+      const result=await this._hass.callWS({type:"call_service",domain:"bsv_settlement",service,
+        service_data:{config_entry_id:this.config.config_entry_id,...data},return_response:true});
+      this.budget=result.response;const b=this.budget;
+      if(b.driver_link_fragment){
+        const url=new URL("/bsv_settlement/driver/index.html",location.origin);url.hash=b.driver_link_fragment.slice(1);
+        this.linkBudget=b.terms.budget_id;this.$("driver-link").value=url.href;this.$("open-link").href=url.href;
+        const qr=qrcode(0,"M");qr.addData(url.href,"Byte");qr.make();this.$("qr").innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});
+        this.$("qr").querySelector("svg").setAttribute("aria-label","Private driver approval link");
+        this.$("create-panel").open=false;
+      }
+      this.$("link-panel").hidden=this.linkBudget!==b.terms.budget_id;
+      this.$("invitation").value=JSON.stringify(b.invitation,null,2);
+      const p=b.automatic_credit?.txid?b.automatic_credit:b.collection;
+      this.$("collection").textContent=p?`${stateLabel(p.state)}${p.txid?": "+p.txid:""}`:"No payment submitted under this approval.";
+      if(!silent)this.$("status").textContent=service==="create_session_budget"?"Invitation ready. Keep the private link before leaving this page.":"Approval record updated.";
+    }catch(e){
+      this.$("status").textContent=silent&&!this.budget?"No approval loaded. Create an invitation, or use Check approval to retry.":e.message||"Could not update the approval. Try again.";
+    }finally{this.busy=false;this.paint();}
+  }
 }
-if (!customElements.get("bsv-budget-card")) customElements.define("bsv-budget-card", BSVBudgetCard);
+if(!customElements.get("bsv-budget-card"))customElements.define("bsv-budget-card",BSVBudgetCard);

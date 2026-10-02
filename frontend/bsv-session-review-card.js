@@ -1,4 +1,5 @@
 import qrcode from "qrcode-generator";
+import {styles, stateLabel, short, stamp} from "./ui.js";
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -70,6 +71,11 @@ class BsvSessionReviewCard extends HTMLElement {
     const disabled = this._busy || !ready || !admin;
     const exact = r ? {review_id: r.review_id, terms_hash: r.terms_hash,
       recipient_address: r.recipient_address, amount_sats: r.amount_sats} : null;
+    const sameReview=this._formReview===JSON.stringify([r?.terms_hash,r?.state,r?.credit_draft?.draft_id]);
+    const savedForms=sameReview?[...this.shadowRoot.querySelectorAll("input,select,textarea")].map(e=>({id:e.id,value:e.value,checked:e.checked})):[];
+    const focused=sameReview?this.shadowRoot.activeElement?.id:null;
+    const opened=[...this.shadowRoot.querySelectorAll("details[open]")].map(e=>e.querySelector("summary")?.textContent);
+    this._formReview=JSON.stringify([r?.terms_hash,r?.state,r?.credit_draft?.draft_id]);
     this.shadowRoot.innerHTML = `
       <style>
         :host{display:block}ha-card{display:block;padding:22px;color:var(--primary-text-color,#202124)}
@@ -88,41 +94,42 @@ class BsvSessionReviewCard extends HTMLElement {
         .notice{padding:10px;border:1px solid var(--divider-color,#ccc);border-radius:6px}
         .qr{max-width:220px;margin:16px auto;background:#fff;line-height:0}.qr svg{width:100%;height:auto}
         textarea{min-height:130px;font-size:12px}.divider{border-top:1px solid var(--divider-color,#ddd);margin:20px 0}
-      </style>
+      </style><style>${styles}</style>
       <ha-card>
-        <h2>Automatic operator credits</h2>
-        <p class="notice">${automatic?.enabled ? "Enabled. Eligible negative session balances are paid automatically, without per-payment approval." : "Disabled. Enable the operator policy before issuing new invitations."}
-        Maximum total operator spend: 1,000 sat per session, including a 10 sat fee. The driver receives the full credit amount.</p>
-        ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}
-        ${(automatic?.payments || []).slice().reverse().map(p=>`<p><strong>${esc(p.state)}</strong>: ${esc(p.amount_sats)} sat to driver, ${esc(p.fee_sats)} sat fee.</p>
-        <code>${esc(p.transaction_id)}</code><code>${esc(p.recipient_address)}</code><code>${esc(p.txid || "Not submitted")}</code>
-        ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}`).join("")}
-        <h3>Manual exception review</h3>
-        <p class="note">BSV mainnet. Closed sessions only. Preparing or reviewing an account does not send money.
-        This manual fallback is separate from automatic credits. A session owned by either flow cannot enter the other flow.</p>
+        <div class="head"><div><p class="eyebrow">Settlement</p><h2>Payments & credits</h2></div><span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span></div>
+        <p class="note">Follow each session from review to confirmation. A submitted transaction must be reconciled, never paid again.</p>
+        ${(automatic?.payments || []).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
+        <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p><code>${esc(p.txid || "Not submitted")}</code></details>
+        ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
+        <details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a session-specific approval and receiving key registered before session end. Maximum operator spend: 1,000 sat per session including a 10 sat fee. Registration does not guarantee payment; final account, funding and limits are checked.</p>
+        ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
+        <details id="new-review" ${!r?"open":""}><summary>Review a completed session manually</summary>
+        <p class="note">Use only when automatic settlement is not available. Review the account and receiving address before preparing a payment. Preparing a review sends no money.</p>
         <label>Closed session<select id="session">${sessions.map(s =>
-          `<option value="${esc(s.session_id)}">${esc(String(s.ended_at).slice(11,16))} · ${esc(s.ocpp_transaction_id.slice(0,8))} · AUD ${esc(s.net_cost_aud ?? "unavailable")}</option>`
+          `<option value="${esc(s.session_id)}">${esc(stamp(s.ended_at))} · ${esc(short(s.ocpp_transaction_id))} · AUD ${esc(s.net_cost_aud ?? "unavailable")}</option>`
         ).join("") || '<option value="">No completed session available</option>'}</select></label>
-        <button id="prepare" ${disabled || !sessions.length ? "disabled" : ""}>Freeze session review</button>
-        <button id="refresh" ${disabled ? "disabled" : ""}>Refresh review</button>
-        <p class="note">Uses ${esc(c.rate_entity)} when freezing. Later rate changes do not reprice the frozen request.</p>
+        <button id="prepare" class="primary" ${disabled || !sessions.length ? "disabled" : ""}>Prepare account for review</button>
+        <p class="note">The conversion rate is fixed when the review is prepared.</p></details>
+        <button id="refresh" ${disabled ? "disabled" : ""}>Check saved review</button>
         <div role="status" aria-live="polite">${esc(this._busy ? "Working…" : this._message)}</div>
         ${r ? `<div class="divider"></div>
           <h3>${esc(r.direction === "driver_to_operator" ? "Driver payment request" : r.direction === "operator_to_driver" ? "Operator credit" : "Zero account")}</h3>
-          <p><strong>State: ${esc(r.state)}</strong></p>
+          <p><span class="badge">${esc(stateLabel(r.credit_draft?.state||r.state))}</span></p>
           <dl><dt>Frozen account</dt><dd>AUD ${esc(r.account.net_amount_aud)}</dd>
           <dt>Frozen conversion</dt><dd>${esc(r.satoshis_per_aud)} sat/AUD</dd>
           <dt>Recipient amount</dt><dd>${esc(r.amount_sats)} sat</dd></dl>
           <p class="note">Proxy transaction ID</p><code>${esc(r.account.ocpp_transaction_id)}</code>
           <p class="note">Recipient</p><code>${esc(r.recipient_address || "No payment required")}</code>
-          <p class="note">Review expires: ${esc(r.expires_at)}<br>Identity: ${esc(r.identity_verification)}</p>
+          <p class="note">Review expires: ${esc(stamp(r.expires_at))}<br>Receiving address: ${r.identity_verification==="administrator_attested_not_cryptographic"?"confirmed by the operator":"not independently verified"}. Manual addresses are separate from session-specific wallet keys.</p>
           <details><summary>Frozen terms fingerprint</summary><code>${esc(r.terms_hash)}</code></details>
           <div id="flow"></div>` : ""}
       </ha-card>`;
     const $ = selector => this.shadowRoot.querySelector(selector);
-    if($("#stop-credits")) $("#stop-credits").onclick=()=>this.action("configure_automatic_credit",{enabled:false});
+    if($("#stop-credits")) $("#stop-credits").onclick=()=>{
+      if(confirm("Stop new automatic credits? Submitted payments will still be reconciled. Re-enabling requires new invitations."))this.action("configure_automatic_credit",{enabled:false});
+    };
     $("#prepare").onclick = () => this.action("prepare_session_review", {
       proxy_config_entry_id: c.proxy_config_entry_id, session_id: $("#session").value,
       conversion_rate_entity: c.rate_entity,
@@ -211,7 +218,7 @@ class BsvSessionReviewCard extends HTMLElement {
         Expiry: ${esc(p.expires_at)}. Review account expiry also applies.</p>
         ${p.state === "prepared" && Date.parse(r.expires_at) > Date.now() && Date.parse(p.expires_at) > Date.now() ? `<label><input id="send-consent" type="checkbox">I authorise a real mainnet transfer of ${esc(p.amount_sats)} sat to this exact address, plus ${esc(p.fee_sats)} sat fee.</label>
         <button id="send" class="danger" disabled>Approve and broadcast this credit</button>` :
-          '<p class="notice">Broadcast unavailable. Cancel only unsigned drafts; reconcile any signed or submitted transaction before further action.</p>'}
+          `<p class="notice">${p.txid?(p.state==="provider_confirmed"?"Payment confirmed. No further payment is required.":"Payment submitted. Wait for confirmation; do not send again."):"This draft can no longer be sent. Cancel only an unsigned draft before preparing another."}</p>`}
         ${["prepared","expired"].includes(p.state) ? `<button id="cancel-draft" ${disabled ? "disabled" : ""}>Cancel unsigned credit</button>` : ""}
         ${p.txid ? `<p class="note">Transaction ID</p><code>${esc(p.txid)}</code>` : ""}`;
       if ($("#cancel-draft")) $("#cancel-draft").onclick = () => this.action("cancel_session_review", {review_id:r.review_id});
@@ -229,6 +236,11 @@ class BsvSessionReviewCard extends HTMLElement {
       note.textContent=`Provider confirmations: ${r.receipt.confirmations}. Evidence checked: ${r.receipt.checked_at}. ${r.receipt.verification_error ? "Latest verification failed; prior evidence is not current." : ""}`;
       flow.append(note);
     }
+    for(const f of savedForms){const e=this.shadowRoot.getElementById(f.id);if(e){e.value=f.value;e.checked=f.checked;}}
+    for(const d of this.shadowRoot.querySelectorAll("details"))if(opened.includes(d.querySelector("summary")?.textContent))d.open=true;
+    for(const id of ["account","driver","reference","send-consent"]){const e=$("#"+id);if(e?.checked)e.dispatchEvent(new Event("change"));}
+    if($("#fee")?.value)$("#fee").dispatchEvent(new Event("input"));
+    if(focused)this.shadowRoot.getElementById(focused)?.focus({preventScroll:true});
   }
 }
 

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BSV Settlement · UX preview</title>
+<style>
+@font-face{font-family:DM;src:url('./dm-sans-latin-wght-normal.woff2')}*{box-sizing:border-box}
+:root{--primary-font-family:DM,Arial,sans-serif;--primary-text-color:#152a3a;--secondary-text-color:#526472;--primary-color:#186776;--text-primary-color:#fff;--card-background-color:#fff;--secondary-background-color:#eef3f5;--divider-color:#d8e0e5}
+body{margin:0;background:#f4f7f8;color:var(--primary-text-color);font:16px DM,Arial,sans-serif}
+body.dark{background:#101c25;--primary-text-color:#edf4f7;--secondary-text-color:#b3c2cb;--primary-color:#73c8ce;--text-primary-color:#10262b;--card-background-color:#172832;--secondary-background-color:#203540;--divider-color:#38505d;--success-color:#87d2a2;--warning-color:#efc07a}
+header,main{max-width:1160px;margin:auto;padding:24px}header{padding-bottom:0}.brand{display:flex;align-items:center;gap:12px;font-weight:650}.brand svg{width:36px;height:36px}h1{font-size:30px;letter-spacing:-.03em;margin:24px 0 8px}p{line-height:1.5;color:var(--secondary-text-color)}
+.toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,select,a{font:inherit;color:inherit}button,select{min-height:44px;padding:10px 14px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:8px;cursor:pointer}
+nav{display:flex;gap:8px;overflow:auto;margin-top:24px;padding-bottom:4px}nav button{white-space:nowrap}nav button[aria-current=true]{background:var(--primary-color);color:var(--text-primary-color);border-color:var(--primary-color)}:focus-visible{outline:3px solid var(--primary-color);outline-offset:3px}
+.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start}.panel{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:16px;padding:24px}.panel h2{font-size:20px;margin-top:0}.panel p{font-size:14px}.panel li{margin:14px 0;line-height:1.5}.preview-note{font-size:13px;border-bottom:1px solid var(--divider-color);padding:12px 24px;text-align:center}a{color:var(--primary-color)}#notice{font-size:14px}
+@media(max-width:760px){header,main{padding:16px}.grid{grid-template-columns:1fr}h1{font-size:26px}.toolbar{align-items:flex-start}.tools{font-size:13px}}
+</style></head><body>
+<div class="preview-note">Interactive UX preview · Fictional data · No wallet or payment calls</div>
+<header><div class="toolbar"><div class="brand"><svg role="img" aria-label="Two-way settlement" viewBox="0 0 40 40" fill="none"><rect x="1" y="1" width="38" height="38" rx="10" stroke="currentColor"/><path d="M10 15h20m-6-5 6 5-6 5M30 26H10m6-5-6 5 6 5" stroke="currentColor" stroke-width="2"/></svg>BSV Settlement</div><div class="tools"><label for="scenario">Preview state</label><select id="scenario"><option value="confirmed">Confirmed credit</option><option value="pending">Payment pending</option><option value="missing">Approval needed</option><option value="unavailable">Wallet unavailable</option></select><button id="theme">Dark theme</button></div></div>
+<h1 id="title">Charging & settlement</h1><p id="intro">The latest session, its next action and the operator's funds.</p>
+<nav aria-label="Settlement views"><button data-tab="overview" aria-current="true">Overview</button><button data-tab="drivers">Drivers</button><button data-tab="payments">Payments</button><button data-tab="wallet">Wallet</button><button data-tab="testing">Diagnostics</button></nav></header>
+<main><div id="content" class="grid"></div><p id="notice" role="status"></p></main>
+<script type="module" src="./preview.js"></script></body></html>

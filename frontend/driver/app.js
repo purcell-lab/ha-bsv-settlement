@@ -2,9 +2,13 @@ import { WalletClient } from "@bsv/sdk";
 import { parseInvitation, signConsent } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importCredit } from "./credit.js";
+import { driverView } from "./view.js";
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
+// A new fragment identifies a different private invitation. Reset every wallet
+// and session variable rather than displaying the old session in the same tab.
+window.addEventListener("hashchange", () => location.reload());
 const capability = fragment.has("budget") && fragment.has("token")
   ? {budget_id:fragment.get("budget"),token:fragment.get("token")} : null;
 const framed = !!capability && window.top !== window;
@@ -12,6 +16,7 @@ let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
+let latestTxid=null;
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
 const spending = () => checked?.terms.version === 2;
 const status = (message,error=false) => {
@@ -38,6 +43,21 @@ function controls() {
   $("approve").textContent = accepted ? (spending() ? "Spending approval saved" : "Old consent saved, no spending authority") :
     receipt ? "Spending approval signed" : !spending() && checked ? "New invitation required to approve spending" :
     `Approve spending up to ${checked ? checked.terms.max_total_sats.toLocaleString() : "…"} sat`;
+  const view=driverView({accepted,registered:creditRegistered,connected:!!connectedWallet,
+    state:collectionState,credit:creditDirection,creditEnabled,imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
+  $("page-title").textContent=view.title;$("page-subtitle").textContent=view.subtitle;
+  document.body.dataset.stage=view.stage;
+  $("progress-approve").className=accepted?"done":"";
+  $("progress-session").className=accepted&&collectionState!=="waiting_for_operator_binding"?"done":"";
+  $("progress-settle").className=view.stage==="settled"?"done":"";
+  $("approve").hidden=accepted;
+  $("approval-action").hidden=accepted;
+  $("approval-terms").hidden=accepted;$("action-note").hidden=accepted;
+  $("approval-heading").textContent=accepted?"Your approved limit":"Your spending limit";
+  $("resume-collection").textContent=view.reconnect||"Reconnect wallet";
+  $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet);
+  $("retry-collection").hidden=!pendingReport;
+  $("retry").hidden=accepted||!receipt;
 }
 async function api(action, extra={}) {
   const response = await fetch("/api/bsv_settlement/driver",{
@@ -68,6 +88,7 @@ function show(invitation) {
   $("budget").textContent=`${t.max_total_sats.toLocaleString()} sat`;
   $("aud").textContent=`AUD ${(t.max_total_sats/Number(t.satoshis_per_aud)).toFixed(2)} at the displayed conversion rate`;
   $("fee").textContent=`${t.max_fee_sats} sat maximum, included in total`;
+  $("mobile-fee").textContent=`Total cap ${t.max_total_sats.toLocaleString()} sat, including up to ${t.max_fee_sats} sat fee`;
   $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this approval`;
   $("session").textContent=t.session_mode==="next_session_reservation" ? "One future charging session" : t.session_id;
   $("transaction").textContent=t.transaction_id;
@@ -92,6 +113,9 @@ async function refresh(initial=false) {
     if (!checked) show(result.invitation);
     live=result.prices; accepted=acceptedStates.includes(result.state) || !!result.driver_identity; binding=result.binding;
     creditEnabled=result.automatic_credit_enabled;creditRegistered=result.credit_destination_registered;
+    const s=result.session;
+    $("energy-summary").hidden=!s;
+    if(s)$("energy-summary").textContent=`${s.ended_at?"Session ended":"Session in progress"} · Charged ${s.import_kwh ?? "unavailable"} kWh · Exported ${s.export_kwh ?? "unavailable"} kWh${s.net_cost_aud!==null&&s.net_cost_aud!==undefined ? ` · Provisional ${Number(s.net_cost_aud)<0?"credit":"charge"} AUD ${Math.abs(Number(s.net_cost_aud)).toFixed(2)}`:""}`;
     $("credit-status").textContent=creditRegistered ?
       "Receiving wallet registered. Eligible net credits are paid automatically by the operator, even if you close this page. Reopen to import the confirmed credit into your wallet." :
       "Receiving wallet is not registered. Automatic credits are not ready for this session.";
@@ -102,7 +126,7 @@ async function refresh(initial=false) {
     paintPrices();
     if(accepted) {
       $("wallet-key").textContent=result.driver_identity;
-      status(spending() ? "Spending approval saved. Keep this page open for automatic session-end collection; your wallet may request permission." :
+      if(!collectionState)status(spending() ? "Approval saved. Checking your session and settlement…" :
         "Old consent is saved. It grants no spending authority. Ask the operator for a new invitation to approve spending.");
     } else if(initial) status("Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
   } catch(e) {
@@ -128,6 +152,7 @@ const collectionMessages={
 function paintCollection(result) {
   creditDirection=result.direction==="operator_to_driver";
   collectionState=result.state;
+  latestTxid=result.txid||null;
   $("collection-section").hidden=false;
   $("collection-status").textContent=(collectionMessages[result.state] || result.state)+
     (result.error ? " "+result.error : "");
@@ -137,12 +162,23 @@ function paintCollection(result) {
   }
   $("collection-txid").textContent=result.txid ? `BSV transaction ID: ${result.txid}` : "";
   if(creditDirection){
-    $("collection-status").textContent=`Operator credit: ${result.state}. ${result.error || ""}`;
+    $("settlement-heading").textContent="Your session credit";
+    $("collection-status").textContent=({
+      provider_confirmed:"Credit confirmed on chain",
+      provider_unconfirmed:"Credit sent, awaiting confirmation",
+      submitted:"Credit submitted",
+      broadcast_unknown:"Submission uncertain. Tracking the existing payment.",
+      automatic_credit_pending:"Credit will be checked when the session ends",
+      credit_destination_required:"Receiving wallet registration needed",
+      credit_queued:"Credit queued for funding and account checks",
+    })[result.state]||"Credit needs attention";
+    if(result.error)$("collection-status").textContent+=`. ${result.error}`;
     $("collection-amount").textContent=result.amount_sats ?
       `Your wallet receives ${result.amount_sats} sat. The operator pays the ${result.fee_sats} sat network fee.` :
       "Eligible credits are paid automatically. No per-payment operator approval.";
     $("settlement-detail").textContent="The operator wallet signs and pays the session credit automatically. Reopening this page imports the confirmed receipt into your wallet; it does not send another payment. Chain status is provider-reported, not independent SPV verification.";
   }
+  $("settlement-badge").textContent=result.state==="provider_confirmed"?"Confirmed":result.txid?"Submitted":"In progress";
   if(result.state==="provider_confirmed")status(creditDirection ?
     "Your session credit is confirmed by the chain provider. Reconnect your wallet here to import the receipt." :
     "Session payment confirmed by the chain provider. No further collection will be attempted.");
@@ -287,6 +323,9 @@ if(capability) {
   if(framed)status("Open the private approval link directly inside BSV Browser, not inside an embedded frame.",true);
   else refresh(true);
 }
+let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
+function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";$("theme").setAttribute("aria-label",`Switch to ${theme==="dark"?"light":"dark"} mode`);}
+$("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
 setInterval(()=>{paintPrices();controls();},1000);
 setInterval(()=>{if(capability&&!framed&&!busy&&!collectionBusy)refresh();},30000);
 controls();
