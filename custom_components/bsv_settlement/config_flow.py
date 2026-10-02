@@ -13,14 +13,42 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
+            if user_input["backend"] == "sensor_proxy":
+                return await self.async_step_proxy()
             if user_input["backend"] == "embedded_testnet":
                 return await self.async_step_embedded()
             if user_input["backend"] == "embedded_mainnet":
                 return await self.async_step_mainnet()
             return await self.async_step_mock()
         return self.async_show_form(step_id="user", data_schema=vol.Schema({
-            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet", "embedded_mainnet"]),
+            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet", "embedded_mainnet", "sensor_proxy"]),
         }))
+
+    async def async_step_proxy(self, user_input=None):
+        errors = {}
+        fields = ("import_entity", "export_entity", "state_entity",
+                  "import_price_entity", "export_price_entity")
+        if user_input is not None:
+            states = {field: self.hass.states.get(user_input[field]) for field in fields}
+            if not all(states.values()) or len({user_input[f] for f in fields}) != 5:
+                errors["base"] = "invalid_proxy_sources"
+            elif any(states[f].attributes.get("unit_of_measurement") != "MWh"
+                     for f in ("import_entity", "export_entity")) or any(
+                         states[f].attributes.get("unit_of_measurement") != "$/kWh"
+                         for f in ("import_price_entity", "export_price_entity")):
+                errors["base"] = "invalid_proxy_units"
+            else:
+                await self.async_set_unique_id("sensor-proxy:" + user_input["state_entity"])
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=user_input.get("name", "Charging sessions"),
+                    data={**user_input, "backend": "sensor_proxy"})
+        schema = {vol.Optional("name", default="Charging sessions"): str}
+        schema.update({
+            vol.Required(field): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")) for field in fields
+        })
+        return self.async_show_form(step_id="proxy", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_embedded(self, user_input=None):
         errors = {}

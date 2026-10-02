@@ -24,6 +24,13 @@ The embedded backend has now been activated on HA 2026.10.0b0, with offline sign
 
 ## Design documents
 
+**Live read-only session recorder:** the development branch now includes a
+separate `sensor_proxy` backend for cumulative charger import/export counters,
+Sigen-style running states and historical interval-price sensors. It provides
+stable proxy transaction IDs, automatically updating provisional energy/cost
+sensors and recorder-assisted restart recovery. It cannot control a charger
+or request a wallet payment. See the [sensor session proxy guide](docs/sensor-session-proxy.md).
+
 Start with the [documentation index](docs/README.md), the [implemented settlement interface](docs/settlement-interface.md) and the [no-budget mock sequence diagram](docs/settlement-sequence.md). These describe the existing scaffold; the infographic above restores the budget gate to the target design without claiming that it is implemented. The [research comparison](docs/research/wallet-micropayments-comparison.md) is background research, not a statement of implemented capabilities.
 
 Earlier concepts and visuals are preserved under [docs/archive](docs/archive/README.md). Use the infographic above for the current target concept and the implementation documentation for what the mock actually does.

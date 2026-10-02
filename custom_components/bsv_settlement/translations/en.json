@@ -4,8 +4,20 @@
     "step": {
       "user": {
         "title": "Select settlement backend",
-        "description": "Keep the mock service, use the offline testnet wallet, or create a separate mainnet operator wallet with guarded broadcasting.",
+        "description": "Choose a mock wallet, an embedded operator wallet, or a separate read-only sensor session recorder.",
         "data": {"backend": "Backend"}
+      },
+      "proxy": {
+        "title": "Read-only charging session recorder",
+        "description": "Combines cumulative charging/discharging counters in MWh, Sigen-style running states and signed import/feed-in prices in $/kWh. Recovers recent history and updates every 15 seconds. IDs are proxy-generated, costs are provisional, and no charger or wallet actions are performed.",
+        "data": {
+          "name": "Recorder name",
+          "import_entity": "Charging cumulative energy (MWh)",
+          "export_entity": "Discharging cumulative energy (MWh)",
+          "state_entity": "Charger running state",
+          "import_price_entity": "Import price ($/kWh)",
+          "export_price_entity": "Signed feed-in price ($/kWh)"
+        }
       },
       "embedded": {
         "title": "Embedded testnet operator wallet",
@@ -28,6 +40,8 @@
       }
     },
     "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode.",
+              "invalid_proxy_sources": "Choose five different existing sensor entities.",
+              "invalid_proxy_units": "Energy counters must be MWh and price sensors must be $/kWh.",
               "acknowledgement_required": "Acknowledge the local-key custody and unfunded validation restrictions."},
     "abort": {"already_configured": "This backend is already configured."}
   },
