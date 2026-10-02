@@ -7,6 +7,9 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[Connect BSV Browser](browser-pairing.md):** encrypted mobile pairing,
+  separate session spending approval and the wallet network-capability gate.
+
 - **[Acceptance evidence](acceptance-evidence.md):** all ten roadmap outcomes,
   test references, evidence classes and remaining gates.
 - **[Recovery drill](operator-recovery-drill.md):** isolated unfunded restore

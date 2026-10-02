@@ -35,6 +35,12 @@ async def async_setup(hass, config):
         hass.data[DOMAIN + "_frontend"] = True
         from .driver_http import DriverBudgetView
         hass.http.register_view(DriverBudgetView(hass))
+        from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+        from .pairing import KEY, PairingHub, PairingDiscoveryView, PairingSocketView
+        hub = hass.data[KEY] = PairingHub(hass)
+        hass.http.register_view(PairingDiscoveryView(hass))
+        hass.http.register_view(PairingSocketView(hass))
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, hub.close_all)
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
@@ -173,6 +179,12 @@ async def async_unload_entry(hass, entry):
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
+        from .pairing import KEY
+        hub = hass.data.get(KEY)
+        if hub:
+            for topic, item in list(hub.sessions.items()):
+                if item["coord"] is coordinator:
+                    await hub.close(topic)
         if coordinator is not None and coordinator.mode == "sensor_proxy":
             await coordinator.close()
     return unloaded
