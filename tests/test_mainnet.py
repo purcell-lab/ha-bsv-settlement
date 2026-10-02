@@ -52,6 +52,38 @@ class FictionalChain:
         return Transaction.from_hex(raw).txid()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("coinbase,confirmations,allowed", [
+    (False, 1, True), (False, 47, True), (False, 0, False),
+    (True, 99, False), (True, 100, True),
+])
+async def test_woc_funding_maturity_uses_raw_outpoint_not_empty_json_field(coinbase, confirmations, allowed):
+    tx = Transaction(
+        [TransactionInput(source_txid=("00" if coinbase else "11") * 32,
+                          source_output_index=0xFFFFFFFF if coinbase else 0)],
+        [TransactionOutput(P2PKH().lock(PrivateKey().address()), satoshis=5000)])
+    client = WoCClient(None)
+    client.request = AsyncMock(side_effect=[
+        tx.hex(), {"txid":tx.txid(), "confirmations":confirmations,
+                   "vin":[{"coinbase":"0101" if coinbase else ""}]}])
+    if allowed:
+        assert await client.source(tx.txid()) == tx.hex()
+    else:
+        with pytest.raises(WalletError, match="not mature" if coinbase else "provider-confirmed"):
+            await client.source(tx.txid())
+
+
+@pytest.mark.asyncio
+async def test_woc_source_rejects_raw_transaction_identity_mismatch():
+    tx = Transaction([TransactionInput(source_txid="11"*32)],
+                     [TransactionOutput(P2PKH().lock(PrivateKey().address()),satoshis=5000)])
+    client = WoCClient(None)
+    client.request = AsyncMock(side_effect=[
+        tx.hex(), {"txid":"22"*32, "confirmations":100, "vin":[{"coinbase":""}]}])
+    with pytest.raises(WalletError,match="identity"):
+        await client.source("22"*32)
+
+
 async def setup_wallet(tmp_path):
     entry = make_entry(backend="embedded_mainnet", network="mainnet",
                        acknowledge_mainnet=True, enable_broadcast=True)

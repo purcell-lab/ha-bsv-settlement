@@ -158,7 +158,19 @@ class WoCClient:
         details = await self.details(txid)
         if type(details.get("confirmations")) is not int or details["confirmations"] < 1:
             raise WalletError("Only provider-confirmed funding outputs may be selected")
-        if any("coinbase" in vin for vin in details.get("vin", [])) and details["confirmations"] < 100:
+        # WoC includes coinbase="" on normal inputs. Classify the canonical
+        # null outpoint in the raw transaction, not the presence of that field.
+        try:
+            tx = Transaction.from_hex(raw)
+            if not tx or tx.hex() != raw.lower() or tx.txid() != txid or not tx.inputs:
+                raise ValueError()
+            null_inputs = [i for i in tx.inputs if
+                           i.source_txid == "00" * 32 and i.source_output_index == 0xFFFFFFFF]
+            if null_inputs and len(tx.inputs) != 1:
+                raise ValueError()
+        except Exception:
+            raise WalletError("Invalid funding transaction encoding or identity") from None
+        if null_inputs and details["confirmations"] < 100:
             raise WalletError("Coinbase funding is not mature")
         return raw
 
