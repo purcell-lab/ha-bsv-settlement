@@ -129,4 +129,6 @@ function render(){
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
 $("#scenario").onchange=()=>{closedRecord=null;budget=null;render();};$("#theme").onclick=()=>{$("body").classList.toggle("dark");$("#theme").textContent=$("body").classList.contains("dark")?"Light theme":"Dark theme";};
 window.previewRefresh=()=>{for(const c of document.querySelectorAll("bsv-session-review-card,bsv-operator-card"))c.hass=hass;};
+// Open the current staged workflow, not an unrelated historical-credit fixture.
+$("#scenario").value="closure";tab="payments";
 render();
