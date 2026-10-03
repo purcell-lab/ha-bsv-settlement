@@ -20,7 +20,8 @@ test("post-session approval explains immediate collection without starting a ses
 });
 test("confirmed credit is not wallet acceptance until import succeeds",()=>{
  const args={hasInvitation:true,accepted:true,registered:true,credit:true,state:"provider_confirmed"};
- assert.equal(driverView(args).reconnect,"Receive credit in wallet");
+ assert.equal(driverView(args).reconnect,"Sync confirmed credits to wallet");
+ assert.match(driverView(args).subtitle,/No new payment or spending approval/);
  assert.equal(driverView(args).stage,"approved");
  assert.equal(driverView({...args,imported:true}).stage,"settled");
 });
