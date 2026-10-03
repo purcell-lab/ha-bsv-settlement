@@ -387,6 +387,23 @@ create_session_budget:
     operator_contact:
       selector:
         text:
+open_public_registration:
+  name: Open registration for next driver
+  description: Expose the exact unapproved multi-session invitation on the public page for up to 15 minutes. Preserves historical consents, recipients and settlements; never enables a payment policy.
+  fields:
+    config_entry_id: {required: true, selector: {text: {}}}
+    budget_id: {required: true, selector: {text: {}}}
+    expected_invitation_hash: {required: true, selector: {text: {}}}
+    expected_context_hash: {required: true, selector: {text: {}}}
+    confirm_public_registration: {required: true, selector: {boolean: {}}}
+close_public_registration:
+  name: Close public registration
+  description: Hide and invalidate this pending public QR without revoking the private invitation or historical consent. Cannot revoke an approved driver.
+  fields:
+    config_entry_id: {required: true, selector: {text: {}}}
+    budget_id: {required: true, selector: {text: {}}}
+    expected_invitation_hash: {required: true, selector: {text: {}}}
+    confirm_public_registration: {required: true, selector: {boolean: {}}}
 accept_session_budget:
   name: Verify driver spending approval
   description: Verify and persist a versioned driver mandate. Wallet transaction permission is separate; old consent remains consent-only.

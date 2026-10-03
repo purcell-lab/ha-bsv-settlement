@@ -13,6 +13,14 @@ class BSVBudgetCard extends HTMLElement {
       <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
       <p id="status" class="note" role="status" aria-live="polite"></p>
+      <div class="section">
+        <h3>Public registration</h3>
+        <p class="note">Open a 15-minute QR window for the next driver. The invitation covers seven days and 1,000 sat total, including fees. Historical approvals and payments stay intact; payment policies do not change.</p>
+        <p class="note">Anyone with the public page can claim the invitation with their wallet. Open it only when the intended driver is ready.</p>
+        <div class="actions"><button id="open-registration">Open registration for next driver</button><button id="close-registration" hidden>Close public registration</button></div>
+        <p id="public-status" class="note" role="status" aria-live="polite"></p>
+        <a id="public-page" class="button" href="/bsv_settlement/driver/index.html" target="_blank" rel="noopener noreferrer" hidden>Open public QR page</a>
+      </div>
       <div id="link-panel" hidden class="section">
         <h3>Scan to approve in BSV Browser</h3>
         <p class="note">Share with this driver only. Scanning opens the terms; it does not approve payment or start charging.</p>
@@ -88,6 +96,30 @@ class BSVBudgetCard extends HTMLElement {
       await this.perform("create_session_budget",data);
     };
     this.$("refresh").onclick=()=>this.perform("session_budget_status",this.budget?{budget_id:this.budget.terms.budget_id}:{});
+    this.$("open-registration").onclick=async()=>{
+      if(this.busy||!this._hass?.user?.is_admin)return;
+      if(!confirm("Open public registration for 15 minutes? Anyone with the public page can approve the invitation. Terms: seven days, 1,000 sat TOTAL including all fees, with a 1,000 sat fee ceiling within that total. Historical settlements and payment policies stay unchanged. No funds move now."))return;
+      const b=await this.perform("create_session_budget",{
+        proxy_config_entry_id:config.proxy_config_entry_id,conversion_rate_entity:config.rate_entity,
+        multi_session:true,max_total_sats:1000,max_fee_sats:1000,valid_minutes:10080,
+        operator_name:this.$("name").value,operator_contact:this.$("contact").value});
+      if(!b)return;
+      try{
+        const hash=(await pendingReplacement(b)).expected_invitation_hash;
+        await this.perform("open_public_registration",{budget_id:b.terms.budget_id,
+          expected_invitation_hash:hash,expected_context_hash:b.public_registration.context_hash,
+          confirm_public_registration:true});
+      }catch(e){this.$("status").textContent=`Public registration was not opened: ${e.message}`;}
+    };
+    this.$("close-registration").onclick=async()=>{
+      if(this.busy||!this._hass?.user?.is_admin||!this.budget)return;
+      if(!confirm("Close this public QR window? The pending private invitation and all historical approvals and payments remain unchanged."))return;
+      try{
+        const hash=(await pendingReplacement(this.budget)).expected_invitation_hash;
+        await this.perform("close_public_registration",{budget_id:this.budget.terms.budget_id,
+          expected_invitation_hash:hash,confirm_public_registration:true});
+      }catch(e){this.$("status").textContent=e.message;}
+    };
     this.$("bind").onclick=()=>{
       if(confirm(`Confirm this driver is using session ${this.session.ocpp_transaction_id}. This enables settlement checks within the signed limits, not charger control.`))
         this.perform("bind_session_budget",{budget_id:this.budget.terms.budget_id,session_id:this.session.session_id,confirm_driver_present:true});
@@ -120,6 +152,15 @@ class BSVBudgetCard extends HTMLElement {
       "Ongoing operator credits are enabled. The last verified receiving registration supplies the recipient for each new session. Session matching below is for driver spending approval, not ongoing operator credits.":
       "The ongoing credit policy is paused by the master automatic-credit policy. Check Payments.";
     const usable=h.states[this.config.proxy_entity]&&!["unknown","unavailable"].includes(h.states[this.config.proxy_entity].state);
+    const publicOpen=awaitingApproval(b)&&!!b?.public_registration?.available&&this.linkFresh!==false&&
+      (!b.public_registration.expires_at||Date.parse(b.public_registration.expires_at)>Date.now());
+    this.$("open-registration").disabled=this.busy||!admin||!usable||publicOpen;
+    this.$("close-registration").hidden=!publicOpen||!admin;
+    this.$("close-registration").disabled=this.busy||!usable;
+    this.$("public-page").hidden=!publicOpen||!admin;
+    this.$("public-status").textContent=publicOpen?
+      `Public registration is open${b.public_registration.expires_at?` until ${stamp(b.public_registration.expires_at)}`:""}. It closes after approval or a registration change.`:
+      "Public registration is not open for the displayed invitation. Historical private links are unchanged.";
     const accepted=b?.state==="spending_authorised_wallet_permission_required";
     const matching=b?.terms.session_mode!=="existing_session"||
       (b?.terms.session_id===this.session?.session_id&&!this.session?.ended_at);
@@ -178,6 +219,9 @@ class BSVBudgetCard extends HTMLElement {
         b.invitation_reused?"Existing invitation retrieved. Its original limits and expiry are unchanged.":
         "Invitation ready. Ask the driver to scan and review the terms.":"Approval record updated.";
       if(!silent&&service==="create_session_budget")this.$("replace-pending").checked=false;
+      if(!silent&&service==="open_public_registration")this.$("status").textContent="Public QR window opened. Ask the intended driver to refresh the public page and scan or open the invitation.";
+      if(!silent&&service==="close_public_registration")this.$("status").textContent="Public registration closed. Private links and historical settlements are unchanged.";
+      return b;
     }catch(e){
       this.linkFresh=false;
       this.$("status").textContent=silent&&!this.budget?"No approval loaded. Create an invitation, or use Check approval to retry.":e.message||"Could not update the approval. Try again.";
