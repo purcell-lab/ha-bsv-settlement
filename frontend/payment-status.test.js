@@ -10,6 +10,15 @@ test("closed without payment is explicit and cannot hide a chain transaction",()
  assert.doesNotMatch(paymentStatus(rows[0]).title,/paid|confirmed/i);
  assert.equal(settlementRows({closed_sessions:[closure],session_payments:[{...p,txid:"existing"}]})[0].txid,"existing");
 });
+test("waived charge retains received funds without claiming payment or refund",()=>{
+ const row={session_id:"s",state:"waived",reason:"Operator requested waiver",
+   received_funds:{amount_sats:76,state:"received_unallocated"}};
+ const p=paymentStatus(settlementRows({session_payments:[{session_id:"s",state:"waived"}],closed_sessions:[row]})[0]);
+ assert.equal(p.title,"Waived");
+ assert.match(p.detail,/76 sat already received/);
+ assert.match(p.detail,/unallocated/);
+ assert.match(p.detail,/No refund authorised/);
+});
 test("quoted debit overrides no-credit route and gives the requested wording",()=>{
  const rows=settlementRows({ongoing_credit:{sessions:[{session_id:"s",state:"no_operator_credit"}]},session_payments:[p]});
  assert.equal(rows.length,1);

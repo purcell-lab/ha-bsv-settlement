@@ -577,3 +577,24 @@ waive_session_charge:
     confirm_account_review: {required: true, selector: {boolean: {}}}
     confirm_provisional_metering: {default: false, selector: {boolean: {}}}
     confirm_no_payment: {required: true, description: Close the account without marking it paid or moving funds, selector: {boolean: {}}}
+prepare_existing_charge_waiver:
+  name: Review waiver of an existing driver charge
+  description: Administrator-only read-only review of an issued manual request or pre-signing collection. Optional confirmed incoming output is checked without allocating it as payment.
+  fields: &owned_waiver_fields
+    config_entry_id: {required: true, selector: {text: {}}}
+    review_id: {description: Select a manual review OR a collection budget, selector: {text: {}}}
+    budget_id: {selector: {text: {}}}
+    received_txid: {description: Optional already-received funds to preserve separately, selector: {text: {}}}
+    received_output_index: {selector: {number: {min: 0, mode: box}}}
+waive_existing_charge:
+  name: Waive an existing reviewed driver charge
+  description: Terminal audited waiver. Never signs, sends, retries or refunds. Refuses any issued signing permit, signed transaction, competing owner or changed account. Known receipts remain unallocated.
+  fields:
+    <<: *owned_waiver_fields
+    expected_review_hash: {required: true, selector: {text: {}}}
+    expected_amount_sats: {required: true, selector: {number: {min: 1, max: 100000, mode: box}}}
+    reason: {required: true, selector: {text: {multiline: true}}}
+    confirm_waive_charge: {required: true, selector: {boolean: {}}}
+    confirm_no_refund: {required: true, selector: {boolean: {}}}
+    confirm_external_payments_need_separate_accounting: {required: true, selector: {boolean: {}}}
+    confirm_received_funds_unallocated: {selector: {boolean: {}}}

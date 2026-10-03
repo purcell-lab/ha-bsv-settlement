@@ -117,7 +117,7 @@ class SessionBudgets:
         for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by",
                     "driver_token_hash", "driver_link_scheme"):
             result.pop(key, None)
-        if row["state"] != "revoked" and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
+        if row["state"] not in ("revoked", "charge_waived") and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
             result["state"] = "expired"
         if hasattr(self.api, "collections") and (collection := self.api.collections.get(row)):
             result["collection"] = self.api.collections.public(collection)
@@ -174,7 +174,7 @@ class SessionBudgets:
         if (row is None or not isinstance(token, str) or len(token) != 43
                 or not secrets.compare_digest(row.get("driver_token_hash", ""), sha(token))):
             raise WalletError("Invalid driver link")
-        if not allow_terminal and self.public(row)["state"] in ("revoked", "expired"):
+        if not allow_terminal and self.public(row)["state"] in ("revoked", "expired", "charge_waived"):
             raise WalletError("Driver link is expired or revoked")
         return row
 
@@ -188,7 +188,11 @@ class SessionBudgets:
         session = ({k: copy.deepcopy(record.get(k)) for k in (
             "session_id", "running_state", "ended_at", "import_kwh", "export_kwh", "net_cost_aud")}
             if record and not data.get("issues") else None)
+        closure = self.api.saved.get("closed_sessions", {}).get(
+            row["proxy_config_entry_id"] + "|" + session_id) if session_id else None
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
+                "closure": ({k: copy.deepcopy(closure.get(k)) for k in (
+                    "state", "amount_sats", "reason", "received_funds")} if closure else None),
                 "prices": self.prices(row),
                 "session": session,
                 "ongoing_credits": self.api.ongoing_credits.driver_rows(row),
@@ -198,6 +202,7 @@ class SessionBudgets:
                 "binding": copy.deepcopy(row.get("binding")),
                 "credit_destination_registered": bool(row.get("credit_destination")),
                 "automatic_credit_enabled": self.api.auto_credits.policy.get("enabled", False)
+                    and row["state"] != "charge_waived"
                     and not row["terms"].get("closed_session_review")}
 
     async def execute(self, action, data, user_id):

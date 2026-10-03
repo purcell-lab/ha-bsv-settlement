@@ -46,7 +46,7 @@ class DriverCollections:
         return {k: copy.deepcopy(item[k]) for k in (
             "state", "quote", "txid", "output_index", "fee_sats", "confirmations",
             "created_at", "claimed_at", "submission_authorised_at", "checked_at", "error",
-            "diagnostic", "recovery"
+            "diagnostic", "recovery", "waiver_key"
         ) if k in item}
 
     def mandate(self, row):
@@ -88,6 +88,11 @@ class DriverCollections:
             raise WalletError("A manual payment review already owns this session")
 
     async def status(self, row):
+        sid = self.session_id(row)
+        closure = self.api.saved.get("closed_sessions", {}).get(self.key(row)) if sid else None
+        if closure and closure["state"] == "waived":
+            return {"state": "waived", "amount_sats": closure.get("amount_sats"),
+                    "reason": closure["reason"], "received_funds": copy.deepcopy(closure.get("received_funds"))}
         if hasattr(self.api, "auto_credits") and self.api.auto_credits.get(row):
             return self.api.auto_credits.status(row)
         old = self.get(row)

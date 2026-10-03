@@ -21,6 +21,7 @@ export function ongoingCreditMessage(state,imported=false){
 
 export function driverView({accepted,registered,connected,state,credit,imported,hasInvitation,creditEnabled=true,closedSession=false}){
   if(!hasInvitation)return {title:"Charge. Export. Settle.",subtitle:"Open your operator's private link inside BSV Browser.",stage:"start"};
+  if(state==="waived")return {title:"Your session charge was waived",subtitle:"No further collection is authorised for this session. A waiver does not refund any funds already sent.",stage:"settled"};
   if(!accepted)return closedSession?
     {title:"Review your completed session",subtitle:"Review the frozen energy account and any metering warnings. Approval can start payment immediately; it does not start another charging session.",stage:"approve"}:
     {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};

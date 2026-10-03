@@ -16,6 +16,7 @@ document.querySelector("main").prepend(banner);
 const mode=new URLSearchParams(location.search).get("scenario")||"ongoing";
 const select=document.getElementById("preview-mode");select.value=mode;
 const closedOption=document.createElement("option");closedOption.value="closed";closedOption.textContent="Completed account: fresh consent";select.append(closedOption);select.value=mode;
+const waivedOption=document.createElement("option");waivedOption.value="waived";waivedOption.textContent="Charge waived: no collection";select.append(waivedOption);select.value=mode;
 select.onchange=()=>{location.search="?scenario="+select.value;};
 const operator=PrivateKey.fromRandom(),driver=new ProtoWallet(PrivateKey.fromRandom());
 const identity=(await driver.getPublicKey({identityKey:true})).publicKey;
@@ -49,7 +50,7 @@ const quotePayload=canonical({version:1,network:"BSV mainnet",budget_id:terms.bu
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",expires_at:terms.expires_at,
   amount_sats:89,account,recovery_generation:1,created_at:terms.created_at});
 const quote={payload:quotePayload,hash:await hash(quotePayload),signature:operator.sign(bytes(quotePayload)).toDER("hex")};
-let state=mode==="reservation"?"waiting_for_operator_binding":
+let state=mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
@@ -73,10 +74,11 @@ window.fetch=async(url,options)=>{
     if(mode==="offline" && reads++>0)throw new TypeError("Failed to fetch");
     const p={available:true,start:new Date(Date.now()-60000).toISOString(),
       end:new Date(Date.now()+3600000).toISOString(),estimate:false};
-    return Response.json({invitation,state:mode==="closed"&&!closedApproved?"awaiting_driver_consent":"spending_authorised_wallet_permission_required",
+    return Response.json({invitation,state:mode==="waived"?"charge_waived":mode==="closed"&&!closedApproved?"awaiting_driver_consent":"spending_authorised_wallet_permission_required",
+      closure:mode==="waived"?{state:"waived",amount_sats:89,reason:"Operator waived the charge"}:null,
       driver_identity:mode==="closed"&&!closedApproved?null:identity,automatic_credit_enabled:false,credit_destination_registered:mode!=="closed",
       binding:null,ongoing_credit_enabled:true,
-      ongoing_credits:["recovery","closed"].includes(mode)?[]:[{
+      ongoing_credits:["recovery","closed","waived"].includes(mode)?[]:[{
         credit_id:"fictional-ongoing-credit",session_id:"fictional-other-session",
         transaction_id:"other-session-reference",state:"waiting_for_session_end",
         recipient_address:terms.operator_address,

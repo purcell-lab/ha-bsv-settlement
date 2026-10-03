@@ -63,7 +63,7 @@ class BsvSessionReviewCard extends HTMLElement {
     const automatic = wallet?.attributes?.automatic_credit;
     const ongoing = wallet?.attributes?.ongoing_credit;
     const collectionIssues=(wallet?.attributes?.session_payments||[]).filter(p=>
-      p.source==="driver" && !p.txid && (p.diagnostic || ["wallet_attempt_reserved","recovery_ready"].includes(p.state)));
+      p.source==="driver" && p.state!=="waived" && !p.txid && (p.diagnostic || ["wallet_attempt_reserved","recovery_ready"].includes(p.state)));
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;

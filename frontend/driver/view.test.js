@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {driverView,showOngoingOverview,ongoingCreditMessage} from "./view.js";
+test("waived charge is terminal, not paid or ready to retry",()=>{
+ const v=driverView({hasInvitation:true,accepted:true,state:"waived"});
+ assert.equal(v.stage,"settled");
+ assert.match(v.title,/waived/);assert.match(v.subtitle,/does not refund/);
+ assert.equal(v.reconnect,undefined);
+});
 test("post-session approval explains immediate collection without starting a session",()=>{
  const v=driverView({hasInvitation:true,closedSession:true});
  assert.equal(v.title,"Review your completed session");

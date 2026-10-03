@@ -151,6 +151,18 @@ async def async_setup(hass, config):
         **{k: v for k, v in schemas["create_session_budget"].items()
            if str(k) in ("operator_name", "operator_contact", "max_total_sats", "max_fee_sats", "valid_minutes")},
         vol.Optional("confirm_replace_pending", default=False): bool}
+    owned_waiver = {**common, vol.Optional("review_id"): str, vol.Optional("budget_id"): str,
+                   vol.Optional("received_txid"): vol.Match(r"^[0-9a-f]{64}$"),
+                   vol.Optional("received_output_index"): vol.All(int, vol.Range(min=0))}
+    schemas["prepare_existing_charge_waiver"] = owned_waiver
+    schemas["waive_existing_charge"] = {
+        **owned_waiver, vol.Required("expected_review_hash"): str,
+        vol.Required("expected_amount_sats"): vol.All(int, vol.Range(min=1, max=100000)),
+        vol.Required("reason"): vol.All(str, vol.Length(min=8, max=300)),
+        vol.Required("confirm_waive_charge"): vol.In([True]),
+        vol.Required("confirm_no_refund"): vol.In([True]),
+        vol.Required("confirm_external_payments_need_separate_accounting"): vol.In([True]),
+        vol.Optional("confirm_received_funds_unallocated", default=False): bool}
 
     async def handle(call):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
