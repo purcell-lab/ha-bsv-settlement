@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@bsv/sdk": "2.0.13",
+    "lucide": "0.468.0",
     "qrcode-generator": "1.4.4"
   },
   "devDependencies": {

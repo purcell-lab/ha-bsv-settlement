@@ -7,16 +7,24 @@ import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
 import {chainRecordUrl} from "../ui.js";
-import {privateSessionUrl} from "./private-link.js";
-import {drawApprovalQR} from "../approval-qr.js";
+import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
+import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
+createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
+function drawApprovalQR(holder,url){
+  const qr=qrcode(0,"M");qr.addData(url,"Byte");qr.make();
+  holder.innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});
+  holder.querySelector("svg").setAttribute("role","img");
+}
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
 // A new fragment identifies a different private invitation. Reset every wallet
 // and session variable rather than displaying the old session in the same tab.
 window.addEventListener("hashchange", () => location.reload());
-const capability = fragment.has("budget") && fragment.has("token")
-  ? {budget_id:fragment.get("budget"),token:fragment.get("token")} : null;
+let enrolment=fragment.has("join")&&fragment.has("key")?
+  {join:fragment.get("join"),key:fragment.get("key")}:null;
+let capability = fragment.has("budget") && fragment.has("token")
+  ? {budget_id:fragment.get("budget"),token:fragment.get("token")} : enrolment;
 const framed = !!capability && window.top !== window;
 $("open-private-link").onclick=()=>{
   const url=privateSessionUrl($("private-link-input").value.trim(),location.origin);
@@ -30,6 +38,7 @@ const importedCredits=new Set(), attemptedImports=new Set();
 let latestTxid=null;
 let collectionFailure=null,pendingDiagnostic=null,latestCollection=null;
 let selectedSession=null;
+let publicQRReady=false;
 $("multi-session-select").onchange=()=>{
   if(collectionBusy||busy||pendingReport||pendingDiagnostic)return;
   selectedSession=$("multi-session-select").value||null;
@@ -151,7 +160,7 @@ function controls() {
   $("multi-session-select").disabled=busy||collectionBusy||!!pendingReport||!!pendingDiagnostic;
   $("approve").disabled = waived || framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
     (!!capability && !pricesValid()) || pairingBusy || (!!pairing && pairing.state!=="paired");
-  $("pairing-section").hidden=waived || !capability || !checked || framed;
+  $("pairing-section").hidden=waived || !capability || !checked || framed || !!enrolment;
   $("pairing-connect").disabled=busy||collectionBusy||pairingBusy||!!pairing&&["creating","scanning","paired"].includes(pairing.state);
   $("pairing-disconnect").disabled=busy||collectionBusy||pairingBusy;
   $("driver-link-copy").disabled=!capability;
@@ -169,6 +178,11 @@ function controls() {
     state:collectionState,credit:creditDirection,creditEnabled,closedSession:!!checked?.terms.closed_session_review,
     imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
   $("page-title").textContent=view.title;$("page-subtitle").textContent=view.subtitle;
+  if(!capability&&!checked&&publicQRReady){
+    $("page-title").textContent="Ready for the next driver";
+    $("page-subtitle").textContent="Scan the invitation to review the rates and authorise your EV charging budget.";
+    $("status").textContent="No driver is registered. Open the new-driver invitation or scan its QR in BSV Browser.";
+  }
   document.body.dataset.stage=view.stage;
   $("progress-approve").className=accepted?"done":"";
   $("progress-session").className=accepted&&collectionState!=="waiting_for_operator_binding"?"done":"";
@@ -203,10 +217,11 @@ function controls() {
   }
 }
 async function api(action, extra={}) {
+  if(enrolment && !["read","approve"].includes(action))throw Error("Open this new-driver invitation inside BSV Browser to authorise your budget first.");
   const response = await fetch("/api/bsv_settlement/driver",{
     method:"POST",credentials:"omit",cache:"no-store",referrerPolicy:"no-referrer",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({...capability,action,
+    body:JSON.stringify({...capability,action:enrolment?(action==="read"?"public_read":"public_approve"):action,
       ...(["collection_status","claim_collection","authorise_collection","report_collection","reconcile_collection","report_collection_failure"].includes(action)&&selectedSession?{session_id:selectedSession}:{}),
       ...extra}),
     signal:AbortSignal.timeout(action==="authorise_collection" || action==="report_collection" ? 120000 : 20000)
@@ -475,6 +490,14 @@ $("load").onclick=()=>{
 $("invitation").oninput=()=>{clear();controls();};
 async function submitReceipt() {
   const result=await api("approve",{receipt});
+  if(enrolment){
+    const url=privateSessionUrl(location.origin+"/bsv_settlement/driver/index.html"+(result.private_link_fragment||""),location.origin);
+    if(!url)throw Error("The operator did not return a private session link. Retry saving the existing signature.");
+    const p=new URLSearchParams(new URL(url).hash.slice(1));
+    capability={budget_id:p.get("budget"),token:p.get("token")};enrolment=null;
+    history.replaceState(null,"",url);
+    show(result.invitation);
+  }
   accepted=acceptedStates.includes(result.state);
   if (!accepted || result.driver_identity!==receipt.driver_identity) throw Error("Approval was not accepted for this wallet.");
   binding=result.binding;
@@ -574,6 +597,40 @@ if(capability) {
   if(framed)status("Open the private approval link directly inside BSV Browser, not inside an embedded frame.",true);
   else refresh(true);
 }
+let publicBusy=false;
+async function refreshPublicInvitation(){
+  if(capability||checked||publicBusy||window.top!==window)return;
+  publicBusy=true;
+  const box=$("public-enrolment-qr"),link=$("public-enrolment-open");
+  try{
+    const response=await fetch("/api/bsv_settlement/driver",{
+      method:"POST",credentials:"omit",cache:"no-store",referrerPolicy:"no-referrer",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"public_invitation"}),
+      signal:AbortSignal.timeout(4500)});
+    if(!response.ok)throw Error("Invitation check unavailable");
+    const data=await response.json();
+    const url=data.state==="available"?publicEnrolmentUrl(
+      location.origin+"/bsv_settlement/driver/index.html"+data.public_link_fragment,location.origin):null;
+    publicQRReady=!!url;
+    box.hidden=!url;link.hidden=!url;
+    if(url){
+      drawApprovalQR(box,url);
+      box.querySelector("svg").setAttribute("aria-label","Unassigned new-driver invitation, not a private session link");
+      link.href=url;$("public-enrolment-status").textContent="Scan to review and authorise the available EV charging budget. Scanning alone does not approve spending.";
+    }else{
+      box.replaceChildren();link.removeAttribute("href");
+      $("public-enrolment-status").textContent="No public invitation is available. Ask the operator for your private link or a new invitation.";
+      $("status").textContent="Open the private session link supplied by your charging operator.";
+    }
+  }catch{
+    publicQRReady=false;
+    box.hidden=true;box.replaceChildren();link.hidden=true;link.removeAttribute("href");
+    $("public-enrolment-status").textContent="Invitation check unavailable. No QR is shown; try again shortly.";
+    $("status").textContent="Cannot check driver registration. Ask the operator for a private link.";
+  }finally{publicBusy=false;controls();}
+}
+if(!capability)void refreshPublicInvitation();
+setInterval(()=>void refreshPublicInvitation(),5000);
 let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
 function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";$("theme").setAttribute("aria-label",`Switch to ${theme==="dark"?"light":"dark"} mode`);}
 $("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
