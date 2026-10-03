@@ -29,6 +29,8 @@ not include the preview harness or its simulated transport.
   duplicate sockets, invalid frames, revocation, expiry and connection cleanup.
 - Node 22: driver SDK 2.0.13 interoperates with mobile SDK 2.8.2 for the pairing
   signature, handshake encryption, RPC response and replay checks.
+- Signature and transaction byte fields accept arrays and JSON-encoded
+  Uint8Array results; malformed or non-contiguous byte objects fail closed.
 - Playwright: real clicks through QR waiting, incompatible wallet, disconnect
   to local fallback, compatible pairing and simulated rejection of spending
   approval. No live wallet connection or transaction.

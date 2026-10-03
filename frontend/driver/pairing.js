@@ -38,6 +38,30 @@ export function decodeEnvelope(raw, topic) {
   return e;
 }
 
+// SDK 2.x releases differ: byte[] or Uint8Array serialized as {"0":..., ...}.
+// Normalize only known wallet byte fields, never arbitrary numeric-key objects.
+export function normalizeWalletResult(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    throw Error("Invalid wallet result.");
+  const array = value => {
+    const keys = value && typeof value === "object" ? Object.keys(value) : [];
+    if (!Array.isArray(value) && (!keys.length ||
+        keys.some((k,i) => k !== String(i)))) throw Error("Invalid wallet byte field.");
+    const values = Array.isArray(value) ? value : keys.map(k => value[k]);
+    if (values.length > MAX_WIRE || values.some(n => !Number.isInteger(n) || n < 0 || n > 255))
+      throw Error("Invalid wallet byte field.");
+    return values;
+  };
+  const output = {...result};
+  for (const field of ["signature", "tx"]) {
+    if (Object.hasOwn(output, field)) output[field] = array(output[field]);
+  }
+  if (output.signableTransaction?.tx !== undefined) {
+    output.signableTransaction = {...output.signableTransaction, tx:array(output.signableTransaction.tx)};
+  }
+  return output;
+}
+
 /** All authority stays in the existing consent/quote/one-use permit flow.
  * Secrets and RPC state are memory-only. No automatic resend or reconnect.
  */
@@ -142,9 +166,12 @@ export class BrowserPairing {
     if (!pending || msg.seq !== pending.seq || msg.method ||
         (Object.hasOwn(msg, "result") === Object.hasOwn(msg, "error")))
       throw Error("Unexpected wallet response.");
+    // Normalize before removing the waiter: malformed byte fields must still
+    // reject the pending call when onmessage fails the transport closed.
+    const result = msg.error ? null : normalizeWalletResult(msg.result);
     this.lastReply = msg.seq; this.pending.delete(msg.id); clearTimeout(pending.timer);
     if (msg.error) pending.reject(Error("Wallet rejected or could not complete the request. No automatic retry."));
-    else pending.resolve(msg.result);
+    else pending.resolve(result);
   }
   async request(method, params = {}) {
     if (!requiredMethods.includes(method) || this.state !== "paired" || this.pending.size)

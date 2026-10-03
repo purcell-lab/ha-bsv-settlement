@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PrivateKey, ProtoWallet, Utils } from "@bsv/sdk";
 import { PrivateKey as MobileKey, ProtoWallet as MobileWallet } from "@bsv/sdk-mobile";
-import { BrowserPairing, pairingUri, signatureMessage, pairingProtocol, requiredMethods, decodeEnvelope } from "./pairing.js";
+import { BrowserPairing, pairingUri, signatureMessage, pairingProtocol, requiredMethods, decodeEnvelope, normalizeWalletResult } from "./pairing.js";
 
 const bytes = s => Array.from(new TextEncoder().encode(s));
 const b64 = a => Utils.toBase64(a).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
@@ -174,4 +174,12 @@ test("a response cannot satisfy the wrong request sequence",async()=>{
     })),/Unexpected/);
     await f.pairing.disconnect();await rejected;
   }finally{await f.pairing.disconnect();}
+});
+test("known wallet bytes normalize from arrays and JSON Uint8Array objects",()=>{
+  assert.deepEqual(normalizeWalletResult({signature:{"0":48,"1":2}}),{signature:[48,2]});
+  assert.deepEqual(normalizeWalletResult({tx:[1,2],signableTransaction:{reference:"a",tx:{"0":3}}}),
+    {tx:[1,2],signableTransaction:{reference:"a",tx:[3]}});
+  assert.deepEqual(normalizeWalletResult({metadata:{"0":"untouched"}}),{metadata:{"0":"untouched"}});
+  for(const signature of [{"1":2}, {"0":256}, {"0":1.5}, {"0":true}, "00ff"])
+    assert.throws(()=>normalizeWalletResult({signature}),/byte field/);
 });
