@@ -2,6 +2,7 @@ import { WalletClient } from "@bsv/sdk";
 import { parseInvitation, signConsent,derivedInvitation } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importAndReportCredit, receiptReported } from "./credit.js";
+import { ReceiptSync } from "./receipt-sync.js";
 import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js";
 import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
@@ -35,8 +36,8 @@ $("open-private-link").onclick=()=>{
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
-const importedCredits=new Set(), attemptedImports=new Set();
-const receiptImports=new Map(), receiptReportErrors=new Map();
+const importedCredits=new Set();
+const receiptImports=new Map();
 let latestTxid=null;
 let collectionFailure=null,pendingDiagnostic=null,latestCollection=null;
 let selectedSession=null;
@@ -59,6 +60,47 @@ function retainFailure(e){
 }
 let ongoingRows=[],registeredIdentity=null,receivingOngoing=false,ongoingEnabled=false;
 let pairing=null, pairingBusy=false;
+const receiptSync=new ReceiptSync({
+  connect:async({automatic})=>{
+    // Do not set connectedWallet: that variable permits the debit collection path.
+    if(connectedWallet)return {wallet:connectedWallet,
+      identity:(await connectedWallet.getPublicKey({identityKey:true})).publicKey};
+    return connectWallet(automatic);
+  },
+  importReceipt:async(wallet,job,identity)=>{
+    const credit=await api(job.action,job.extra);
+    if(credit.txid!==job.row.txid||credit.session_id!==job.row.session_id||
+      (job.row.credit_id&&credit.credit_id!==job.row.credit_id))
+      throw Error("The credit receipt does not match the selected session.");
+    const report=await importAndReportCredit(wallet,checked,credit,identity,api,receiptImports);
+    Object.assign(job.row,report);importedCredits.add(job.row.txid);
+  },
+  onState:(state,error)=>{
+    receivingOngoing=state==="syncing";
+    const message=state==="syncing"?
+      "Syncing confirmed credits. Your wallet may ask for receipt permissions. No new payment or spending approval.":
+      state==="synced"?"Confirmed credits synced. Wallet acceptance is recorded by the operator. No new payment was sent.":
+      error?.walletAccepted?
+        "Your wallet accepted the receipt, but reporting is pending. Select Sync confirmed credits to wallet to retry reporting.":
+        `Receipt sync paused: ${(error?.message||"Wallet unavailable").replace(/[.!]+$/,"")}. Select Sync confirmed credits to wallet to retry. Existing payments are unchanged.`;
+    $("ongoing-feedback").textContent=message;
+    $("receipt-sync-status").textContent=message;
+    $("receipt-sync-status").hidden=false;
+    paintOngoing();controls();
+    if(state==="synced"&&creditDirection&&collectionState==="provider_confirmed")
+      status("Your credit is confirmed and its receipt is synced. No new payment or spending approval.");
+  },
+});
+function syncConfirmedReceipts(manual=false){
+  const jobs=ongoingRows.filter(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid))
+    .map(row=>({key:row.txid,row,action:"ongoing_credit_receipt",extra:{credit_id:row.credit_id}}));
+  if(latestCollection?.direction==="operator_to_driver"&&latestCollection.state==="provider_confirmed"&&
+      !importedCredits.has(latestCollection.txid)&&!jobs.some(j=>j.key===latestCollection.txid))
+    jobs.push({key:latestCollection.txid,row:latestCollection,action:"credit_receipt",extra:{}});
+  return receiptSync.run({jobs,identity:registeredIdentity,manual,
+    available:!!connectedWallet||!!window.CWI||pairing?.state==="paired",
+    allowed:!!capability&&!enrolment&&!!checked&&!framed&&!document.hidden&&!busy&&!collectionBusy&&!pairingBusy});
+}
 function pairingState(state, detail) {
   $("pairing-status").textContent=detail || ({
     creating:"Creating a private, short-lived pairing code…",
@@ -128,28 +170,10 @@ function paintOngoing(){
     $("ongoing-list").append(box);
   }
   const outstanding=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid));
-  $("receive-ongoing").disabled=receivingOngoing||!outstanding;
+  $("receive-ongoing").disabled=receivingOngoing||busy||collectionBusy||framed||!outstanding;
   $("receive-ongoing").hidden=!outstanding&&!receivingOngoing;
 }
-$("receive-ongoing").onclick=async()=>{
-  receivingOngoing=true;paintOngoing();
-  try{
-    const {wallet,identity}=await connectWallet();
-    if(identity!==registeredIdentity)throw Error("Connect the wallet that registered this receiving address.");
-    for(const row of ongoingRows.filter(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid))){
-      const receipt=await api("ongoing_credit_receipt",{credit_id:row.credit_id});
-      if(receipt.credit_id!==row.credit_id || receipt.session_id!==row.session_id || receipt.txid!==row.txid)
-        throw Error("The credit receipt does not match the selected session.");
-      const report=await importAndReportCredit(wallet,checked,receipt,registeredIdentity,api,receiptImports);
-      Object.assign(row,report);
-      importedCredits.add(row.txid);
-    }
-    $("ongoing-feedback").textContent="Wallet receipt acceptance recorded by the operator. No payment was sent.";
-  }catch(e){$("ongoing-feedback").textContent=e.walletAccepted?
-    `${e.message}. Select Receive confirmed credits to retry reporting, without another import in this page.`:
-    `Receipt import paused: ${e.message}. Retry imports the same payments, not new transfers.`;}
-  finally{receivingOngoing=false;paintOngoing();controls();}
-};
+$("receive-ongoing").onclick=()=>syncConfirmedReceipts(true);
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
 const spending = () => [2,3].includes(checked?.terms.version);
 const status = (message,error=false) => {
@@ -167,18 +191,21 @@ function controls() {
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
   const waived=collectionState==="waived";
   const receiptOnly=creditDirection&&collectionState==="provider_confirmed";
-  $("multi-session-select").disabled=busy||collectionBusy||!!pendingReport||!!pendingDiagnostic;
-  $("approve").disabled = waived || framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
+  $("multi-session-select").disabled=busy||collectionBusy||receivingOngoing||!!pendingReport||!!pendingDiagnostic;
+  $("approve").disabled = waived || framed || busy || receivingOngoing || !checked || !spending() || expired || accepted || !!receipt ||
     (!!capability && !pricesValid()) || pairingBusy || (!!pairing && pairing.state!=="paired");
   $("pairing-section").hidden=waived || !capability || !checked || framed || !!enrolment;
-  $("pairing-connect").disabled=busy||collectionBusy||pairingBusy||!!pairing&&["creating","scanning","paired"].includes(pairing.state);
-  $("pairing-disconnect").disabled=busy||collectionBusy||pairingBusy;
+  $("pairing-connect").disabled=busy||collectionBusy||receivingOngoing||pairingBusy||!!pairing&&["creating","scanning","paired"].includes(pairing.state);
+  $("pairing-disconnect").disabled=busy||collectionBusy||receivingOngoing||pairingBusy;
+  $("pairing-help").textContent=receiptOnly||ongoingRows.some(r=>r.state==="provider_confirmed")?
+    "Already inside BSV Browser? Credits sync here without a pairing QR. On another screen, pair your phone if needed. Receipt sync does not approve spending.":
+    "On another screen? Pair your phone here, then approve the session spending limit separately.";
   $("driver-link-copy").disabled=!capability;
-  $("load").disabled = busy; $("invitation").disabled = busy;
-  $("reset").disabled = busy || collectionBusy; $("download").disabled = !receipt || busy;
+  $("load").disabled = busy || receivingOngoing; $("invitation").disabled = busy || receivingOngoing;
+  $("reset").disabled = busy || collectionBusy || receivingOngoing; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
-  $("resume-collection").disabled=busy || collectionBusy || (!accepted&&!receiptOnly) || !spending() ||
-    (!!connectedWallet && !halted && collectionState!=="recovery_ready") || !!pendingReport || framed ||
+  $("resume-collection").disabled=busy || collectionBusy || receivingOngoing || (!accepted&&!receiptOnly) || !spending() ||
+    (!receiptOnly && !!connectedWallet && !halted && collectionState!=="recovery_ready") || !!pendingReport || framed ||
     pairingBusy || (!!pairing && pairing.state!=="paired") ||
     (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready","recovery_ready"].includes(collectionState));
   $("retry-collection").disabled=busy || collectionBusy || !pendingReport;
@@ -213,7 +240,7 @@ function controls() {
       last.state==="no_operator_credit"?"No operator credit due":ongoingEnabled?"Automatic driver credits":"Automatic credits paused";
     $("page-subtitle").textContent=last.error||"Each session has a fixed receiving wallet and its own settlement record. This policy does not authorise charges to your wallet.";
     $("status").textContent=imported?"Your wallet reports receipt acceptance, recorded by the operator. No further payment is needed.":
-      last.error|| (last.state==="provider_confirmed"?"Connect your registered wallet to receive the confirmed credit receipt.":
+      last.error|| (last.state==="provider_confirmed"?"Credit already sent. Open this page in your registered wallet to sync its receipt. No new spending approval.":
       last.txid?"Tracking the existing payment. Do not send another transaction.":
       !ongoingEnabled?"The operator has paused ongoing credits. Contact them to review your account.":
       last.state==="no_operator_credit"?"This session does not require an operator payment.":
@@ -347,6 +374,7 @@ async function refresh(initial=false) {
   }
   controls();
   if(accepted && spending() && collectionState!=="waived")await checkCollection();
+  await syncConfirmedReceipts();
 }
 const collectionMessages={
   waived:"The operator waived this charge. No further collection is authorised; any funds already received need separate accounting.",
@@ -420,11 +448,13 @@ function paintCollection(result) {
     result.state==="recovery_ready"?"Driver confirmation":
     result.state==="wallet_attempt_reserved"||collectionFailure?"Needs review":"In progress";
   if(result.state==="provider_confirmed")status(creditDirection ?
-    "Your session credit is confirmed by the chain provider. Reconnect your wallet here to import the receipt." :
+    importedCredits.has(result.txid)?
+      "Your credit is confirmed and its receipt is synced. No new payment or spending approval.":
+      "Your credit is already confirmed. This page syncs its receipt when your registered wallet is available." :
     "Session payment confirmed by the chain provider. No further collection will be attempted.");
 }
 async function checkCollection() {
-  if(!capability || framed || collectionBusy || busy)return;
+  if(!capability || framed || collectionBusy || busy || receivingOngoing)return;
   collectionBusy=true;controls();
   try {
     if(checked?.terms.version===3){
@@ -446,28 +476,9 @@ async function checkCollection() {
       result=await api("reconcile_collection");
     if(receiptReported(result))importedCredits.add(result.txid);
     paintCollection(result);
-    if(creditDirection && result.state==="provider_confirmed" && connectedWallet &&
-        !importedCredits.has(result.txid) && !attemptedImports.has(result.txid)){
-      attemptedImports.add(result.txid);
-      try{
-        const report=await importAndReportCredit(connectedWallet,checked,await api("credit_receipt"),
-          registeredIdentity,api,receiptImports);
-        Object.assign(result,report);
-        importedCredits.add(result.txid);
-        receiptReportErrors.delete(result.txid);
-      }catch(e){
-        halted=true;
-        receiptReportErrors.set(result.txid,e.walletAccepted?
-          `${e.message}. Reconnect to retry reporting; no new payment or import is needed in this page.`:
-          `Credit sent, wallet import not complete: ${e.message}. Reconnect to retry importing the same payment.`);
-      }
-    }
     if(creditDirection && result.state==="provider_confirmed" && importedCredits.has(result.txid)){
       $("credit-status").textContent="Wallet reports receipt accepted. Acknowledgement saved by the operator.";
       status("Your session credit is confirmed. Wallet receipt acceptance is recorded; no further payment is sent.");
-    }else if(creditDirection && receiptReportErrors.has(result.txid)){
-      $("credit-status").textContent=receiptReportErrors.get(result.txid);
-      status(receiptReportErrors.get(result.txid),true);
     }
     if(result.state==="ready" && connectedWallet && !halted) {
       const sessionChecked=checked.terms.version===3?await derivedInvitation(result.session_invitation,checked,selectedSession):checked;
@@ -486,9 +497,10 @@ async function checkCollection() {
     $("collection-status").textContent=`Collection paused: ${e.message}. No new payment will be attempted automatically.`;
   } finally {collectionBusy=false;controls();}
 }
-async function connectWallet() {
+async function connectWallet(receiptAutomatic=false) {
   if(pairing)return pairing.verifiedWallet(registeredIdentity || receipt?.driver_identity || null);
-  const wallet=new WalletClient("auto");
+  // Automatic receipt sync probes only the injected wallet, never localhost transports.
+  const wallet=new WalletClient(receiptAutomatic?"window.CWI":"auto");
   let timer;
   const identity=(await Promise.race([
     wallet.getPublicKey({identityKey:true}),
@@ -572,13 +584,14 @@ $("retry").onclick=async()=>{
   finally{busy=false;controls();if(accepted)await checkCollection();}
 };
 $("resume-collection").onclick=async()=>{
+  if(creditDirection&&collectionState==="provider_confirmed")return syncConfirmedReceipts(true);
+  if(receivingOngoing)return;
   busy=true;controls();
   try {
     const result=await api("read");
     const {wallet,identity}=await connectWallet();
     if(identity!==result.driver_identity)throw Error("Connect the wallet that signed this session approval.");
     connectedWallet=wallet;binding=result.binding;halted=false;
-    attemptedImports.clear();
     if(result.automatic_credit_enabled && !result.credit_destination_registered){
       await registerCredit(wallet,checked,identity,api);creditRegistered=true;
     }
@@ -661,5 +674,9 @@ let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
 function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";$("theme").setAttribute("aria-label",`Switch to ${theme==="dark"?"light":"dark"} mode`);}
 $("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
 setInterval(()=>{paintPrices();controls();},1000);
+// Covers late wallet injection and credits which confirm while this page stays open.
+// A failed/declined attempt is latched until an explicit manual retry or page reopen.
+setInterval(()=>void syncConfirmedReceipts(),3000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)void syncConfirmedReceipts();});
 setInterval(()=>{if(capability&&!framed&&!busy&&!collectionBusy)refresh();},30000);
 controls();

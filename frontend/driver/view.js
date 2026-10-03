@@ -25,7 +25,7 @@ export function driverView({accepted,registered,connected,state,credit,imported,
   // Historical receipt reporting does not renew expired spending consent.
   if(credit&&state==="provider_confirmed")return imported?
     {title:"Wallet receipt acceptance recorded",subtitle:"Your wallet reports acceptance of this confirmed credit. No further payment is needed.",stage:"settled"}:
-    {title:"Your credit is confirmed",subtitle:"Wallet acceptance is not recorded. Reconnect the receiving wallet to import and report the existing receipt. No new payment.",stage:"approved",reconnect:"Receive credit in wallet"};
+    {title:"Your credit is confirmed",subtitle:"Credit already sent. This page syncs the receipt when your registered wallet is available. No new payment or spending approval.",stage:"approved",reconnect:"Sync confirmed credits to wallet"};
   if(!accepted)return closedSession?
     {title:"Review your completed session",subtitle:"Review the frozen energy account and any metering warnings. Approval can start payment immediately; it does not start another charging session.",stage:"approve"}:
     {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};
