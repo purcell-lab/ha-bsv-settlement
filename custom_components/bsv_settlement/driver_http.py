@@ -38,11 +38,21 @@ class DriverBudgetView(HomeAssistantView):
         try:
             data = json.loads(body)
             if not isinstance(data, dict) or data.get("action") not in (
+                    "public_invitation", "public_read", "public_approve",
                     "read", "approve", "collection_status", "claim_collection",
                     "register_credit_destination", "credit_receipt", "ongoing_credit_receipt",
                     "authorise_collection", "report_collection", "reconcile_collection",
                     "pairing_create", "pairing_cancel", "report_collection_failure"):
                 raise WalletError("Unsupported action")
+            if data["action"].startswith("public_"):
+                from .enrolment import handle
+                coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
+                          if getattr(c,"mode",None) == "embedded_mainnet"]
+                # No ambiguous selection or cross-charger fallback.
+                if len(coords) != 1:
+                    return web.json_response({"state":"unavailable"},headers=headers)
+                async with coords[0].lock:
+                    return web.json_response(await handle(coords[0].api,data),headers=headers)
             budget_id, token = data.get("budget_id"), data.get("token")
             if not isinstance(budget_id,str) or len(budget_id) != 36:
                 raise WalletError("Invalid driver link")

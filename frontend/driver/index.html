@@ -7,10 +7,21 @@
 <main id="main">
   <div class="intro"><p class="eyebrow">YOUR CHARGING SESSION</p><h1 id="page-title">Charge. Export. Settle.</h1><p id="page-subtitle">Approve one session in BSV Browser. Review the rates and spending limit before you connect.</p></div>
   <div id="approval-action" class="top-authorisation" hidden><p id="mobile-fee" class="small"></p><button id="approve" class="wide" disabled>Authorise EV charging budget</button><p class="small">Review the rates and full terms below. Wallet authorisation does not start the charger.</p></div>
-  <ol class="steps" aria-label="Session progress"><li id="progress-approve">1 <span>Approve</span></li><li id="progress-session">2 <span>Session</span></li><li id="progress-settle">3 <span>Settle</span></li></ol>
+  <ol class="steps energy-flow" aria-label="Session progress">
+    <li id="progress-approve"><i data-lucide="car-front" aria-hidden="true"></i><span><b>Authorise</b><small>Your EV budget</small></span></li>
+    <li id="progress-session"><i data-lucide="plug-zap" aria-hidden="true"></i><span><b>Charge or export</b><small>Energy and rates</small></span></li>
+    <li id="progress-settle"><i data-lucide="wallet" aria-hidden="true"></i><span><b>Settle</b><small>Wallet debit or credit</small></span></li>
+  </ol>
   <p id="status" class="notice" role="status" aria-live="polite">Open the private session link supplied by your charging operator.</p>
   <p id="connection-status" class="notice error" role="status" hidden></p>
   <section id="load-section">
+    <div id="public-enrolment">
+      <h2 class="icon-heading"><i data-lucide="qr-code" aria-hidden="true"></i>New driver</h2>
+      <p id="public-enrolment-status" class="small" role="status">Checking for an unassigned invitation…</p>
+      <div id="public-enrolment-qr" class="session-link-qr" hidden></div>
+      <a id="public-enrolment-open" hidden>Open the new-driver invitation</a>
+      <p class="small">This public QR appears only while no driver is registered or approved. Scan with a camera or URL scanner and open in BSV Browser. It stops working after approval and never becomes the driver's private session link.</p>
+    </div>
     <h2>Start with your private link</h2><p>Ask the charging operator for a session link or scan their QR code. Open it inside BSV Browser with the wallet you want to use.</p>
     <label for="private-link-input">Private session link</label>
     <textarea id="private-link-input" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste the full private link, including #budget and token. Never enter wallet secrets."></textarea>
@@ -57,7 +68,7 @@
     </div>
     <div class="action-column">
       <section id="private-link-section" hidden>
-        <h2>Your private session link</h2>
+        <h2 class="icon-heading"><i data-lucide="qr-code" aria-hidden="true"></i>Your private session link</h2>
         <p class="small">Scan with your phone camera or a URL scanner, then open the link in BSV Browser. This opens this same session page; it does not approve spending.</p>
         <div id="private-link-qr" class="session-link-qr"></div>
         <p class="small">Keep this QR private. For BSV Browser's <strong>Connect to app</strong> scanner, use the separate pairing QR from <strong>Connect BSV Browser</strong> below.</p>
@@ -77,7 +88,7 @@
         <p class="small">Keep both devices and this page open for driver collection. Review wallet permissions: a wallet's app-level allowance is separate from this session's limit.</p>
       </section>
       <section id="wallet-section" hidden>
-        <p class="eyebrow" id="approval-heading">Your spending limit</p><div class="amount"><strong id="budget"></strong><span id="aud"></span></div>
+        <div class="wallet-heading"><i data-lucide="wallet" aria-hidden="true"></i><p class="eyebrow" id="approval-heading">Your spending limit</p></div><div class="amount"><strong id="budget"></strong><span id="aud"></span></div>
         <dl><dt>Fee allowance</dt><dd id="fee"></dd><dt>Conversion</dt><dd id="rate"></dd><dt>Approval expires</dt><dd id="expiry"></dd></dl>
         <p id="approval-terms" class="small"></p>
         <p id="action-note" class="small"></p>

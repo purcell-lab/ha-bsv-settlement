@@ -11,7 +11,7 @@ for(const [input,output] of [
 }
 await copyFile(`${target}/session-review-card.js`,"bsv-session-review-card.bundle.js");
 await copyFile(`${target}/budget-card.js`,"bsv-budget-card.bundle.js");
-for(const name of ["index.html","style.css"])await copyFile(`driver/${name}`,`${target}/driver/${name}`);
+for(const name of ["index.html","style.css","LUCIDE-LICENSE.txt"])await copyFile(`driver/${name}`,`${target}/driver/${name}`);
 await copyFile("node_modules/@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2",`${target}/driver/dm-sans-latin-wght-normal.woff2`);
 await copyFile("node_modules/@fontsource-variable/dm-sans/LICENSE",`${target}/driver/DM-SANS-LICENSE.txt`);
 await copyFile(`${target}/driver/dm-sans-latin-wght-normal.woff2`,"../preview/dm-sans-latin-wght-normal.woff2");
