@@ -15,12 +15,6 @@
   </section>
   <div class="layout">
     <div class="primary-column">
-      <section id="ongoing-section" hidden>
-        <div class="section-head"><h2>Your ongoing credits</h2><span class="badge">Operator funded</span></div>
-        <p class="small">These credits use the operator's ongoing payment policy, not an extension of your spending approval. Each session has its own payment record.</p>
-        <div id="ongoing-list"></div><button id="receive-ongoing" class="wide">Connect wallet to receive confirmed credits</button>
-        <p id="ongoing-feedback" class="small" role="status"></p>
-      </section>
       <section id="collection-section" hidden>
         <div class="section-head"><h2 id="settlement-heading">Your settlement</h2><span id="settlement-badge" class="badge">In progress</span></div>
         <p id="collection-status" class="strong"></p><p id="collection-amount" class="settlement-amount"></p>
@@ -28,6 +22,12 @@
         <div class="actions"><button id="resume-collection" disabled>Reconnect wallet</button><button id="retry-collection" class="secondary" disabled>Reconcile signed payment</button></div>
         <p id="settlement-detail" class="small"></p>
         <details><summary>Transaction details</summary><p id="collection-txid" class="mono"></p><p class="small">Confirmation is reported by the chain provider. It is not independent proof of finality.</p></details>
+      </section>
+      <section id="ongoing-section" hidden>
+        <div class="section-head"><h2>Your ongoing credits</h2><span class="badge">Operator funded</span></div>
+        <p class="small">These credits use the operator's ongoing payment policy, not an extension of your spending approval. Each session has its own payment record.</p>
+        <div id="ongoing-list"></div><button id="receive-ongoing" class="wide">Connect wallet to receive confirmed credits</button>
+        <p id="ongoing-feedback" class="small" role="status"></p>
       </section>
       <section id="terms" hidden>
         <div class="section-head"><div><p class="eyebrow">Your operator</p><h2 id="operator-name"></h2></div><span class="badge">Dynamic rates</span></div><p id="contact" class="small"></p>
