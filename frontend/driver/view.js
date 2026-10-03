@@ -6,7 +6,7 @@ export function showOngoingOverview({accepted,ongoingCount,sessionMode,binding,s
 }
 
 export function ongoingCreditMessage(state,imported=false){
-  if(imported)return "Receipt accepted by wallet";
+  if(imported&&state==="provider_confirmed")return "Wallet receipt acceptance recorded";
   return ({
     waiting_for_session_end:"Session in progress. Any operator credit will be checked when the session ends.",
     no_operator_credit:"No operator credit is due for this session.",
@@ -14,7 +14,7 @@ export function ongoingCreditMessage(state,imported=false){
     credit_blocked:"Operator credit needs attention. Contact the operator.",
     submitted:"Operator credit submitted. Waiting for provider evidence.",
     provider_unconfirmed:"Operator credit seen by the chain provider, awaiting confirmation.",
-    provider_confirmed:"Operator credit confirmed by the chain provider.",
+    provider_confirmed:"Operator credit confirmed by the chain provider. Wallet receipt acceptance not recorded.",
     broadcast_unknown:"Operator credit submission is uncertain. Tracking the existing payment.",
   })[state] || "Operator credit status needs review.";
 }
@@ -22,12 +22,13 @@ export function ongoingCreditMessage(state,imported=false){
 export function driverView({accepted,registered,connected,state,credit,imported,hasInvitation,creditEnabled=true,closedSession=false}){
   if(!hasInvitation)return {title:"Charge. Export. Settle.",subtitle:"Open your operator's private link inside BSV Browser.",stage:"start"};
   if(state==="waived")return {title:"Your session charge was waived",subtitle:"No further collection is authorised for this session. A waiver does not refund any funds already sent.",stage:"settled"};
+  // Historical receipt reporting does not renew expired spending consent.
+  if(credit&&state==="provider_confirmed")return imported?
+    {title:"Wallet receipt acceptance recorded",subtitle:"Your wallet reports acceptance of this confirmed credit. No further payment is needed.",stage:"settled"}:
+    {title:"Your credit is confirmed",subtitle:"Wallet acceptance is not recorded. Reconnect the receiving wallet to import and report the existing receipt. No new payment.",stage:"approved",reconnect:"Receive credit in wallet"};
   if(!accepted)return closedSession?
     {title:"Review your completed session",subtitle:"Review the frozen energy account and any metering warnings. Approval can start payment immediately; it does not start another charging session.",stage:"approve"}:
     {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};
-  if(credit&&state==="provider_confirmed")return imported?
-    {title:"Credit accepted by your wallet",subtitle:"The confirmed payment receipt is imported. No further payment is needed.",stage:"settled"}:
-    {title:"Your credit is confirmed",subtitle:"Reconnect the same wallet to import your receipt. This does not send another payment.",stage:"approved",reconnect:"Receive credit in wallet"};
   if(["submitted","provider_unconfirmed","broadcast_unknown"].includes(state))return {
     title:state==="broadcast_unknown"?"Checking payment submission":
       state==="provider_unconfirmed"?"Awaiting block confirmation":"Payment awaiting confirmation",

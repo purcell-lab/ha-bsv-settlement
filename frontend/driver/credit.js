@@ -100,3 +100,51 @@ export async function importCredit(wallet, checked, receipt) {
   if(result.accepted!==true)throw Error("The wallet has not accepted the credit receipt.");
   return result;
 }
+
+export const receiptProtocol = [2, "ev credit receipt"];
+export function receiptReported(row) {
+  return row?.wallet_receipt_status === "wallet_reported_accepted" &&
+    Number.isFinite(Date.parse(row.wallet_imported_at));
+}
+
+export async function importAndReportCredit(wallet, checked, receipt, identity, api, cache) {
+  // Cache only in this page, never authority. A reporting retry must not repeat
+  // internalizeAction or create a payment. Reloads use the server report.
+  if ((await wallet.getPublicKey({identityKey:true})).publicKey !== identity)
+    throw Error("Connect the wallet that registered this receiving address.");
+  const key=`${receipt.budget_id}:${receipt.txid}`;
+  let entry=cache.get(key);
+  if(!entry) {
+    await importCredit(wallet,checked,receipt);
+    entry={accepted:true};cache.set(key,entry);
+  }
+  try {
+    if(!entry.acknowledgement) {
+      const payload=canonical({
+        action:"report_credit_receipt_accepted",version:1,network:"BSV mainnet",
+        budget_id:checked.terms.budget_id,credit_id:receipt.credit_id||receipt.budget_id,
+        session_id:receipt.session_id,transaction_id:receipt.transaction_id,txid:receipt.txid,
+        output_index:0,amount_sats:receipt.amount_sats,recipient_address:receipt.recipient_address,
+        driver_identity:identity,operator_identity:checked.terms.operator_identity,
+        invitation_hash:await hash(checked.invitation.payload),accepted:true,
+      });
+      const {signature}=await wallet.createSignature({
+        protocolID:receiptProtocol,keyID:checked.terms.budget_id,counterparty:"anyone",
+        data:bytes(payload),
+        description:"Report receipt acceptance for this existing EV credit. No payment or spending permission.",
+      });
+      entry.acknowledgement={payload,signature:hex(signature)};
+    }
+    const result=await api("acknowledge_credit_receipt",{
+      ...(receipt.credit_id?{credit_id:receipt.credit_id}:{}),
+      acknowledgement:entry.acknowledgement,
+    });
+    if(result.txid!==receipt.txid || !receiptReported(result))
+      throw Error("The operator did not confirm saving the acknowledgement.");
+    return result;
+  } catch(e) {
+    const error=new Error(`Wallet accepted the receipt; reporting to the operator is pending: ${e.message}`);
+    error.walletAccepted=true;
+    throw error;
+  }
+}

@@ -48,12 +48,15 @@ class AutomaticCredits:
         return self.api.saved["automatic_credits"].get(row["terms"]["budget_id"])
 
     def public(self, item):
+        acknowledgement = item.get("wallet_receipt_ack")
         return {k: copy.deepcopy(item[k]) for k in (
             "state", "budget_id", "session_id", "transaction_id", "recipient_address",
             "amount_sats", "fee_sats", "net_amount_aud", "txid", "confirmations",
-            "created_at", "checked_at", "error", "wallet_imported_at", "fee_quote",
+            "created_at", "checked_at", "error", "fee_quote",
         ) if k in item} | {"quality_flags": copy.deepcopy(
-            (item.get("account") or {}).get("quality_flags", []))}
+            (item.get("account") or {}).get("quality_flags", [])),
+            "wallet_receipt_status": "wallet_reported_accepted" if acknowledgement else "not_recorded",
+            "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None}
 
     def summary(self):
         return {

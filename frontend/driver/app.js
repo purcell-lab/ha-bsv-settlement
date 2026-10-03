@@ -1,7 +1,7 @@
 import { WalletClient } from "@bsv/sdk";
 import { parseInvitation, signConsent,derivedInvitation } from "./model.js";
 import { collectOnce } from "./collection.js";
-import { registerCredit, importCredit } from "./credit.js";
+import { registerCredit, importAndReportCredit, receiptReported } from "./credit.js";
 import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js";
 import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
@@ -36,6 +36,7 @@ let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
+const receiptImports=new Map(), receiptReportErrors=new Map();
 let latestTxid=null;
 let collectionFailure=null,pendingDiagnostic=null,latestCollection=null;
 let selectedSession=null;
@@ -109,6 +110,7 @@ function paintOngoing(){
   $("ongoing-section").hidden=!ongoingRows.length;
   $("ongoing-list").replaceChildren();
   for(const row of ongoingRows.slice().reverse()){
+    if(receiptReported(row))importedCredits.add(row.txid);
     const box=document.createElement("div");box.className="notice small";
     const p=document.createElement("p");p.className="strong";
     p.textContent=`${row.amount_sats?row.amount_sats+" sat credit · ":""}${ongoingCreditMessage(row.state,importedCredits.has(row.txid))}`;
@@ -138,11 +140,14 @@ $("receive-ongoing").onclick=async()=>{
       const receipt=await api("ongoing_credit_receipt",{credit_id:row.credit_id});
       if(receipt.credit_id!==row.credit_id || receipt.session_id!==row.session_id || receipt.txid!==row.txid)
         throw Error("The credit receipt does not match the selected session.");
-      await importCredit(wallet,checked,receipt);
+      const report=await importAndReportCredit(wallet,checked,receipt,registeredIdentity,api,receiptImports);
+      Object.assign(row,report);
       importedCredits.add(row.txid);
     }
-    $("ongoing-feedback").textContent="Confirmed credit receipts accepted by your wallet. No payment was sent.";
-  }catch(e){$("ongoing-feedback").textContent=`Receipt import paused: ${e.message}. Retry imports the same payments, not new transfers.`;}
+    $("ongoing-feedback").textContent="Wallet receipt acceptance recorded by the operator. No payment was sent.";
+  }catch(e){$("ongoing-feedback").textContent=e.walletAccepted?
+    `${e.message}. Select Receive confirmed credits to retry reporting, without another import in this page.`:
+    `Receipt import paused: ${e.message}. Retry imports the same payments, not new transfers.`;}
   finally{receivingOngoing=false;paintOngoing();controls();}
 };
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
@@ -161,6 +166,7 @@ function controls() {
   document.body.dataset.pairing=pairing?.state || "local";
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
   const waived=collectionState==="waived";
+  const receiptOnly=creditDirection&&collectionState==="provider_confirmed";
   $("multi-session-select").disabled=busy||collectionBusy||!!pendingReport||!!pendingDiagnostic;
   $("approve").disabled = waived || framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
     (!!capability && !pricesValid()) || pairingBusy || (!!pairing && pairing.state!=="paired");
@@ -171,12 +177,12 @@ function controls() {
   $("load").disabled = busy; $("invitation").disabled = busy;
   $("reset").disabled = busy || collectionBusy; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
-  $("resume-collection").disabled=busy || collectionBusy || !accepted || !spending() ||
+  $("resume-collection").disabled=busy || collectionBusy || (!accepted&&!receiptOnly) || !spending() ||
     (!!connectedWallet && !halted && collectionState!=="recovery_ready") || !!pendingReport || framed ||
     pairingBusy || (!!pairing && pairing.state!=="paired") ||
     (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready","recovery_ready"].includes(collectionState));
   $("retry-collection").disabled=busy || collectionBusy || !pendingReport;
-  if (expired && !accepted && !waived) status("This invitation has expired. Ask the operator for a new link.",true);
+  if (expired && !accepted && !waived && !receiptOnly) status("This invitation has expired. Ask the operator for a new link.",true);
   $("approve").textContent = "Authorise EV charging budget";
   const view=driverView({accepted,registered:creditRegistered,connected:!!connectedWallet,
     state:collectionState,credit:creditDirection,creditEnabled,closedSession:!!checked?.terms.closed_session_review,
@@ -191,9 +197,9 @@ function controls() {
   $("progress-approve").className=accepted?"done":"";
   $("progress-session").className=accepted&&collectionState!=="waiting_for_operator_binding"?"done":"";
   $("progress-settle").className=view.stage==="settled"?"done":"";
-  $("approve").hidden=accepted||waived;
-  $("approval-action").hidden=!checked||accepted||waived;
-  $("approval-terms").hidden=accepted||waived;$("action-note").hidden=accepted||waived;
+  $("approve").hidden=accepted||waived||receiptOnly;
+  $("approval-action").hidden=!checked||accepted||waived||receiptOnly;
+  $("approval-terms").hidden=accepted||waived||receiptOnly;$("action-note").hidden=accepted||waived||receiptOnly;
   $("approval-heading").textContent=waived?"Historical approved limit":accepted?"Your approved limit":"Your spending limit";
   $("resume-collection").textContent=view.reconnect||"Reconnect wallet";
   $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet)||
@@ -202,11 +208,11 @@ function controls() {
   $("retry").hidden=waived||accepted||!receipt;
   if(checked?.terms.version!==3&&showOngoingOverview({accepted,ongoingCount:ongoingRows.length,
     sessionMode:checked?.terms.session_mode,binding,state:collectionState})){
-    const last=ongoingRows[ongoingRows.length-1], imported=importedCredits.has(last.txid);
+    const last=ongoingRows[ongoingRows.length-1], imported=last.state==="provider_confirmed"&&importedCredits.has(last.txid);
     $("page-title").textContent=last.txid?(imported?"Credit accepted by your wallet":last.state==="provider_confirmed"?"Your credit is confirmed":"Credit awaiting confirmation"):
       last.state==="no_operator_credit"?"No operator credit due":ongoingEnabled?"Automatic driver credits":"Automatic credits paused";
     $("page-subtitle").textContent=last.error||"Each session has a fixed receiving wallet and its own settlement record. This policy does not authorise charges to your wallet.";
-    $("status").textContent=imported?"Your confirmed credit receipt is accepted by your wallet. No further payment is needed.":
+    $("status").textContent=imported?"Your wallet reports receipt acceptance, recorded by the operator. No further payment is needed.":
       last.error|| (last.state==="provider_confirmed"?"Connect your registered wallet to receive the confirmed credit receipt.":
       last.txid?"Tracking the existing payment. Do not send another transaction.":
       !ongoingEnabled?"The operator has paused ongoing credits. Contact them to review your account.":
@@ -438,17 +444,30 @@ async function checkCollection() {
     let result=await api("collection_status");
     if(result.direction!=="operator_to_driver" && ["submitted","broadcast_unknown","provider_unconfirmed"].includes(result.state)&&result.txid)
       result=await api("reconcile_collection");
+    if(receiptReported(result))importedCredits.add(result.txid);
     paintCollection(result);
-    if(creditDirection && result.state==="provider_confirmed" && connectedWallet && !attemptedImports.has(result.txid)){
+    if(creditDirection && result.state==="provider_confirmed" && connectedWallet &&
+        !importedCredits.has(result.txid) && !attemptedImports.has(result.txid)){
       attemptedImports.add(result.txid);
       try{
-        await importCredit(connectedWallet,checked,await api("credit_receipt"));
+        const report=await importAndReportCredit(connectedWallet,checked,await api("credit_receipt"),
+          registeredIdentity,api,receiptImports);
+        Object.assign(result,report);
         importedCredits.add(result.txid);
-      }catch(e){halted=true;$("credit-status").textContent=`Credit sent, wallet import not complete: ${e.message}. Reconnect to retry importing the same payment.`;}
+        receiptReportErrors.delete(result.txid);
+      }catch(e){
+        halted=true;
+        receiptReportErrors.set(result.txid,e.walletAccepted?
+          `${e.message}. Reconnect to retry reporting; no new payment or import is needed in this page.`:
+          `Credit sent, wallet import not complete: ${e.message}. Reconnect to retry importing the same payment.`);
+      }
     }
-    if(creditDirection && importedCredits.has(result.txid)){
-      $("credit-status").textContent="Credit accepted by your wallet. No further payment is sent.";
-      status("Your session credit is confirmed and its receipt is accepted by your wallet.");
+    if(creditDirection && result.state==="provider_confirmed" && importedCredits.has(result.txid)){
+      $("credit-status").textContent="Wallet reports receipt accepted. Acknowledgement saved by the operator.";
+      status("Your session credit is confirmed. Wallet receipt acceptance is recorded; no further payment is sent.");
+    }else if(creditDirection && receiptReportErrors.has(result.txid)){
+      $("credit-status").textContent=receiptReportErrors.get(result.txid);
+      status(receiptReportErrors.get(result.txid),true);
     }
     if(result.state==="ready" && connectedWallet && !halted) {
       const sessionChecked=checked.terms.version===3?await derivedInvitation(result.session_invitation,checked,selectedSession):checked;
