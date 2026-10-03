@@ -148,6 +148,9 @@ class SessionBudgets:
     def admin_status(self, row):
         """Only the administrator service may redisplay a pending capability."""
         result = self.public(row)
+        if row["terms"].get("version") == 3 and not row.get("receipt"):
+            from .enrolment import admin_status
+            result["public_registration"] = admin_status(self.api, row)
         if row["terms"].get("version") == 3:
             from .weekly import summary
             result["multi_session"] = summary(self.api, row)
@@ -234,6 +237,9 @@ class SessionBudgets:
             raise WalletError("Budget invitation not found")
         if action == "session_budget_status":
             return self.admin_status(row)
+        if action in ("open_public_registration", "close_public_registration"):
+            from .enrolment import manage
+            return await manage(self.api, row, action, data, user_id)
         if action == "revoke_session_budget":
             row["state"] = "revoked"
             await self.api.store.async_save(self.api.saved)

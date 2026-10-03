@@ -118,6 +118,15 @@ async def async_setup(hass, config):
             **common, vol.Required("budget_id"): str, vol.Required("receipt"): dict},
         "revoke_session_budget": {**common, vol.Required("budget_id"): str},
         "session_budget_status": {**common, vol.Optional("budget_id"): str},
+        "open_public_registration": {
+            **common, vol.Required("budget_id"): str,
+            vol.Required("expected_invitation_hash"): str,
+            vol.Required("expected_context_hash"): str,
+            vol.Required("confirm_public_registration"): vol.In([True])},
+        "close_public_registration": {
+            **common, vol.Required("budget_id"): str,
+            vol.Required("expected_invitation_hash"): str,
+            vol.Required("confirm_public_registration"): vol.In([True])},
         "prepare_session_review": {
             **per_session, vol.Required("proxy_config_entry_id"): str,
             vol.Required("conversion_rate_entity"): str},
