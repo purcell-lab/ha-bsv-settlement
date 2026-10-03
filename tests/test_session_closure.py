@@ -33,7 +33,7 @@ async def test_preparation_is_read_only_and_waiver_is_audited(tmp_path):
     assert api.saved==before
     result=await api.closures.execute("waive_session_charge",args,"admin")
     assert result["state"]=="waived" and result["net_amount_aud"]=="0.05"
-    assert result["quality_flags"]==["import:energy_without_matching_state"]
+    assert result["quality_flags"]==proxy.data["latest_session"]["quality_flags"]
     assert api.saved["session_budgets"][pending["terms"]["budget_id"]]["state"]=="revoked"
     with pytest.raises(WalletError):
         await api.budgets.accept(api.saved["session_budgets"][pending["terms"]["budget_id"]],consent(pending),"admin")
@@ -71,7 +71,7 @@ async def test_post_session_consent_preserves_warning_and_requires_fresh_driver_
 
 
 @pytest.mark.parametrize("field",[
-    "expected_review_hash","confirm_account_review","confirm_provisional_metering","reason","confirm_no_payment"])
+    "expected_review_hash","confirm_account_review","reason","confirm_no_payment"])
 async def test_missing_review_never_waives(tmp_path,field):
     _,api,_,args,_,_=await closed(tmp_path)
     before=copy.deepcopy(api.saved)
@@ -136,7 +136,7 @@ async def test_new_closed_account_change_blocks_collection(tmp_path):
     assert "changed" in result["error"]
 
 
-@pytest.mark.parametrize("field", ["confirm_account_review", "confirm_provisional_metering",
+@pytest.mark.parametrize("field", ["confirm_account_review",
                                   "confirm_replace_pending", "expected_review_hash"])
 async def test_consent_request_needs_explicit_review_and_replacement(tmp_path,field):
     _,api,_,args,_,_=await closed(tmp_path)

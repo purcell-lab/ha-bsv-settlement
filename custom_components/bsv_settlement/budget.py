@@ -421,7 +421,7 @@ class SessionBudgets:
                 f"Frozen account AUD {closed_review['account']['net_amount_aud']}; "
                 "network fee is additional within the total spending limit. "
                 "No approval to start another session. "
-                f"Metering warnings: {', '.join(closed_review['accepted_flags']) or 'none beyond standard provisional allocation'}. "
+                f"Metering warnings: {', '.join(closed_review['account'].get('quality_flags', [])) or 'none'}. "
                 f"Operator review reason: {closed_review['reason']}")
         if closed_review is None:
             terms["credit_receiving"] = {

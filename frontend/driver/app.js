@@ -7,6 +7,7 @@ import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
 import {chainRecordUrl} from "../ui.js";
+import {warningMessage} from "../quality.js";
 import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
@@ -119,7 +120,10 @@ function paintOngoing(){
     const url=chainRecordUrl(row.txid);
     if(url){const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener noreferrer";
       a.textContent="View chain-provider record";details.append(a);}
-    box.append(p,note,details);$("ongoing-list").append(box);
+    box.append(p,note,details);
+    if(warningMessage(row.quality_flags)){const warning=document.createElement("p");
+      warning.textContent=`Metering warning (non-blocking): ${warningMessage(row.quality_flags)}`;box.append(warning);}
+    $("ongoing-list").append(box);
   }
   const outstanding=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid));
   $("receive-ongoing").disabled=receivingOngoing||!outstanding;
@@ -262,7 +266,7 @@ function show(invitation) {
   $("closed-account").hidden=!t.closed_session_review;
   if(t.closed_session_review){
     const c=t.closed_session_review,a=c.account,total=Number(a.import_kwh)+Number(a.export_kwh);
-    const warnings=c.accepted_flags.map(f=>({
+    const warnings=(a.quality_flags||c.accepted_flags).map(f=>({
       "import:energy_without_matching_state":"Charging energy was recorded while the charger state did not indicate charging",
       "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging"
     })[f]||f).join(". ");
@@ -371,6 +375,9 @@ function paintCollection(result) {
   $("collection-section").hidden=false;
   $("collection-status").textContent=(collectionMessages[result.state] || result.state)+
     (result.error ? " "+result.error : "");
+  const flags=result.quote?JSON.parse(result.quote.payload).account.quality_flags:result.quality_flags;
+  $("quality-warnings").hidden=!warningMessage(flags);
+  $("quality-warnings").textContent=`Metering warning (non-blocking): ${warningMessage(flags)} Payment permission and safety checks still apply.`;
   if(result.quote) {
     const q=JSON.parse(result.quote.payload);
     $("collection-amount").textContent=`Session payment: ${q.amount_sats} sat${result.fee_sats!==undefined ? " + "+result.fee_sats+" sat fee" : ", effective fee cap "+q.max_fee_sats+" sat"}. Total debit limit: ${q.max_total_sats} sat. Transaction: ${q.account.ocpp_transaction_id}.`;

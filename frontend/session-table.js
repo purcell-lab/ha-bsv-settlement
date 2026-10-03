@@ -1,5 +1,6 @@
 import {esc,num,stamp,short,energyMetrics,finite,chainRecordLink} from "./ui.js";
 import {settlementRows,paymentStatus} from "./payment-status.js";
+import {warningMessage} from "./quality.js";
 
 export function sessionTableRows(health,sessions,direction="all"){
   const rows=settlementRows(health);
@@ -28,6 +29,6 @@ export function sessionTable(health,sessions,direction){
       <td>${num(e.fromEV.kwh,2)}<br><span class="note">${num(e.fromEV.average,4)}</span></td>
       <td>${num(s?.net_cost_aud??row.net_amount_aud,2)}</td>
       <td>${num(row.amount_sats)} sat<br><span class="note">Fee ${num(row.fee_sats)} sat</span>${row.max_fee_sats!==undefined?`<br><span class="note">Fee cap ${num(row.max_fee_sats)} sat</span>`:""}</td>
-      <td><strong>${esc(p.title)}</strong><p class="note">${esc(p.detail)}</p></td>
+      <td><strong>${esc(p.title)}</strong><p class="note">${esc(p.detail)}</p>${warningMessage(s?.quality_flags||row.quality_flags)?`<p class="note">Metering warning (non-blocking): ${esc(warningMessage(s?.quality_flags||row.quality_flags))}</p>`:""}</td>
     </tr>`).join("")}</tbody></table></div></section>`;
 }

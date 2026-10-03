@@ -6,7 +6,7 @@ from decimal import ROUND_HALF_UP
 
 from .api import WalletError
 from .const import DOMAIN
-from .session_review import account_snapshot, decimal, digest, now, BENIGN_FLAGS
+from .session_review import account_snapshot, decimal, digest, now, WARNING_FLAGS
 from .budget import sha
 
 ACCEPTABLE = {"import:energy_without_matching_state", "export:energy_without_matching_state"}
@@ -67,7 +67,8 @@ class ClosedSessions:
         record = next((r for r in records if r and r["session_id"] == data["session_id"]), None)
         if not record or not record.get("ended_at"):
             raise WalletError("Select a completed session from retained history")
-        flags = sorted(set(record.get("quality_flags", [])) - BENIGN_FLAGS)
+        flags = sorted(set(record.get("quality_flags", [])) - WARNING_FLAGS)
+        warnings = sorted(set(record.get("quality_flags", [])) & WARNING_FLAGS)
         # No missing baseline, unknown amount, unpriced interval or other hard
         # quality error may be hidden by either a consent or waiver action.
         account = reviewed_snapshot(record, set(flags) & ACCEPTABLE)
@@ -118,6 +119,7 @@ class ClosedSessions:
         return {"state": "data_review_required" if flags else "ready_for_resolution",
                 "session_id": data["session_id"], "account": account, "amount_sats": amount,
                 "satoshis_per_aud": str(rate), "accepted_flags": flags,
+                "warning_flags": warnings,
                 "review_hash": digest(details), "pending_budget_id": details["pending_budget_id"],
                 "pending_invitation_hash": details["pending_invitation_hash"], "closed": False}
 
@@ -170,7 +172,7 @@ class ClosedSessions:
         row = {"session_id": data["session_id"], "transaction_id": plan["account"]["ocpp_transaction_id"],
                "state": "waived" if decimal(plan["account"]["net_amount_aud"]) > 0 else "closed_zero",
                "account": copy.deepcopy(plan["account"]), "net_amount_aud": plan["account"]["net_amount_aud"],
-               "quality_flags": plan["accepted_flags"], "reason": reason.strip(),
+               "quality_flags": plan["account"]["quality_flags"], "reason": reason.strip(),
                "closed_at": now().isoformat(), "closed_by": user_id, "review_hash": plan["review_hash"]}
         api.saved.setdefault("closed_sessions", {})[key] = row
         try:

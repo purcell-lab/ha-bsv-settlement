@@ -1,3 +1,4 @@
+import {qualityFlags} from "./quality.js";
 export const esc = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 export const finite = v => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
 export const num = (v,d=0) => finite(v) ? Number(v).toLocaleString("en-AU",{minimumFractionDigits:d,maximumFractionDigits:d}) : "Unavailable";
@@ -76,7 +77,7 @@ export function sessionStatus(s,health,now=Date.now()) {
   if(closure)return {label:stateLabel(closure.state),tone:"quiet",
     detail:closure.received_funds?`Charge waived. ${closure.received_funds.amount_sats} sat received remains unallocated; no refund authorised.`:
       `${closure.state==="closed_zero"?"Closed: no payment due.":"Charge waived; no further collection."} ${closure.reason}`,target:"payments"};
-  const flags=(s.quality_flags||[]).filter(f=>!["interval_energy_allocation_estimated","not_a_final_bill"].includes(f));
+  const flags=qualityFlags(s.quality_flags).blockers;
   const reviewed=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.reviewed_closed_account&&
     ["awaiting_driver_consent","spending_authorised_wallet_permission_required"].includes(a.state)&&Date.parse(a.expires_at)>now);
   if(s.ended_at&&flags.length&&!reviewed)return {label:"Data review required",tone:"warn",
