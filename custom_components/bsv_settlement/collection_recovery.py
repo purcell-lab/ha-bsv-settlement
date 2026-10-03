@@ -6,6 +6,7 @@ import asyncio
 import copy
 import json
 import re
+import secrets
 
 from bsv import PrivateKey
 from .api import WalletError
@@ -90,6 +91,8 @@ async def execute(collections, action, data, user_id):
     row = collections.api.saved["session_budgets"].get(data["budget_id"])
     if not row:
         raise WalletError("Unknown spending approval")
+    if action == "get_reviewed_collection_link":
+        return await reviewed_link(collections, row, data)
     result = review(collections, row)
     if action == "prepare_collection_recovery":
         return result
@@ -140,3 +143,41 @@ async def execute(collections, action, data, user_id):
         collections.api.saved["collection_recoveries"] = old_records
         raise
     return collections.public(item) | {"released_for_driver_review": True, "payment_sent": False}
+
+
+async def reviewed_link(collections, row, data):
+    """Redisplay an existing capability, never replace a mandate or payment.
+
+    Called only by the authenticated administrator service under the coordinator
+    lock. The public driver endpoint deliberately has no corresponding action.
+    """
+    item = collections.get(row)
+    if (not item or item["state"] != "recovery_ready"
+            or not item.get("recovery", {}).get("requires_driver_confirmation")
+            or any(item.get(k) is not None for k in (
+                "claimed_at", "attempt_token_hash", "submission_authorised_at",
+                "draft_hash", "signed_raw", "txid"))):
+        raise WalletError("Only an unclaimed, reviewed collection can redisplay its private link")
+    if (data.get("expected_quote_hash") != item["quote"]["hash"]
+            or data.get("confirm_private_link_disclosure") is not True):
+        raise WalletError("Confirm private link disclosure for the unchanged reviewed quote")
+    # Reuse expiry, approval, manual-payment conflict and frozen-account guards.
+    await collections.current(row, item)
+    if (collections.api.saved["driver_collection_index"].get(collections.key(row))
+            != row["terms"]["budget_id"]):
+        raise WalletError("This approval does not own the session collection")
+    if row.get("driver_link_scheme") != "hmac-sha256-v1":
+        raise WalletError("The original private link cannot be safely redisplayed")
+    token = collections.api.budgets.link_token(row["terms"]["budget_id"])
+    if not secrets.compare_digest(sha(token), row.get("driver_token_hash", "")):
+        raise WalletError("The original private link cannot be safely redisplayed")
+    quote = json.loads(item["quote"]["payload"])
+    return {
+        "budget_id": row["terms"]["budget_id"],
+        "session_id": collections.session_id(row),
+        "transaction_id": quote["account"]["ocpp_transaction_id"],
+        "state": item["state"], "amount_sats": quote["amount_sats"],
+        "max_fee_sats": quote["max_fee_sats"], "expires_at": quote["expires_at"],
+        "driver_link_fragment": f"#budget={row['terms']['budget_id']}&token={token}",
+        "same_link": True, "requires_driver_confirmation": True, "payment_sent": False,
+    }

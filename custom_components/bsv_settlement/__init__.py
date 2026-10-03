@@ -45,6 +45,11 @@ async def async_setup(hass, config):
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
         "prepare_collection_recovery": {**common, vol.Required("budget_id"): str},
+        "get_reviewed_collection_link": {
+            **common, vol.Required("budget_id"): str,
+            vol.Required("expected_quote_hash"): str,
+            vol.Required("confirm_private_link_disclosure"): vol.In([True]),
+        },
         "recover_driver_collection": {
             **common, vol.Required("budget_id"): str,
             vol.Required("expected_quote_hash"): str, vol.Required("expected_claimed_at"): str,
