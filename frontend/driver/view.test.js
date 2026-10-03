@@ -67,7 +67,9 @@ test("ongoing session wording describes operator credit, not driver collection",
  assert.equal(ongoingCreditMessage("waiting_for_session_end"),
    "Session in progress. Any operator credit will be checked when the session ends.");
  assert.doesNotMatch(ongoingCreditMessage("waiting_for_session_end"),/collection|armed/i);
- assert.equal(ongoingCreditMessage("provider_confirmed",true),"Receipt accepted by wallet");
+ assert.equal(ongoingCreditMessage("provider_confirmed",true),"Wallet receipt acceptance recorded");
+ assert.match(ongoingCreditMessage("provider_confirmed",false),/acceptance not recorded/);
+ assert.match(ongoingCreditMessage("broadcast_unknown",true),/uncertain/);
  assert.match(ongoingCreditMessage("provider_confirmed"),/chain provider/);
  assert.match(ongoingCreditMessage("unexpected_state"),/needs review/);
 });

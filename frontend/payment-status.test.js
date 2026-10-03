@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import {settlementRows,paymentStatus} from "./payment-status.js";
 const now=Date.now(),s={session_id:"s",ocpp_transaction_id:"tx",ended_at:"closed",net_cost_aud:0.19};
 const p={session_id:"s",direction:"driver_to_operator",amount_sats:19,state:"ready",expires_at:new Date(now+60000).toISOString()};
+test("wallet acceptance and chain confirmation remain independent",()=>{
+ const credit={state:"provider_confirmed",txid:"fictional",amount_sats:198,direction:"operator_to_driver"};
+ assert.match(paymentStatus(credit).detail,/acceptance not recorded/);
+ const reported={...credit,wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-03T12:00:00Z"};
+ assert.match(paymentStatus(reported).detail,/Wallet reports receipt accepted/);
+ assert.match(paymentStatus(reported).detail,/2026-10-03T12:00:00Z/);
+ assert.match(paymentStatus({...reported,wallet_imported_at:null}).detail,/not recorded/);
+ assert.match(paymentStatus({...reported,state:"broadcast_unknown"}).detail,/uncertain/);
+ assert.doesNotMatch(paymentStatus({...reported,direction:"driver_to_operator"}).detail,/receipt/);
+});
 test("closed without payment is explicit and cannot hide a chain transaction",()=>{
  const closure={session_id:"s",state:"waived",reason:"Operator goodwill waiver"};
  const rows=settlementRows({closed_sessions:[closure]});

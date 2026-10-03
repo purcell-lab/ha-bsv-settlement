@@ -37,7 +37,10 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
   if(row.state==="closed_zero")return result("Closed: no payment due",row.reason,"quiet");
   if(confirmed.has(row.state)&&row.txid)
     return result((driver?"Driver payment confirmed":"Operator credit confirmed")+suffix,
-      "Confirmed by the provider. Do not pay again.","good");
+      driver?"Confirmed by the provider. Do not pay again.":
+      row.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(row.wallet_imported_at))?
+        `Confirmed by the provider. Wallet reports receipt accepted. Acknowledgement recorded ${row.wallet_imported_at}. Do not pay again.`:
+        "Confirmed by the provider. Wallet receipt acceptance not recorded. This does not mean rejection. Do not pay again.","good");
   if((confirmed.has(row.state)||submitted.has(row.state))&&!row.txid)
     return result((driver?"Driver payment":"Operator credit")+suffix,
       "Transaction reference missing. Reconcile the saved record; payment is not verified.","warn");

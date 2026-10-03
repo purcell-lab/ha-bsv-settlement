@@ -41,7 +41,7 @@ class DriverBudgetView(HomeAssistantView):
                     "public_invitation", "public_read", "public_approve",
                     "read", "approve", "collection_status", "claim_collection",
                     "register_credit_destination", "credit_receipt", "ongoing_credit_receipt",
-                    "authorise_collection", "report_collection", "reconcile_collection",
+                    "authorise_collection", "report_collection", "reconcile_collection", "acknowledge_credit_receipt",
                     "pairing_create", "pairing_cancel", "report_collection_failure"):
                 raise WalletError("Unsupported action")
             if data["action"].startswith("public_"):
@@ -65,10 +65,14 @@ class DriverBudgetView(HomeAssistantView):
                 action = data["action"]
                 row = coord.api.budgets.driver_access(budget_id, token, allow_terminal=action in (
                     "read", "collection_status", "report_collection", "reconcile_collection",
-                    "credit_receipt", "ongoing_credit_receipt", "report_collection_failure"))
+                    "credit_receipt", "ongoing_credit_receipt", "report_collection_failure",
+                    "acknowledge_credit_receipt"))
                 if (action == "read" and row["state"] == "revoked" and not coord.api.auto_credits.get(row)
                         and not coord.api.ongoing_credits.driver_rows(row)):
                     raise WalletError("Driver link is revoked")
+                if action == "acknowledge_credit_receipt":
+                    from .receipt_ack import acknowledge
+                    return web.json_response(await acknowledge(coord.api, row, data), headers=headers)
                 if action in ("pairing_create", "pairing_cancel"):
                     from .pairing import KEY
                     hub = self.hass.data.get(KEY)

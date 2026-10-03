@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { PrivateKey, ProtoWallet, PublicKey, Transaction, P2PKH } from "@bsv/sdk";
-import { registerCredit, creditTransaction, importCredit, creditDescription } from "./credit.js";
+import { registerCredit, creditTransaction, importCredit, creditDescription,
+  importAndReportCredit, receiptReported } from "./credit.js";
 import { canonical } from "./model.js";
 
 const operator=PrivateKey.fromRandom(), driver=PrivateKey.fromRandom();
@@ -105,4 +106,64 @@ test("TSC duplicate nodes and nonzero transaction index convert to BUMP",async()
   receipt.proof.nodes=["*",sibling];
   receipt.block.merkleroot=pair(sibling,pair(receipt.txid,receipt.txid));
   assert.equal(creditTransaction(receipt,address).merklePath.computeRoot(receipt.txid),receipt.block.merkleroot);
+});
+
+test("acknowledgement follows accepted import and retry only repeats reporting",async()=>{
+ const {receipt}=await fixture();Object.assign(receipt,energyReceipt(0,10,"-1.89"));
+ let imports=0,posts=0,firstProof;
+ wallet.internalizeAction=async()=>{imports++;return {accepted:true};};
+ const cache=new Map(),identity=driver.toPublicKey().toString();
+ const api=async(action,data)=>{
+   assert.equal(action,"acknowledge_credit_receipt");posts++;
+   const p=JSON.parse(data.acknowledgement.payload);
+   assert.equal(p.accepted,true);assert.equal(p.txid,receipt.txid);
+   assert.equal(p.session_id,receipt.session_id);assert.equal(p.driver_identity,identity);
+   if(posts===1){firstProof=data.acknowledgement;throw Error("Lost response");}
+   assert.deepEqual(data.acknowledgement,firstProof);
+   return {txid:receipt.txid,wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-03T12:00:00Z"};
+ };
+ await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,identity,api,cache),
+   e=>e.walletAccepted===true&&/reporting.*pending/.test(e.message));
+ assert.equal(receiptReported(await importAndReportCredit(wallet,checked,receipt,identity,api,cache)),true);
+ assert.equal(imports,1);assert.equal(posts,2);
+});
+
+test("declined or uncertain wallet import never reports acceptance",async()=>{
+ const {receipt}=await fixture();
+ for(const result of [{accepted:false},{}]){
+   wallet.internalizeAction=async()=>result;
+   let calls=0;
+   await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,driver.toPublicKey().toString(),
+     async()=>{calls++;},new Map()),/not accepted/);
+   assert.equal(calls,0);
+ }
+ wallet.internalizeAction=async()=>{throw Error("Wallet unavailable");};
+ await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,driver.toPublicKey().toString(),
+   async()=>assert.fail("Must not report"),new Map()),/Wallet unavailable/);
+});
+
+test("signature refusal is reporting pending, not import failure",async()=>{
+ const {receipt}=await fixture();let imports=0;
+ wallet.internalizeAction=async()=>{imports++;return {accepted:true};};
+ const sign=wallet.createSignature.bind(wallet),cache=new Map();
+ wallet.createSignature=async()=>{throw Error("Declined signature");};
+ try{
+   await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,driver.toPublicKey().toString(),
+     async()=>assert.fail("No signature"),cache),e=>e.walletAccepted===true);
+   assert.equal(imports,1);
+ }finally{wallet.createSignature=sign;}
+ await importAndReportCredit(wallet,checked,receipt,driver.toPublicKey().toString(),
+   async()=>({txid:receipt.txid,wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-03T12:00:00Z"}),cache);
+ assert.equal(imports,1);
+});
+
+test("wrong wallet and mismatched report responses cannot claim saved acceptance",async()=>{
+ const {receipt}=await fixture();
+ await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,operator.toPublicKey().toString(),
+   async()=>assert.fail("Wrong wallet"),new Map()),/registered/);
+ wallet.internalizeAction=async()=>({accepted:true});
+ await assert.rejects(()=>importAndReportCredit(wallet,checked,receipt,driver.toPublicKey().toString(),
+   async()=>({txid:"other",wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-03T12:00:00Z"}),
+   new Map()),e=>e.walletAccepted===true);
+ assert.equal(receiptReported({wallet_imported_at:"2026-10-03T12:00:00Z"}),false);
 });
