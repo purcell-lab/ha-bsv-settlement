@@ -7,6 +7,9 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[Driver collection recovery](collection-recovery.md):** persistent failure
+  stages and explicitly reviewed, pre-signing recovery without automatic retry.
+
 - **[Acceptance evidence](acceptance-evidence.md):** all ten roadmap outcomes,
   test references, evidence classes and remaining gates.
 - **[Recovery drill](operator-recovery-drill.md):** isolated unfunded restore

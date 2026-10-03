@@ -45,7 +45,8 @@ class DriverCollections:
     def public(self, item):
         return {k: copy.deepcopy(item[k]) for k in (
             "state", "quote", "txid", "output_index", "fee_sats", "confirmations",
-            "created_at", "claimed_at", "submission_authorised_at", "checked_at", "error"
+            "created_at", "claimed_at", "submission_authorised_at", "checked_at", "error",
+            "diagnostic", "recovery"
         ) if k in item}
 
     def mandate(self, row):
@@ -156,11 +157,17 @@ class DriverCollections:
     async def claim(self, row, data):
         state = await self.status(row)
         item = self.get(row)
-        if not item or state["state"] != "ready":
+        if not item or state["state"] not in ("ready", "recovery_ready"):
             raise WalletError("Collection is not ready or already has an attempt; do not retry payment")
+        if state["state"] == "recovery_ready" and data.get("confirm_recovered_attempt") is not True:
+            raise WalletError("The driver must explicitly confirm the reviewed recovery")
         token = data.get("attempt_token")
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
             raise WalletError("Invalid collection attempt")
+        if any(r.get("budget_id") == row["terms"]["budget_id"]
+               and r.get("previous_attempt_hash") == sha(token)
+               for r in self.api.saved.get("collection_recoveries", [])):
+            raise WalletError("The previous attempt token was retired; use a fresh driver confirmation")
         payload = canonical({
             "version": 1, "action": "claim_session_collection",
             "budget_id": row["terms"]["budget_id"], "quote_hash": item["quote"]["hash"],

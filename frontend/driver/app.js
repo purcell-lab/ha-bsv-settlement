@@ -3,6 +3,7 @@ import { parseInvitation, signConsent } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importCredit } from "./credit.js";
 import { driverView } from "./view.js";
+import { describeFailure } from "./diagnostics.js";
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -17,6 +18,17 @@ let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pend
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
 let latestTxid=null;
+let collectionFailure=null,pendingDiagnostic=null,latestCollection=null;
+function paintFailure(){
+  $("collection-failure").textContent=describeFailure(collectionFailure);
+  $("collection-failure").hidden=!collectionFailure || collectionState==="provider_confirmed";
+}
+function retainFailure(e){
+  collectionFailure=e.diagnostic||collectionFailure;
+  pendingDiagnostic=e.pendingDiagnostic||pendingDiagnostic;
+  pendingReport=e.pendingReport||pendingReport;
+  halted=true;paintFailure();
+}
 let ongoingRows=[],registeredIdentity=null,receivingOngoing=false,ongoingEnabled=false;
 function paintOngoing(){
   $("ongoing-section").hidden=!ongoingRows.length;
@@ -70,8 +82,8 @@ function controls() {
   $("reset").disabled = busy || collectionBusy; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
   $("resume-collection").disabled=busy || collectionBusy || !accepted || !spending() ||
-    (!!connectedWallet && !halted) || !!pendingReport || framed ||
-    (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready"].includes(collectionState));
+    (!!connectedWallet && !halted && collectionState!=="recovery_ready") || !!pendingReport || framed ||
+    (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready","recovery_ready"].includes(collectionState));
   $("retry-collection").disabled=busy || collectionBusy || !pendingReport;
   if (expired && !accepted) status("This invitation has expired. Ask the operator for a new link.",true);
   $("approve").textContent = accepted ? (spending() ? "Spending approval saved" : "Old consent saved, no spending authority") :
@@ -89,7 +101,8 @@ function controls() {
   $("approval-terms").hidden=accepted;$("action-note").hidden=accepted;
   $("approval-heading").textContent=accepted?"Your approved limit":"Your spending limit";
   $("resume-collection").textContent=view.reconnect||"Reconnect wallet";
-  $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet);
+  $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet)||
+    (!creditDirection && collectionState==="wallet_attempt_reserved");
   $("retry-collection").hidden=!pendingReport;
   $("retry").hidden=accepted||!receipt;
   if(ongoingRows.length && (!binding || collectionState==="waiting_for_operator_binding")){
@@ -161,6 +174,11 @@ function show(invitation) {
 async function refresh(initial=false) {
   try {
     const result=await api("read");
+    $("connection-status").hidden=true;
+    if(pendingDiagnostic){
+      try{await api("report_collection_failure",pendingDiagnostic);pendingDiagnostic=null;}
+      catch{/* Keep the first error locally; never retry payment here. */}
+    }
     ongoingRows=result.ongoing_credits||[];registeredIdentity=result.driver_identity;
     ongoingEnabled=!!result.ongoing_credit_enabled;
     paintOngoing();
@@ -185,7 +203,10 @@ async function refresh(initial=false) {
         "Old consent is saved. It grants no spending authority. Ask the operator for a new invitation to approve spending.");
     } else if(initial) status("Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
   } catch(e) {
-    live=null;paintPrices();status(e.message || "The approval link is unavailable.",true);
+    live=null;paintPrices();
+    $("connection-status").hidden=false;
+    $("connection-status").textContent="Connection interrupted. Session and payment state are not updated. "+(e.message||"Try again later.");
+    if(!checked)status("Cannot load this approval link. Check the connection.",true);
   }
   controls();
   if(accepted && spending())await checkCollection();
@@ -195,6 +216,7 @@ const collectionMessages={
   waiting_for_session_end:"Automatic collection is armed. Waiting for the bound session to end.",
   ready:"The session account is ready for automatic collection.",
   wallet_attempt_reserved:"A wallet attempt is reserved. Do not start another payment; reconcile with the operator if this page was closed.",
+  recovery_ready:"The operator reviewed the previous attempt. Review the amount, then explicitly resume with your wallet. No payment has been retried.",
   submission_authorised:"A signing permit was issued. Keep this page open. If interrupted, reconcile with the operator.",
   broadcast_unknown:"Submission outcome is uncertain. No further broadcast will be attempted; checking the recorded transaction is safe.",
   submitted:"Payment submitted. Waiting for provider evidence.",
@@ -205,8 +227,18 @@ const collectionMessages={
   collection_blocked:"Automatic collection is blocked. Ask the operator to review the account."
 };
 function paintCollection(result) {
+  latestCollection=result;
+  if(result.state==="recovery_ready"){
+    collectionFailure=null;pendingDiagnostic=null;
+  } else if(result.diagnostic)collectionFailure=result.diagnostic;
   creditDirection=result.direction==="operator_to_driver";
   collectionState=result.state;
+  paintFailure();
+  if(["wallet_attempt_reserved","recovery_ready"].includes(result.state)){
+    status(result.state==="recovery_ready"
+      ? "Review complete. Your explicit confirmation is required before collection can resume."
+      : "Collection is held for review. Do not start another payment.",result.state==="wallet_attempt_reserved");
+  }
   latestTxid=result.txid||null;
   $("collection-section").hidden=false;
   $("collection-status").textContent=(collectionMessages[result.state] || result.state)+
@@ -233,7 +265,9 @@ function paintCollection(result) {
       "Eligible credits are paid automatically. No per-payment operator approval.";
     $("settlement-detail").textContent="The operator wallet signs and pays the session credit automatically. Reopening this page imports the confirmed receipt into your wallet; it does not send another payment. Chain status is provider-reported, not independent SPV verification.";
   }
-  $("settlement-badge").textContent=result.state==="provider_confirmed"?"Confirmed":result.txid?"Submitted":"In progress";
+  $("settlement-badge").textContent=result.state==="provider_confirmed"?"Confirmed":result.txid?"Submitted":
+    result.state==="recovery_ready"?"Driver confirmation":
+    result.state==="wallet_attempt_reserved"||collectionFailure?"Needs review":"In progress";
   if(result.state==="provider_confirmed")status(creditDirection ?
     "Your session credit is confirmed by the chain provider. Reconnect your wallet here to import the receipt." :
     "Session payment confirmed by the chain provider. No further collection will be attempted.");
@@ -266,7 +300,7 @@ async function checkCollection() {
     }
   } catch(e) {
     // Never create a replacement transaction after ANY uncertain wallet interaction.
-    halted=true;pendingReport=e.pendingReport || pendingReport;
+    retainFailure(e);
     $("collection-section").hidden=false;
     $("collection-status").textContent=`Collection paused: ${e.message}. No new payment will be attempted automatically.`;
   } finally {collectionBusy=false;controls();}
@@ -282,6 +316,7 @@ async function connectWallet() {
   return {wallet,identity};
 }
 function clear() {
+  collectionFailure=null;pendingDiagnostic=null;latestCollection=null;paintFailure();
   checked=null;receipt=null;accepted=false;live=null;connectedWallet=null;binding=null;halted=false;pendingReport=null;collectionState=null;
   $("terms").hidden=true;$("wallet-section").hidden=true;$("result").hidden=true;
   $("receipt").value="";$("wallet-key").textContent="Not connected";
@@ -350,7 +385,17 @@ $("resume-collection").onclick=async()=>{
     if(result.automatic_credit_enabled && !result.credit_destination_registered){
       await registerCredit(wallet,checked,identity,api);creditRegistered=true;
     }
-  } catch(e){status(e.message,true);}
+    const current=await api("collection_status");
+    if(current.state==="recovery_ready"){
+      const q=JSON.parse(current.quote.payload);
+      if(!window.confirm(`Resume this reviewed attempt for ${q.amount_sats} sat, with a maximum ${q.max_fee_sats} sat fee? The previous attempt must have been checked and any unsigned draft cancelled. This can charge your wallet.`)){
+        halted=true;return;
+      }
+      collectionFailure=null;paintFailure();
+      paintCollection(await collectOnce(wallet,checked,binding,current.quote,api,
+        msg=>{$("collection-status").textContent=msg;},true));
+    }
+  } catch(e){retainFailure(e);status(e.message,true);}
   finally{busy=false;controls();if(connectedWallet)await checkCollection();}
 };
 $("retry-collection").onclick=async()=>{

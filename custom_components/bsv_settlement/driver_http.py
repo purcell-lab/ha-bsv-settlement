@@ -40,7 +40,8 @@ class DriverBudgetView(HomeAssistantView):
             if not isinstance(data, dict) or data.get("action") not in (
                     "read", "approve", "collection_status", "claim_collection",
                     "register_credit_destination", "credit_receipt", "ongoing_credit_receipt",
-                    "authorise_collection", "report_collection", "reconcile_collection"):
+                    "authorise_collection", "report_collection", "reconcile_collection",
+                    "report_collection_failure"):
                 raise WalletError("Unsupported action")
             budget_id, token = data.get("budget_id"), data.get("token")
             if not isinstance(budget_id,str) or len(budget_id) != 36:
@@ -54,7 +55,7 @@ class DriverBudgetView(HomeAssistantView):
                 action = data["action"]
                 row = coord.api.budgets.driver_access(budget_id, token, allow_terminal=action in (
                     "read", "collection_status", "report_collection", "reconcile_collection",
-                    "credit_receipt", "ongoing_credit_receipt"))
+                    "credit_receipt", "ongoing_credit_receipt", "report_collection_failure"))
                 if (action == "read" and row["state"] == "revoked" and not coord.api.auto_credits.get(row)
                         and not coord.api.ongoing_credits.driver_rows(row)):
                     raise WalletError("Driver link is revoked")
@@ -68,6 +69,10 @@ class DriverBudgetView(HomeAssistantView):
                     "report_collection": lambda: coord.api.collections.report(row, data),
                     "reconcile_collection": lambda: coord.api.collections.reconcile(row),
                 }
+                if action == "report_collection_failure":
+                    from .collection_recovery import record_failure
+                    return web.json_response(await record_failure(
+                        coord.api.collections, row, data), headers=headers)
                 if action in handlers:
                     return web.json_response(await handlers[action](), headers=headers)
                 if data["action"] == "approve":

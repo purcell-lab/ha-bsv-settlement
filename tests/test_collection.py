@@ -35,8 +35,7 @@ async def ready(tmp_path, amount="1.89"):
     return hass, api, proxy, stored, driver
 
 
-def claim_data(item, row, driver):
-    token = "a" * 43
+def claim_data(item, row, driver, token="a" * 43):
     payload = canonical({"version": 1, "action": "claim_session_collection",
         "budget_id": row["terms"]["budget_id"], "quote_hash": item["quote"]["hash"],
         "attempt_token_hash": sha(token), "driver_identity": driver.public_key().hex()})

@@ -8,6 +8,7 @@
   <div class="intro"><p class="eyebrow">YOUR CHARGING SESSION</p><h1 id="page-title">Charge. Export. Settle.</h1><p id="page-subtitle">Approve one session in BSV Browser. Review the rates and spending limit before you connect.</p></div>
   <ol class="steps" aria-label="Session progress"><li id="progress-approve">1 <span>Approve</span></li><li id="progress-session">2 <span>Session</span></li><li id="progress-settle">3 <span>Settle</span></li></ol>
   <p id="status" class="notice" role="status" aria-live="polite">Open the private session link supplied by your charging operator.</p>
+  <p id="connection-status" class="notice error" role="status" hidden></p>
   <section id="load-section">
     <h2>Start with your private link</h2><p>Ask the charging operator for a session link or scan their QR code. Open it inside BSV Browser with the wallet you want to use.</p>
     <details><summary>Advanced: load a signed invitation</summary><label for="invitation">Operator-signed invitation</label><textarea id="invitation" rows="5" spellcheck="false" placeholder="Paste invitation JSON. Never enter a seed phrase or private key."></textarea><div class="actions"><button id="load">Load invitation</button><button id="reset" class="secondary">Clear page</button></div></details>
@@ -23,6 +24,7 @@
       <section id="collection-section" hidden>
         <div class="section-head"><h2 id="settlement-heading">Your settlement</h2><span id="settlement-badge" class="badge">In progress</span></div>
         <p id="collection-status" class="strong"></p><p id="collection-amount" class="settlement-amount"></p>
+        <p id="collection-failure" class="notice error" role="status" hidden></p>
         <div class="actions"><button id="resume-collection" disabled>Reconnect wallet</button><button id="retry-collection" class="secondary" disabled>Reconcile signed payment</button></div>
         <p id="settlement-detail" class="small"></p>
         <details><summary>Transaction details</summary><p id="collection-txid" class="mono"></p><p class="small">Confirmation is reported by the chain provider. It is not independent proof of finality.</p></details>

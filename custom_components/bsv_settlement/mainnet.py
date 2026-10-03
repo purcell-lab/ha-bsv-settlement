@@ -269,7 +269,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                     "session_id": self.collections.session_id(row),
                     "state": item["state"], "direction": "driver_to_operator",
                     "txid": item.get("txid"), "error": item.get("error"),
-                    "source": "driver",
+                    "source": "driver", "diagnostic": copy.deepcopy(item.get("diagnostic")),
+                    "recovery": copy.deepcopy(item.get("recovery")),
                 })
         return rows
 
