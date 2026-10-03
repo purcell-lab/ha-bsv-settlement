@@ -40,3 +40,21 @@ export function transactionStatus(t){
     wallet_attempt_reserved:"Held for review",waiting_for_session_end:"Session in progress",
     no_operator_credit:"No operator credit due"})[t.state]||String(t.state||"Review required").replaceAll("_"," ");
 }
+export function sessionSummary(s){
+  const rows=s.transactions||[];
+  let payment="No payment",status=s.ended_at?"Recorded":"Active";
+  if(s.closure?.state?.includes("waiv"))status="Waived";
+  if(rows.length>1){payment=`${rows.length} payments`;status="See details";}
+  if(rows.length===1){
+    const t=rows[0],amount=Number.isSafeInteger(t.amount_sats)?`${t.amount_sats} sat`:"amount unknown";
+    payment=`${t.direction==="operator_to_driver"?"Credit":"Pay"} ${amount}`;
+    status=t.state==="provider_confirmed"?
+      t.direction==="operator_to_driver"?
+        (t.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(t.wallet_imported_at))?"Synced":"Receipt due"):
+        "Confirmed":
+      ({provider_unconfirmed:"Confirming",submitted:"Submitted",broadcast_unknown:"Review",
+        wallet_attempt_reserved:"Held",waived:"Waived",waiting_for_session_end:"Active",
+        no_operator_credit:"No credit"})[t.state]||"Review";
+  }
+  return {payment,status,warning:!!s.quality_flags?.length};
+}
