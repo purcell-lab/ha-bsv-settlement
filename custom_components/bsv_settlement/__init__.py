@@ -9,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.importlib import async_import_module
 
 from .api import WalletAPI
-from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES
+from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
@@ -137,11 +137,38 @@ async def async_setup(hass, config):
         "session_review_status": {**common, vol.Optional("review_id"): str},
     })
 
+    closure_base = {**common, vol.Required("session_id"): str,
+                    vol.Required("proxy_config_entry_id"): str,
+                    vol.Required("conversion_rate_entity"): str}
+    closure_confirm = {**closure_base, vol.Required("expected_review_hash"): str,
+                       vol.Required("reason"): vol.All(str, vol.Length(min=8, max=300)),
+                       vol.Required("confirm_account_review"): vol.In([True]),
+                       vol.Optional("confirm_provisional_metering", default=False): bool}
+    schemas["prepare_session_closure"] = closure_base
+    schemas["waive_session_charge"] = {**closure_confirm, vol.Required("confirm_no_payment"): vol.In([True])}
+    schemas["request_closed_session_consent"] = {
+        **closure_confirm,
+        **{k: v for k, v in schemas["create_session_budget"].items()
+           if str(k) in ("operator_name", "operator_contact", "max_total_sats", "max_fee_sats", "valid_minutes")},
+        vol.Optional("confirm_replace_pending", default=False): bool}
+    owned_waiver = {**common, vol.Optional("review_id"): str, vol.Optional("budget_id"): str,
+                   vol.Optional("received_txid"): vol.Match(r"^[0-9a-f]{64}$"),
+                   vol.Optional("received_output_index"): vol.All(int, vol.Range(min=0))}
+    schemas["prepare_existing_charge_waiver"] = owned_waiver
+    schemas["waive_existing_charge"] = {
+        **owned_waiver, vol.Required("expected_review_hash"): str,
+        vol.Required("expected_amount_sats"): vol.All(int, vol.Range(min=1, max=100000)),
+        vol.Required("reason"): vol.All(str, vol.Length(min=8, max=300)),
+        vol.Required("confirm_waive_charge"): vol.In([True]),
+        vol.Required("confirm_no_refund"): vol.In([True]),
+        vol.Required("confirm_external_payments_need_separate_accounting"): vol.In([True]),
+        vol.Optional("confirm_received_funds_unallocated", default=False): bool}
+
     async def handle(call):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
                             "configure_automatic_credit", "configure_ongoing_credit",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
-                            *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES):
+                            *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
             user = (await hass.auth.async_get_user(call.context.user_id)
                     if call.context.user_id else None)

@@ -538,3 +538,63 @@ bind_session_budget:
       required: true
       selector:
         boolean:
+prepare_session_closure:
+  name: Review completed account
+  description: Read-only review for post-session consent, waiver or zero-balance closure. Existing payment attempts must be reconciled.
+  fields:
+    config_entry_id: {required: true, selector: {text: {}}}
+    proxy_config_entry_id: {required: true, selector: {text: {}}}
+    session_id: {required: true, selector: {text: {}}}
+    conversion_rate_entity: {required: true, selector: {entity: {domain: sensor}}}
+request_closed_session_consent:
+  name: Request consent for completed session
+  description: Freeze a reviewed positive account and issue a private consent link. No payment is sent by this service. The driver must approve fresh terms.
+  fields:
+    config_entry_id: {required: true, selector: {text: {}}}
+    proxy_config_entry_id: {required: true, selector: {text: {}}}
+    session_id: {required: true, selector: {text: {}}}
+    conversion_rate_entity: {required: true, selector: {entity: {domain: sensor}}}
+    expected_review_hash: {required: true, selector: {text: {}}}
+    reason: {required: true, description: Plain-text reason disclosed to the driver, selector: {text: {}}}
+    confirm_account_review: {required: true, selector: {boolean: {}}}
+    confirm_provisional_metering: {default: false, description: Accept only the supported energy/state timing warnings; all original warnings remain recorded, selector: {boolean: {}}}
+    confirm_replace_pending: {default: false, description: Revoke the reviewed unapproved invitation and issue new closed-account terms, selector: {boolean: {}}}
+    max_total_sats: {default: 1000, selector: {number: {min: 1, max: 100000, mode: box}}}
+    max_fee_sats: {default: 1000, selector: {number: {min: 0, max: 1000, mode: box}}}
+    valid_minutes: {default: 720, selector: {number: {min: 1, max: 1440, mode: box}}}
+    operator_name: {default: Charging operator, selector: {text: {}}}
+    operator_contact: {selector: {text: {}}}
+waive_session_charge:
+  name: Close completed account without payment
+  description: Explicitly waive a positive driver charge or close an exact zero account. Never waives credits owed to drivers or clears payment attempts.
+  fields:
+    config_entry_id: {required: true, selector: {text: {}}}
+    proxy_config_entry_id: {required: true, selector: {text: {}}}
+    session_id: {required: true, selector: {text: {}}}
+    conversion_rate_entity: {required: true, selector: {entity: {domain: sensor}}}
+    expected_review_hash: {required: true, selector: {text: {}}}
+    reason: {required: true, selector: {text: {}}}
+    confirm_account_review: {required: true, selector: {boolean: {}}}
+    confirm_provisional_metering: {default: false, selector: {boolean: {}}}
+    confirm_no_payment: {required: true, description: Close the account without marking it paid or moving funds, selector: {boolean: {}}}
+prepare_existing_charge_waiver:
+  name: Review waiver of an existing driver charge
+  description: Administrator-only read-only review of an issued manual request or pre-signing collection. Optional confirmed incoming output is checked without allocating it as payment.
+  fields: &owned_waiver_fields
+    config_entry_id: {required: true, selector: {text: {}}}
+    review_id: {description: Select a manual review OR a collection budget, selector: {text: {}}}
+    budget_id: {selector: {text: {}}}
+    received_txid: {description: Optional already-received funds to preserve separately, selector: {text: {}}}
+    received_output_index: {selector: {number: {min: 0, mode: box}}}
+waive_existing_charge:
+  name: Waive an existing reviewed driver charge
+  description: Terminal audited waiver. Never signs, sends, retries or refunds. Refuses any issued signing permit, signed transaction, competing owner or changed account. Known receipts remain unallocated.
+  fields:
+    <<: *owned_waiver_fields
+    expected_review_hash: {required: true, selector: {text: {}}}
+    expected_amount_sats: {required: true, selector: {number: {min: 1, max: 100000, mode: box}}}
+    reason: {required: true, selector: {text: {multiline: true}}}
+    confirm_waive_charge: {required: true, selector: {boolean: {}}}
+    confirm_no_refund: {required: true, selector: {boolean: {}}}
+    confirm_external_payments_need_separate_accounting: {required: true, selector: {boolean: {}}}
+    confirm_received_funds_unallocated: {selector: {boolean: {}}}

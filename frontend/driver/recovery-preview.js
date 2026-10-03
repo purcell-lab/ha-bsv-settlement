@@ -16,6 +16,8 @@ banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or paymen
 document.querySelector("main").prepend(banner);
 const mode=new URLSearchParams(location.search).get("scenario")||"unconfirmed";
 const select=document.getElementById("preview-mode");select.value=mode;
+const closedOption=document.createElement("option");closedOption.value="closed";closedOption.textContent="Completed account: fresh consent";select.append(closedOption);select.value=mode;
+const waivedOption=document.createElement("option");waivedOption.value="waived";waivedOption.textContent="Charge waived: no collection";select.append(waivedOption);select.value=mode;
 select.onchange=()=>{location.search="?scenario="+select.value;};
 const operator=PrivateKey.fromRandom(),driver=new ProtoWallet(PrivateKey.fromRandom());
 const identity=(await driver.getPublicKey({identityKey:true})).publicKey;
@@ -30,6 +32,15 @@ const terms={
   import_price_entity:"sensor.demo_import",export_price_entity:"sensor.demo_export",
   created_at:new Date().toISOString(),expires_at:new Date(Date.now()+3600000).toISOString(),scope:spendingScope,
 };
+const closedAccount={session_id:terms.session_id,ocpp_transaction_id:terms.transaction_id,currency:"AUD",
+  ended_at:new Date(Date.now()-60000).toISOString(),net_cost_aud_unrounded:"0.05",net_amount_aud:"0.05",
+  import_kwh:"1.94",export_kwh:"0",quality_flags:["import:energy_without_matching_state"]};
+if(mode==="closed"){
+ terms.max_fee_sats=1000;
+ terms.closed_session_review={account:closedAccount,amount_sats:5,satoshis_per_aud:"100",
+   accepted_flags:closedAccount.quality_flags,reason:"Reviewed charger timing mismatch"};
+ terms.account_scope="This completed account only. No new session or receiving-wallet registration.";
+}
 terms.payment_authority=paymentAuthority(terms);
 const payload=canonical(terms),invitation={version:1,payload,signature:operator.sign(bytes(payload)).toDER("hex")};
 const account={session_id:terms.session_id,ocpp_transaction_id:terms.transaction_id,
@@ -40,7 +51,7 @@ const quotePayload=canonical({version:1,network:"BSV mainnet",budget_id:terms.bu
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",expires_at:terms.expires_at,
   amount_sats:89,account,recovery_generation:1,created_at:terms.created_at});
 const quote={payload:quotePayload,hash:await hash(quotePayload),signature:operator.sign(bytes(quotePayload)).toDER("hex")};
-let state=mode==="unconfirmed"?"provider_unconfirmed":mode==="reservation"?"waiting_for_operator_binding":
+let state=mode==="unconfirmed"?"provider_unconfirmed":mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
@@ -48,6 +59,7 @@ if(mode==="fee")diagnostic={event_id:"11111111-2222-4333-8444-555555555555",
   stage:"inspect_draft",code:"validation_failed",reason:"fee_limit_exceeded",
   details:{payment_sats:89,fee_sats:38,fee_cap_sats:10,total_debit_sats:127,total_cap_sats:1000}};
 window.previewCalls={claims:0,drafts:0,signs:0,reports:0};
+let closedApproved=false;
 window.CWI={
   getVersion:async()=>({version:"fictional-preview"}),
   getPublicKey:driver.getPublicKey.bind(driver),createSignature:driver.createSignature.bind(driver),
@@ -63,18 +75,25 @@ window.fetch=async(url,options)=>{
     if(mode==="offline" && reads++>0)throw new TypeError("Failed to fetch");
     const p={available:true,start:new Date(Date.now()-60000).toISOString(),
       end:new Date(Date.now()+3600000).toISOString(),estimate:false};
-    return Response.json({invitation,state:"spending_authorised_wallet_permission_required",
-      driver_identity:identity,automatic_credit_enabled:false,credit_destination_registered:true,
+    return Response.json({invitation,state:mode==="waived"?"charge_waived":mode==="closed"&&!closedApproved?"awaiting_driver_consent":"spending_authorised_wallet_permission_required",
+      closure:mode==="waived"?{state:"waived",amount_sats:89,reason:"Operator waived the charge"}:null,
+      driver_identity:mode==="closed"&&!closedApproved?null:identity,automatic_credit_enabled:false,credit_destination_registered:mode!=="closed",
       binding:null,ongoing_credit_enabled:true,
-      ongoing_credits:mode==="recovery"?[]:[{
+      ongoing_credits:["recovery","closed","waived"].includes(mode)?[]:[{
         credit_id:"fictional-ongoing-credit",session_id:"fictional-other-session",
         transaction_id:"other-session-reference",state:"waiting_for_session_end",
         recipient_address:terms.operator_address,
       }],
-      session:{...account,import_kwh:3.8,export_kwh:0.2,net_cost_aud:"0.89"},
-      prices:{valid:true,checked_at:new Date().toISOString(),
+      session:mode==="closed"?{...closedAccount,net_cost_aud:"0.05"}:{...account,import_kwh:3.8,export_kwh:0.2,net_cost_aud:"0.89"},
+      prices:{valid:mode!=="closed",checked_at:new Date().toISOString(),
         import:{...p,aud_per_kwh:"0.25"},export:{...p,aud_per_kwh:"0.12"}}});
   }
+  if(body.action==="approve"&&mode==="closed"){
+    closedApproved=true;return Response.json({state:"spending_authorised_wallet_permission_required",
+      driver_identity:identity,automatic_credit_enabled:false,credit_destination_registered:false});
+  }
+  if(body.action==="collection_status"&&mode==="closed")return Response.json({
+    state:"collection_blocked",error:"Fictional preview stops before wallet drafting. No real payment."});
   if(body.action==="collection_status" || (mode==="unconfirmed"&&body.action==="reconcile_collection"))
     return Response.json({state,quote,diagnostic,...(mode==="unconfirmed"?{txid:"a".repeat(64),confirmations:0}:{})});
   if(body.action==="claim_collection" && state==="recovery_ready" && body.confirm_recovered_attempt===true){

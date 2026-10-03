@@ -91,6 +91,19 @@ test("incomplete or invalid payment metadata uses the legacy title without a fab
   }
   assert.equal(paymentDescription({}),"EV charging session settlement");
 });
+test("completed account cannot change even in another operator-signed quote",async()=>{
+ const f=await fixture();
+ Object.assign(f.q.account,{currency:"AUD",import_kwh:"4",export_kwh:"0",quality_flags:[]});
+ f.t.closed_session_review={account:structuredClone(f.q.account),accepted_flags:[],reason:"Reviewed final account",
+   amount_sats:189,satoshis_per_aud:"100"};
+ const payload=canonical(f.t);
+ f.checked=parseInvitation(JSON.stringify({version:1,payload,signature:f.operator.sign(bytes(payload)).toDER("hex")}));
+ f.q.invitation_hash=await hash(payload);
+ async function envelope(){const p=canonical(f.q);return {payload:p,hash:await hash(p),signature:f.operator.sign(bytes(p)).toDER("hex")};}
+ assert.ok(await checkQuote(await envelope(),f.checked,null));
+ f.q.account.import_kwh="5";
+ await assert.rejects(checkQuote(await envelope(),f.checked,null),/changed the reviewed/);
+});
 test("high wallet fee and altered recipient amount stop before signing",async()=>{
   for(const options of [{fee:11},{amount:190}]) {
     const f=await fixture(options);

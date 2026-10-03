@@ -319,3 +319,7 @@ Manual reviews and automatic collection cannot own the same session. Net credits
 still use the separately approved operator-credit flow. See the
 [collection operating limits](docs/driver-session-budget.md#automatic-collection)
 before a supervised real-wallet trial.
+
+## Completed-session resolution
+
+The Payments review screen supports fresh post-session driver consent, documented acceptance of supported provisional metering warnings, an audited waiver of a driver charge, and zero-balance closure. Existing payment attempts and credits owed to a driver cannot be waived through this flow. See the [completed-session resolution guide](docs/completed-session-resolution.md) for the controls, safeguards and validation scope.

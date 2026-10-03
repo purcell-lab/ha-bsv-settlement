@@ -14,6 +14,9 @@ export function settlementRows(health){
     if(old?.txid&&!p.txid)continue;
     rows.set(p.session_id,{...old,...p});
   }
+  for(const r of health.closed_sessions||[]){
+    if(!rows.get(r.session_id)?.txid)rows.set(r.session_id,{...r,direction:"driver_to_operator"});
+  }
   return [...rows.values()].reverse().slice(0,8);
 }
 
@@ -27,6 +30,10 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
   const suffix=amount===null?"":`: ${num(amount)} sat`;
   const result=(title,detail,tone="info")=>({title,detail,tone,direction,
     reference:row.transaction_id||s?.ocpp_transaction_id||row.session_id});
+  if(row.state==="waived")return result("Waived"+suffix,row.received_funds?
+    `Charge waived. ${num(row.received_funds.amount_sats)} sat already received, recorded as unallocated funds for separate accounting. No refund authorised. ${row.reason||""}`:
+    "Charge waived; no further collection. "+(row.reason||""),"quiet");
+  if(row.state==="closed_zero")return result("Closed: no payment due",row.reason,"quiet");
   if(confirmed.has(row.state)&&row.txid)
     return result((driver?"Driver payment confirmed":"Operator credit confirmed")+suffix,
       "Confirmed by the provider. Do not pay again.","good");

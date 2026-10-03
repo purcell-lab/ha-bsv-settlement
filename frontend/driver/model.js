@@ -54,6 +54,21 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
       typeof t.import_price_entity !== "string" || typeof t.export_price_entity !== "string" ||
       typeof t.account_scope !== "string") throw Error("Invalid or expired session terms.");
   const operator = PublicKey.fromString(t.operator_identity);
+  if(t.closed_session_review){
+    const c=t.closed_session_review,a=c.account;
+    if(!a || t.session_mode!=="existing_session" || a.currency!=="AUD" ||
+        a.session_id!==t.session_id || a.ocpp_transaction_id!==t.transaction_id ||
+        !Number.isFinite(Date.parse(a.ended_at)) || Date.parse(a.ended_at)>clock ||
+        !Number.isSafeInteger(c.amount_sats) || c.amount_sats<=0 || c.amount_sats>t.max_total_sats ||
+        c.satoshis_per_aud!==t.satoshis_per_aud ||
+        typeof c.reason!=="string" || c.reason.length<8 || c.reason.length>300 ||
+        !Array.isArray(c.accepted_flags) || c.accepted_flags.some(f=>
+          !["import:energy_without_matching_state","export:energy_without_matching_state"].includes(f)) ||
+        ![a.import_kwh,a.export_kwh,a.net_amount_aud].every(v=>
+          (typeof v==="number"||typeof v==="string"&&v.trim()!=="") && Number.isFinite(Number(v))) ||
+        Number(a.import_kwh)<0 || Number(a.export_kwh)<0 || Number(a.net_amount_aud)<=0)
+      throw Error("Invalid closed-session account review.");
+  }
   if (operator.toAddress() !== t.operator_address ||
       !operator.verify(bytes(invitation.payload), Signature.fromDER(invitation.signature, "hex"))) {
     throw Error("The operator signature or receiving address does not match.");

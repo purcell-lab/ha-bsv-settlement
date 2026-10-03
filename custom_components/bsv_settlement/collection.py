@@ -46,10 +46,13 @@ class DriverCollections:
         return {k: copy.deepcopy(item[k]) for k in (
             "state", "quote", "txid", "output_index", "fee_sats", "confirmations",
             "created_at", "claimed_at", "submission_authorised_at", "checked_at", "error",
-            "diagnostic", "recovery"
+            "diagnostic", "recovery", "waiver_key"
         ) if k in item}
 
     def mandate(self, row):
+        from .session_closure import ensure_open
+        if self.session_id(row):
+            ensure_open(self.api, self.key(row))
         if (row["terms"].get("version") != 2 or
                 self.api.budgets.public(row)["state"] != SPENDING_STATE or not row.get("receipt")):
             raise WalletError("A current version 2 spending approval is required")
@@ -78,11 +81,18 @@ class DriverCollections:
         return record
 
     def manual_conflict(self, row):
+        from .session_closure import ensure_open
+        ensure_open(self.api, self.key(row))
         rid = self.api.saved.get("session_review_index", {}).get(self.key(row))
         if rid and self.api.saved["session_reviews"][rid]["state"] != "cancelled":
             raise WalletError("A manual payment review already owns this session")
 
     async def status(self, row):
+        sid = self.session_id(row)
+        closure = self.api.saved.get("closed_sessions", {}).get(self.key(row)) if sid else None
+        if closure and closure["state"] == "waived":
+            return {"state": "waived", "amount_sats": closure.get("amount_sats"),
+                    "reason": closure["reason"], "received_funds": copy.deepcopy(closure.get("received_funds"))}
         if hasattr(self.api, "auto_credits") and self.api.auto_credits.get(row):
             return self.api.auto_credits.status(row)
         old = self.get(row)
@@ -98,7 +108,8 @@ class DriverCollections:
             record = await self.source(row)
             if not record.get("ended_at"):
                 return {"state": "waiting_for_session_end"}
-            account = account_snapshot(record)
+            from .session_closure import collection_account
+            account = collection_account(row, record)
             if datetime.fromisoformat(account["ended_at"]) > now():
                 raise WalletError("Session end is in the future")
             if row.get("binding") and account["ocpp_transaction_id"] != row["binding"]["transaction_id"]:
@@ -152,7 +163,8 @@ class DriverCollections:
     async def current(self, row, item):
         self.mandate(row)
         self.manual_conflict(row)
-        account = account_snapshot(await self.source(row))
+        from .session_closure import collection_account
+        account = collection_account(row, await self.source(row))
         if digest(account) != item["source_hash"]:
             raise WalletError("Session account changed after the quote was frozen")
         self.mandate(row)  # Network/recorder awaits can cross expiry.

@@ -39,6 +39,9 @@ export async function checkQuote(envelope,checked,binding) {
   if(t.version!==2 || !envelope || typeof envelope.payload!=="string" || envelope.payload.length>12000)
     throw Error("Invalid collection quote.");
   const q=JSON.parse(envelope.payload);
+  if(t.closed_session_review && (canonical(q.account)!==canonical(t.closed_session_review.account) ||
+      q.amount_sats!==t.closed_session_review.amount_sats))
+    throw Error("The quote changed the reviewed closed-session account.");
   if(await hash(envelope.payload)!==envelope.hash ||
       !PublicKey.fromString(t.operator_identity).verify(bytes(envelope.payload),Signature.fromDER(envelope.signature,"hex")))
     throw Error("The collection quote signature did not verify.");

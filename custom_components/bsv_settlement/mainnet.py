@@ -235,6 +235,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.auto_credits = AutomaticCredits(self)
         from .ongoing_credit import OngoingCredits
         self.ongoing_credits = OngoingCredits(self)
+        from .session_closure import ClosedSessions
+        self.closures = ClosedSessions(self)
 
     def status(self):
         result = super().status()
@@ -257,6 +259,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             driver_approvals=self.budgets.summary() if hasattr(self, "budgets") else [],
             session_payments=self.payment_summary(),
             ongoing_credit=self.ongoing_credits.summary() if hasattr(self, "ongoing_credits") else None,
+            closed_sessions=self.closures.summary() if hasattr(self, "closures") else [],
         )
         if hasattr(self, "auto_credits") and self.auto_credits.policy.get("enabled"):
             result["state"] = "broadcast_enabled_capped_automatic_credits"
