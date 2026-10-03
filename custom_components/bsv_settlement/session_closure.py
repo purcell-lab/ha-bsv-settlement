@@ -51,9 +51,9 @@ class ClosedSessions:
         api.saved.setdefault("closed_sessions", {})
 
     def summary(self):
-        return [{k: copy.deepcopy(r[k]) for k in (
+        return [{k: copy.deepcopy(r.get(k)) for k in (
             "session_id", "transaction_id", "state", "net_amount_aud", "reason", "closed_at",
-            "quality_flags")} for r in self.api.saved.get("closed_sessions", {}).values()]
+            "quality_flags", "amount_sats", "received_funds")} for r in self.api.saved.get("closed_sessions", {}).values()]
 
     async def inspect(self, data):
         api = self.api
@@ -122,6 +122,9 @@ class ClosedSessions:
                 "pending_invitation_hash": details["pending_invitation_hash"], "closed": False}
 
     async def execute(self, action, data, user_id):
+        from .owned_waiver import SERVICES, execute
+        if action in SERVICES:
+            return await execute(self.api, action, data, user_id)
         if not user_id:
             raise WalletError("An authenticated administrator must review account closure")
         plan = await self.inspect(data)

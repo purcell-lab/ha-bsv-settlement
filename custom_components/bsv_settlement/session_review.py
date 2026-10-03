@@ -202,6 +202,8 @@ class SessionReviews:
 
     async def approve(self, data, user_id):
         review = self.get(data["review_id"])
+        from .session_closure import ensure_open
+        ensure_open(self.api, review["proxy_config_entry_id"] + "|" + review["account"]["session_id"])
         self.exact(review, data)
         if not data.get("confirm_account_review") or not data.get("confirm_driver_details"):
             raise WalletError("Explicit account and independent driver-details review is required")
@@ -279,6 +281,8 @@ class SessionReviews:
 
     async def verify_driver_payment(self, data, user_id):
         review = self.get(data["review_id"])
+        from .session_closure import ensure_open
+        ensure_open(self.api, review["proxy_config_entry_id"] + "|" + review["account"]["session_id"])
         if review["direction"] != "driver_to_operator" or not review.get("payment_request"):
             raise WalletError("Issue the reviewed driver payment request first")
         if data.get("confirm_driver_payment_reference") is not True:

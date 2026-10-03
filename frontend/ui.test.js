@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {sessionStatus,num,esc} from "./ui.js";
 const s={session_id:"new-session",net_cost_aud:-1.24};
+test("zero-balance closure is not labelled a waived charge",()=>{
+ const view=sessionStatus({...s,net_cost_aud:0}, {closed_sessions:[
+   {session_id:s.session_id,state:"closed_zero",net_amount_aud:"0",reason:"No payment due"}]});
+ assert.equal(view.label,"Closed: no payment due");
+ assert.doesNotMatch(view.detail,/waived/i);
+});
+test("waived ledger does not tell the operator to continue collection",()=>{
+ const h={session_payments:[{session_id:s.session_id,state:"waived"}],
+   closed_sessions:[{session_id:s.session_id,state:"waived",net_amount_aud:"0.76",received_funds:{amount_sats:76}}]};
+ const view=sessionStatus({...s,net_cost_aud:0.76},h);
+ assert.equal(view.label,"Waived");assert.match(view.detail,/76 sat received remains unallocated/);
+ assert.doesNotMatch(view.detail,/Continue/);
+});
 test("waiver is not paid and a changed closed amount requires review",()=>{
  const ended={...s,net_cost_aud:0.05,ended_at:"2026-10-02T00:00:00Z"};
  const h={closed_sessions:[{session_id:s.session_id,state:"waived",net_amount_aud:"0.05",reason:"Operator goodwill waiver"}]};

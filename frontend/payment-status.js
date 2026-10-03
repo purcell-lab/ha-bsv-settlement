@@ -30,7 +30,9 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
   const suffix=amount===null?"":`: ${num(amount)} sat`;
   const result=(title,detail,tone="info")=>({title,detail,tone,direction,
     reference:row.transaction_id||s?.ocpp_transaction_id||row.session_id});
-  if(row.state==="waived")return result("Waived","Closed without payment. "+row.reason,"quiet");
+  if(row.state==="waived")return result("Waived"+suffix,row.received_funds?
+    `Charge waived. ${num(row.received_funds.amount_sats)} sat already received, recorded as unallocated funds for separate accounting. No refund authorised. ${row.reason||""}`:
+    "Charge waived; no further collection. "+(row.reason||""),"quiet");
   if(row.state==="closed_zero")return result("Closed: no payment due",row.reason,"quiet");
   if(confirmed.has(row.state)&&row.txid)
     return result((driver?"Driver payment confirmed":"Operator credit confirmed")+suffix,

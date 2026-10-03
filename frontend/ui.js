@@ -15,7 +15,7 @@ export function stateLabel(s) {
     credit_review_expired:"Review expired",no_payment_due:"No payment due",
     awaiting_driver_consent:"Waiting for driver approval",
     spending_authorised_wallet_permission_required:"Driver approved",
-    revoked:"Approval revoked",automatic_credit_pending:"Waiting for session end",
+    revoked:"Approval revoked",charge_waived:"Charge waived",automatic_credit_pending:"Waiting for session end",
     waived:"Waived",closed_zero:"Closed: no payment due",
   })[s] || (s ? String(s).replaceAll("_"," ") : "Not yet assessed");
 }
@@ -24,13 +24,14 @@ export function sessionStatus(s,health,now=Date.now()) {
   const payments=[...(health.automatic_credit?.payments || []).slice().reverse(),...(health.session_payments || []).slice().reverse()]
     .filter(p=>p.session_id===s.session_id && p.state!=="cancelled");
   const payment=payments.find(p=>p.txid)||payments[0];
-  if(payment)return {label:stateLabel(payment.state),tone:payment.state.includes("confirmed")&&!payment.state.includes("unconfirmed")?"good":payment.error||payment.state==="broadcast_unknown"?"warn":"info",
+  if(payment&&payment.state!=="waived")return {label:stateLabel(payment.state),tone:payment.state.includes("confirmed")&&!payment.state.includes("unconfirmed")?"good":payment.error||payment.state==="broadcast_unknown"?"warn":"info",
     detail:payment.txid?"Track the existing transaction. Do not pay again.":"Continue the saved settlement workflow.",target:"payments",payment};
   const closure=health.closed_sessions?.find(r=>r.session_id===s.session_id);
   if(closure&&(!finite(s.net_cost_aud)||Number(s.net_cost_aud)!==Number(closure.net_amount_aud)))
     return {label:"Closed account changed",tone:"warn",detail:"The observed account changed after closure. Review the audit record; no automatic payment is allowed.",target:"payments"};
   if(closure)return {label:stateLabel(closure.state),tone:"quiet",
-    detail:`Closed without payment. ${closure.reason}`,target:"payments"};
+    detail:closure.received_funds?`Charge waived. ${closure.received_funds.amount_sats} sat received remains unallocated; no refund authorised.`:
+      `${closure.state==="closed_zero"?"Closed: no payment due.":"Charge waived; no further collection."} ${closure.reason}`,target:"payments"};
   const flags=(s.quality_flags||[]).filter(f=>!["interval_energy_allocation_estimated","not_a_final_bill"].includes(f));
   const reviewed=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.reviewed_closed_account&&
     ["awaiting_driver_consent","spending_authorised_wallet_permission_required"].includes(a.state)&&Date.parse(a.expires_at)>now);

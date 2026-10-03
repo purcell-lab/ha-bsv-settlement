@@ -1,6 +1,7 @@
 """Constants."""
 DOMAIN = "bsv_settlement"
-CLOSURE_SERVICES = ("prepare_session_closure", "request_closed_session_consent", "waive_session_charge")
+CLOSURE_SERVICES = ("prepare_session_closure", "request_closed_session_consent", "waive_session_charge",
+                    "prepare_existing_charge_waiver", "waive_existing_charge")
 BUDGET_SERVICES = ("create_session_budget", "accept_session_budget",
                    "revoke_session_budget", "session_budget_status", "bind_session_budget")
 SESSION_REVIEW_SERVICES = (

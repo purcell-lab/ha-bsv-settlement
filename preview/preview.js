@@ -5,7 +5,8 @@ const $=s=>document.querySelector(s);
 const ongoingOption=document.createElement("option");ongoingOption.value="ongoing";ongoingOption.textContent="Ongoing credits";$("#scenario").append(ongoingOption);
 const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
 const heldOption=document.createElement("option");heldOption.value="held";heldOption.textContent="Driver collection interrupted";$("#scenario").append(heldOption);
-for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"]]){
+for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"],
+  ["waived","Waived charge: funds received separately"],["waived-held","Waived charge: held attempt closed"]]){
  const option=document.createElement("option");option.value=value;option.textContent=label;$("#scenario").append(option);
 }
 const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictional-proxy",wallet_entity:"sensor.wallet",proxy_entity:"sensor.proxy",rate_entity:"sensor.rate",balance_entity:"sensor.balance",operator_name:"Demonstration operator",operator_contact:"operator@example.test"};
@@ -101,6 +102,19 @@ function state(){
    hass.states["sensor.wallet"].attributes.closed_sessions=closedRecord?[closedRecord]:[];
    for(const a of hass.states["sensor.wallet"].attributes.driver_approvals)a.reviewed_closed_account=true;
  }
+ if(["waived","waived-held"].includes(s)){
+   const amount=s==="waived"?76:89;
+   hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:3.8,export_kwh:0,net_cost_aud:amount/100};
+   Object.assign(hass.states["sensor.wallet"].attributes,{
+     automatic_credit:{enabled:true,payments:[]},
+     session_payments:[{source:"driver",session_id:session.session_id,state:"waived",
+       amount_sats:amount,diagnostic:{message:"Retained historical failure, not a current hold"}}],
+     closed_sessions:[{session_id:session.session_id,transaction_id:session.ocpp_transaction_id,
+       state:"waived",net_amount_aud:String(amount/100),amount_sats:amount,
+       reason:"Operator instructed charge waiver. Original attempt retained for audit.",
+       received_funds:s==="waived"?{amount_sats:76,state:"received_unallocated",refund_authorised:false}:null}]
+   });
+ }
 }
 function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);return el;}
 function panel(html){const p=document.createElement("section");p.className="panel";p.innerHTML=html;$("#content").append(p);}
@@ -130,5 +144,5 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.
 $("#scenario").onchange=()=>{closedRecord=null;budget=null;render();};$("#theme").onclick=()=>{$("body").classList.toggle("dark");$("#theme").textContent=$("body").classList.contains("dark")?"Light theme":"Dark theme";};
 window.previewRefresh=()=>{for(const c of document.querySelectorAll("bsv-session-review-card,bsv-operator-card"))c.hass=hass;};
 // Open the current staged workflow, not an unrelated historical-credit fixture.
-$("#scenario").value="closure";tab="payments";
+$("#scenario").value="waived";tab="payments";
 render();
