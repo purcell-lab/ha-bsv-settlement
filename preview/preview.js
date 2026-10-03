@@ -65,10 +65,16 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
         max_total_sats:d.max_total_sats,max_fee_sats:d.max_fee_sats,valid_minutes:d.valid_minutes,
         operator_name:d.operator_name,operator_contact:d.operator_contact};
       budget={state:"awaiting_driver_consent",terms,
+        public_registration:{available:false,context_hash:"fictional-registration-context"},
         driver_link_fragment:`#budget=${id}&token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
         invitation:{payload:JSON.stringify(terms),notice:"Fictional preview, not a valid signed invitation"}};
     }
   }
+  if(service==="open_public_registration"){
+    budget.public_registration={available:true,context_hash:"fictional-registration-context",
+      expires_at:new Date(Date.now()+15*60000).toISOString()};
+  }
+  if(service==="close_public_registration")budget.public_registration.available=false;
   if(service==="bind_session_budget")budget.binding={session_id:session.session_id};
   if(service==="revoke_session_budget")budget.state="revoked";
   if(service==="configure_automatic_credit")hass.states["sensor.wallet"].attributes.automatic_credit.enabled=d.enabled;
@@ -129,7 +135,9 @@ function state(){
    });
  }
 }
-function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);return el;}
+function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);
+ if(name==="bsv-budget-card"){const link=el.shadowRoot.getElementById("public-page");link.href="./driver-preview.html";link.textContent="View driver page preview";}
+ return el;}
 function panel(html){const p=document.createElement("section");p.className="panel";p.innerHTML=html;$("#content").append(p);}
 function render(){
  state();
@@ -143,11 +151,11 @@ function render(){
        message:"A network request failed; the response or wallet outcome may be unknown."}}];
  }
  $("#content").replaceChildren();$("#notice").textContent="";
- const labels={overview:["Charging & settlement","Live prices, session energy and average prices, next action and operator funds."],drivers:["Set up a driver","Register a receiving wallet for operator credits. Driver spending approval remains session-specific."],payments:["Driver collections","Money received from drivers. Review each session and its actual collection status."],"operator-credits":["Operator credits","Money paid to drivers. Follow each credit through funding and confirmation."],wallet:["Operator wallet","Confirmed funds and pending change are different."],testing:["Settings & diagnostics","Keep fictional tests separate from real mainnet settlements."]};
+ const labels={overview:["Charging & settlement","Live prices, session energy and average prices, next action and operator funds."],drivers:["Set up a driver","Open next-driver registration, or share a private invitation. Existing approvals keep their original terms."],payments:["Driver collections","Money received from drivers. Review each session and its actual collection status."],"operator-credits":["Operator credits","Money paid to drivers. Follow each credit through funding and confirmation."],wallet:["Operator wallet","Confirmed funds and pending change are different."],testing:["Settings & diagnostics","Keep fictional tests separate from real mainnet settlements."]};
  $("#title").textContent=labels[tab][0];$("#intro").textContent=labels[tab][1];
  document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.tab===tab)));
  if(tab==="overview"){card("bsv-operator-card");card("bsv-operator-card",{mode:"wallet"});}
- if(tab==="drivers"){card("bsv-budget-card");panel('<h2>Receiving credits and approving charges</h2><p>With ongoing credits enabled, the latest registered receiving wallet is selected for each new session. Its recipient stays fixed. No new spending approval is needed for these operator-funded credits.</p><ol><li>Share a private link with the intended driver.</li><li>Ask them to approve and register their wallet in BSV Browser.</li><li>For driver charges, match a valid spending approval to the correct session.</li><li>Check the receiving wallet and policy in Payments.</li></ol><p>Driver charges need the open browser. Operator credits can run with it closed.</p><button id="simulate">Simulate driver approval</button><p>This preview button is not part of the live dashboard.</p>');$("#simulate").onclick=()=>{if(!budget){$("#notice").textContent="Create a fictional invitation first.";return;}budget.state="spending_authorised_wallet_permission_required";budget.credit_destination={registered:true};const c=$("bsv-budget-card");c.budget=structuredClone(budget);c.paint();$("#notice").textContent="Fictional driver approved. Select Approval needed to demonstrate an open session.";};}
+ if(tab==="drivers"){card("bsv-budget-card");panel('<h2>Receiving credits and approving charges</h2><p>Open public registration only when the intended driver is ready. Historical settlements retain their original approvals and recipients.</p><ol><li>Open registration or share a private invitation.</li><li>Ask the driver to authorise the budget and register their wallet in BSV Browser.</li><li>Check the signed scope, expiry and remaining spending limit.</li><li>Check the receiving wallet and policy in Operator credits.</li></ol><p>A fresh multi-session approval covers up to seven days and 1,000 sat total, including fees. Credits do not refill it. Driver collection needs the connected wallet; public registration never changes payment policies.</p><button id="simulate">Simulate driver approval</button><p>This preview button is not part of the live dashboard.</p>');$("#simulate").onclick=()=>{if(!budget){$("#notice").textContent="Create a fictional invitation first.";return;}budget.state="spending_authorised_wallet_permission_required";budget.credit_destination={registered:true};if(budget.public_registration)budget.public_registration.available=false;const c=$("bsv-budget-card");c.budget=structuredClone(budget);c.paint();$("#notice").textContent="Fictional driver approved. Select Approval needed to demonstrate an open session.";};}
  if(tab==="payments"||tab==="operator-credits"){
    const c=card("bsv-session-review-card",{direction:tab==="payments"?"driver_to_operator":"operator_to_driver"});
    c.style.gridColumn="1 / -1";

@@ -185,7 +185,7 @@ function controls() {
   if(!capability&&!checked&&publicQRReady){
     $("page-title").textContent="Ready for the next driver";
     $("page-subtitle").textContent="Scan the invitation to review the rates and authorise your EV charging budget.";
-    $("status").textContent="No driver is registered. Open the new-driver invitation or scan its QR in BSV Browser.";
+    $("status").textContent="Registration is open. Open the new-driver invitation or scan its QR in BSV Browser.";
   }
   document.body.dataset.stage=view.stage;
   $("progress-approve").className=accepted?"done":"";
