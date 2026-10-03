@@ -96,12 +96,22 @@ class OperatorCreditRecovery:
         account, amount = await self.snapshot(route)
         if item and item.get("source_hash") != digest(account):
             raise WalletError("Frozen credit account changed; do not replace it")
-        if worker.pending() or any(p["state"] in ("prepared", *PENDING)
+        from .linked_credit import pending_except, evidence, linked_quote
+        parent_id = data.get("parent_credit_id")
+        if parent_id == route["route_id"]:
+            raise WalletError("A credit cannot be its own linked parent")
+        if pending_except(self.api, parent_id) or any(p["state"] in ("prepared", *PENDING)
                                    for p in self.api.saved["payments"].values()):
             raise WalletError("Another operator payment is unresolved")
-        quotation = await AutomaticCredits.quote_fee(worker, wrapper, amount)
+        parent = None
+        if parent_id:
+            parent, source, raw = await evidence(self.api, parent_id, route["recipient"]["address"])
+            quotation = await linked_quote(self.api, parent, amount)
+        else:
+            quotation = await AutomaticCredits.quote_fee(worker, wrapper, amount)
         fee = quotation["fee_sats"]
-        source, raw = await AutomaticCredits.funding(worker, wrapper, amount, fee)
+        if not parent:
+            source, raw = await AutomaticCredits.funding(worker, wrapper, amount, fee)
         checked = await self.api.hass.async_add_executor_job(
             build_transaction, self.api.identity["secret_hex"], raw, source["tx_pos"],
             route["recipient"]["address"], amount, fee, False)
@@ -126,6 +136,10 @@ class OperatorCreditRecovery:
             "created_at": now().isoformat(),
             "expires_at": (now() + timedelta(minutes=10)).isoformat(),
         }
+        if parent:
+            terms["linked_parent"] = parent
+            terms["package_total_sats"] = quotation["package_total_sats"]
+            terms["package_fee_sats"] = quotation["package_fee_sats"]
         recovery = {"terms": terms, "review_hash": digest(terms),
                     "unsigned_raw": checked["raw"], "prepared_by": user_id}
         previous_route = copy.deepcopy(route)
@@ -190,11 +204,32 @@ class OperatorCreditRecovery:
         self.guard(wrapper)
         route = self.route(wrapper["standing_route_id"])
         fee = route["manual_recovery"]["terms"]["fee_sats"]
-        quotation = await quote(self.api.chain)
+        terms = route["manual_recovery"]["terms"]
+        parent = terms.get("linked_parent")
+        if parent:
+            from .linked_credit import evidence, linked_quote
+            current, _, _ = await evidence(self.api, parent["credit_id"], terms["recipient_address"])
+            if current != parent:
+                raise WalletError("Linked parent changed after review")
+            quotation = await linked_quote(self.api, parent, amount)
+            if quotation["fee_sats"] > fee:
+                raise WalletError("Linked package fee increased; prepare and approve new terms")
+        else:
+            quotation = await quote(self.api.chain)
         validate(quotation, fee)
         if amount + fee > MAX_TOTAL:
             raise WalletError("Reviewed credit exceeds the total cap")
-        return quotation | {"minimum_fee_sats": quotation["fee_sats"], "fee_sats": fee}
+        result = quotation | {"minimum_fee_sats": quotation["fee_sats"], "fee_sats": fee}
+        if parent:
+            result.update(package_fee_sats=parent["fee_sats"] + fee,
+                          package_total_sats=parent["amount_sats"] + parent["fee_sats"] + amount + fee)
+        return result
+
+    def blocking_pending(self, wrapper):
+        self.guard(wrapper)
+        terms = self.route(wrapper["standing_route_id"])["manual_recovery"]["terms"]
+        from .linked_credit import pending_except
+        return pending_except(self.api, (terms.get("linked_parent") or {}).get("credit_id"))
 
     async def funding(self, wrapper, amount, fee):
         self.guard(wrapper)
@@ -205,13 +240,21 @@ class OperatorCreditRecovery:
         worker = self.api.ongoing_credits
         used = worker.used() | {(p["source_txid"], p["source_index"])
                                for p in self.api.saved["payments"].values() if p.get("txid")}
-        rows = await self.api.chain.unspent(self.api.identity["address"])
-        source = next((r for r in rows if (
-            r["tx_hash"], r["tx_pos"], r["value"]) == (
-            terms["source_txid"], terms["source_index"], terms["source_value"])), None)
+        parent = terms.get("linked_parent")
+        if parent:
+            from .linked_credit import evidence
+            current, source, raw = await evidence(self.api, parent["credit_id"], terms["recipient_address"])
+            if current != parent:
+                raise WalletError("Linked parent changed after review")
+        else:
+            rows = await self.api.chain.unspent(self.api.identity["address"])
+            source = next((r for r in rows if (
+                r["tx_hash"], r["tx_pos"], r["value"]) == (
+                terms["source_txid"], terms["source_index"], terms["source_value"])), None)
         if source is None or (terms["source_txid"], terms["source_index"]) in used:
             raise WalletError("Reviewed funding output is no longer available")
-        raw = await self.api.chain.source(source["tx_hash"])
+        if not parent:
+            raw = await self.api.chain.source(source["tx_hash"])
         checked = await self.api.hass.async_add_executor_job(
             build_transaction, self.api.identity["secret_hex"], raw, source["tx_pos"],
             terms["recipient_address"], amount, fee, False)
