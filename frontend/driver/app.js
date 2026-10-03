@@ -156,10 +156,7 @@ function controls() {
     (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready","recovery_ready"].includes(collectionState));
   $("retry-collection").disabled=busy || collectionBusy || !pendingReport;
   if (expired && !accepted && !waived) status("This invitation has expired. Ask the operator for a new link.",true);
-  $("approve").textContent = accepted ? (spending() ? "Spending approval saved" : "Old consent saved, no spending authority") :
-    receipt ? "Spending approval signed" : !spending() && checked ? "New invitation required to approve spending" :
-    checked?.terms.closed_session_review ? "Approve completed-session payment" :
-    `Approve spending up to ${checked ? checked.terms.max_total_sats.toLocaleString() : "…"} sat`;
+  $("approve").textContent = "Authorise EV charging budget";
   const view=driverView({accepted,registered:creditRegistered,connected:!!connectedWallet,
     state:collectionState,credit:creditDirection,creditEnabled,closedSession:!!checked?.terms.closed_session_review,
     imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
@@ -169,7 +166,7 @@ function controls() {
   $("progress-session").className=accepted&&collectionState!=="waiting_for_operator_binding"?"done":"";
   $("progress-settle").className=view.stage==="settled"?"done":"";
   $("approve").hidden=accepted||waived;
-  $("approval-action").hidden=accepted||waived;
+  $("approval-action").hidden=!checked||accepted||waived;
   $("approval-terms").hidden=accepted||waived;$("action-note").hidden=accepted||waived;
   $("approval-heading").textContent=waived?"Historical approved limit":accepted?"Your approved limit":"Your spending limit";
   $("resume-collection").textContent=view.reconnect||"Reconnect wallet";
@@ -247,7 +244,7 @@ function show(invitation) {
     $("closed-account").textContent=`Completed session ${t.transaction_id}. Energy Imported to EV: ${a.import_kwh} kWh; Energy Imported from EV: ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
   }
   $("approval-terms").textContent = spending() ?
-    `By selecting Approve spending, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
+    `By selecting Authorise EV charging budget, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
     "This is an old consent-only invitation. It cannot authorise spending. Ask the operator to revoke it and issue a new spending invitation. Existing signatures do not change.";
   if(t.closed_session_review)$("approval-terms").textContent=
     `You authorise one payment of ${t.closed_session_review.amount_sats} sat for this completed account, plus the actual fee, up to ${t.max_total_sats} sat total. Review the warnings above. The operator's explanation is not independent validation of the meter. This approval does not authorise another session or change your receiving wallet.`;
@@ -298,7 +295,7 @@ async function refresh(initial=false) {
         "Old consent is saved. It grants no spending authority. Ask the operator for a new invitation to approve spending.");
     } else if(initial) status(checked.terms.closed_session_review?
       "Review the completed account, metering warnings and fee limits before approving payment. Your wallet may ask for permission.":
-      "Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
+      "Review the operator, current prices and budget, then select Authorise EV charging budget. Your wallet may ask for permission.");
   } catch(e) {
     live=null;paintPrices();
     $("connection-status").hidden=false;
