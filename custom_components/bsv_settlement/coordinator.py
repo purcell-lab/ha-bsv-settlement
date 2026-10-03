@@ -72,6 +72,12 @@ class SettlementCoordinator(DataUpdateCoordinator):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
+                if action == "get_credit_receipt_link":
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    from .credit_receipt_link import retrieve
+                    # No refresh/tick: link retrieval cannot advance payments.
+                    return retrieve(self.api, data, approving_user_id)
                 if action in CREDIT_RECOVERY_SERVICES:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")
