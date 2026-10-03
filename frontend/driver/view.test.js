@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {driverView,showOngoingOverview,ongoingCreditMessage} from "./view.js";
+test("unconfirmed payment awaits a block without offering another collection",()=>{
+ const v=driverView({hasInvitation:true,accepted:true,registered:true,state:"provider_unconfirmed"});
+ assert.equal(v.title,"Awaiting block confirmation");
+ assert.equal(v.reconnect,undefined);
+ assert.match(v.subtitle,/Do not send another payment/);
+});
 test("confirmed credit is not wallet acceptance until import succeeds",()=>{
  const args={hasInvitation:true,accepted:true,registered:true,credit:true,state:"provider_confirmed"};
  assert.equal(driverView(args).reconnect,"Receive credit in wallet");

@@ -7,13 +7,14 @@ banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or paymen
 <select id="preview-mode" style="font:inherit;padding:10px;width:100%">
 <option value="held">Interrupted wallet draft</option>
 <option value="fee">Draft exceeds an existing 10 sat fee cap</option>
+<option value="unconfirmed">Awaiting block confirmation</option>
 <option value="recovery">Operator reviewed, driver confirmation needed</option>
 <option value="ongoing">Reviewed collection with a separate ongoing session</option>
 <option value="reservation">Unbound future reservation with ongoing credits</option>
 <option value="offline">Status connection interrupted</option></select>
 <p class="small">Changing the scenario reloads this fixture only. The real page polls every 30 seconds.</p>`;
 document.querySelector("main").prepend(banner);
-const mode=new URLSearchParams(location.search).get("scenario")||"ongoing";
+const mode=new URLSearchParams(location.search).get("scenario")||"unconfirmed";
 const select=document.getElementById("preview-mode");select.value=mode;
 select.onchange=()=>{location.search="?scenario="+select.value;};
 const operator=PrivateKey.fromRandom(),driver=new ProtoWallet(PrivateKey.fromRandom());
@@ -39,7 +40,7 @@ const quotePayload=canonical({version:1,network:"BSV mainnet",budget_id:terms.bu
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",expires_at:terms.expires_at,
   amount_sats:89,account,recovery_generation:1,created_at:terms.created_at});
 const quote={payload:quotePayload,hash:await hash(quotePayload),signature:operator.sign(bytes(quotePayload)).toDER("hex")};
-let state=mode==="reservation"?"waiting_for_operator_binding":
+let state=mode==="unconfirmed"?"provider_unconfirmed":mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
@@ -74,7 +75,8 @@ window.fetch=async(url,options)=>{
       prices:{valid:true,checked_at:new Date().toISOString(),
         import:{...p,aud_per_kwh:"0.25"},export:{...p,aud_per_kwh:"0.12"}}});
   }
-  if(body.action==="collection_status")return Response.json({state,quote,diagnostic});
+  if(body.action==="collection_status" || (mode==="unconfirmed"&&body.action==="reconcile_collection"))
+    return Response.json({state,quote,diagnostic,...(mode==="unconfirmed"?{txid:"a".repeat(64),confirmations:0}:{})});
   if(body.action==="claim_collection" && state==="recovery_ready" && body.confirm_recovered_attempt===true){
     window.previewCalls.claims++;state="wallet_attempt_reserved";return Response.json({claimed:true});
   }

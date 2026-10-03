@@ -8,7 +8,7 @@ test("previous session approval cannot imply readiness",()=>{
 test("submitted and confirmed payments override metering not_requested",()=>{
  const ended={...s,ended_at:"2026-10-02T00:00:00Z",payment_state:"not_requested"};
  const health={session_payments:[{session_id:s.session_id,state:"provider_unconfirmed",txid:"abc"}]};
- assert.equal(sessionStatus(ended,health).label,"Awaiting confirmation");
+ assert.equal(sessionStatus(ended,health).label,"Awaiting block confirmation");
  health.session_payments[0].state="provider_confirmed";
  assert.equal(sessionStatus(ended,health).label,"Confirmed on chain");
 });

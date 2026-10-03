@@ -6,7 +6,7 @@ export const short = v => v ? String(v).slice(0,8) : "No reference";
 export function stateLabel(s) {
   return ({
     provider_confirmed:"Confirmed on chain",driver_payment_provider_confirmed:"Confirmed on chain",
-    provider_unconfirmed:"Awaiting confirmation",driver_payment_provider_unconfirmed:"Awaiting confirmation",
+    provider_unconfirmed:"Awaiting block confirmation",driver_payment_provider_unconfirmed:"Awaiting block confirmation",
     submitted:"Payment submitted",broadcast_unknown:"Submission uncertain",
     credit_queued:"Waiting for funding checks",awaiting_account_approval:"Review account",
     credit_review_approved:"Prepare credit",prepared:"Ready for payment approval",

@@ -277,7 +277,7 @@ const collectionMessages={
   submission_authorised:"A signing permit was issued. Keep this page open. If interrupted, reconcile with the operator.",
   broadcast_unknown:"Submission outcome is uncertain. No further broadcast will be attempted; checking the recorded transaction is safe.",
   submitted:"Payment submitted. Waiting for provider evidence.",
-  provider_unconfirmed:"Payment seen by the chain provider, awaiting confirmation.",
+  provider_unconfirmed:"Awaiting block confirmation. The chain provider has the payment. Do not pay again.",
   provider_confirmed:"Payment confirmed by the chain provider.",
   operator_credit_review_required:"This session has a net credit. The operator must review and pay the credit separately.",
   no_payment_due:"The final net account is zero. No payment is due.",

@@ -297,7 +297,24 @@ class DriverCollections:
             if not tx or tx.txid() != item["txid"] or digest(transaction_shape(tx)) != item["draft_hash"]:
                 raise WalletError("Chain evidence differs from the authorised payment")
             details = await self.api.chain.details(item["txid"])
+            if not isinstance(details, dict) or details.get("txid") != item["txid"]:
+                raise WalletError("Chain transaction ID mismatch")
             confirmations = details.get("confirmations")
+            if "confirmations" not in details:
+                # WoC's unmined transaction response omits confirmation/block
+                # fields. Recognise only its complete, matching transaction
+                # shape after the raw transaction and authorised draft match.
+                # Do not normalise null, malformed counts or partial block
+                # evidence to zero. Funding selection remains unchanged.
+                if (any(k in details for k in ("blockhash", "blockheight", "blocktime"))
+                        or details.get("hash") != item["txid"]
+                        or type(details.get("version")) is not int or details["version"] != tx.version
+                        or type(details.get("locktime")) is not int or details["locktime"] != tx.locktime
+                        or type(details.get("size")) is not int or details["size"] != len(raw) // 2
+                        or not isinstance(details.get("vin"), list) or len(details["vin"]) != len(tx.inputs)
+                        or not isinstance(details.get("vout"), list) or len(details["vout"]) != len(tx.outputs)):
+                    raise WalletError("Invalid provider confirmation evidence")
+                confirmations = 0
             if type(confirmations) is not int or confirmations < 0:
                 raise WalletError("Invalid provider confirmation evidence")
             point = f"{item['txid']}:{item['output_index']}"

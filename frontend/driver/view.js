@@ -26,7 +26,8 @@ export function driverView({accepted,registered,connected,state,credit,imported,
     {title:"Credit accepted by your wallet",subtitle:"The confirmed payment receipt is imported. No further payment is needed.",stage:"settled"}:
     {title:"Your credit is confirmed",subtitle:"Reconnect the same wallet to import your receipt. This does not send another payment.",stage:"approved",reconnect:"Receive credit in wallet"};
   if(["submitted","provider_unconfirmed","broadcast_unknown"].includes(state))return {
-    title:state==="broadcast_unknown"?"Checking payment submission":"Payment awaiting confirmation",
+    title:state==="broadcast_unknown"?"Checking payment submission":
+      state==="provider_unconfirmed"?"Awaiting block confirmation":"Payment awaiting confirmation",
     subtitle:"We are tracking the existing transaction. Do not send another payment.",stage:"approved"};
   if(state==="provider_confirmed")return {title:"Session payment confirmed",subtitle:"Your payment is confirmed by the chain provider.",stage:"settled"};
   if(state==="no_payment_due")return {title:"No payment due",subtitle:"Your final session account is zero.",stage:"settled"};

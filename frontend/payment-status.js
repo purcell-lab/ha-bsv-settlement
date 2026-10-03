@@ -38,7 +38,9 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
       "Payment outcome uncertain. Reconcile the existing attempt; do not pay again.","warn");
   if(submitted.has(row.state)&&row.txid)
     return result((driver?"Driver payment submitted":"Operator credit submitted")+suffix,
-      "Awaiting provider confirmation. Do not pay again.");
+      row.error?`Needs attention: ${row.error}. Do not pay again.`:
+      row.state==="submitted"?"Awaiting provider confirmation. Do not pay again.":
+      "Awaiting block confirmation. Do not pay again.",row.error?"warn":"info");
   if(row.error)return result((driver?"Driver payment":"Operator credit")+suffix,
     `Needs attention: ${row.error}`,"warn");
   if(row.state==="no_payment_due"||(row.state==="no_operator_credit"&&s?.ended_at&&
