@@ -1,7 +1,8 @@
 import qrcode from "qrcode-generator";
 import "./completed-session-card.js";
-import {styles, stateLabel, short, stamp} from "./ui.js";
+import {styles, stateLabel, short, stamp,chainRecordLink} from "./ui.js";
 import {settlementRows,paymentStatus} from "./payment-status.js";
+import {sessionTable} from "./session-table.js";
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -58,21 +59,27 @@ class BsvSessionReviewCard extends HTMLElement {
   }
   render() {
     if (!this._config || !this._hass) return;
-    const c = this._config, h = this._hass, r = this._review;
+    const c = this._config, h = this._hass, mode=c.direction||"all";
+    const driverMode=mode!=="operator_to_driver",creditMode=mode!=="driver_to_operator";
+    const r = this._review && (mode==="all" || this._review.direction===mode ||
+      driverMode&&this._review.direction==="none") ? this._review : null;
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
     const automatic = wallet?.attributes?.automatic_credit;
     const ongoing = wallet?.attributes?.ongoing_credit;
-    const collectionIssues=(wallet?.attributes?.session_payments||[]).filter(p=>
+    const collectionIssues=(driverMode?wallet?.attributes?.session_payments||[]:[]).filter(p=>
       p.source==="driver" && p.state!=="waived" && !p.txid && (p.diagnostic || ["wallet_attempt_reserved","recovery_ready"].includes(p.state)));
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;
     const sessions = [proxy?.attributes?.latest_session, proxy?.attributes?.previous_session]
-      .filter(s => s && s.ended_at);
+      .filter(s => s && s.ended_at && (mode==="all" || s.net_cost_aud!==null &&
+        Number.isFinite(Number(s.net_cost_aud)) &&
+        (creditMode?Number(s.net_cost_aud)<0:Number(s.net_cost_aud)>=0)));
     const observedSessions=[proxy?.attributes?.latest_session,proxy?.attributes?.previous_session].filter(Boolean);
-    const health=wallet?.attributes||{},paymentRows=settlementRows(health);
+    const health=wallet?.attributes||{},paymentRows=settlementRows(health)
+      .filter(row=>mode==="all" || paymentStatus(row,observedSessions).direction===mode);
     const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
-    const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
+    const signature = JSON.stringify([mode,r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
       this._busy, this._message, automatic, ongoing,health.session_payments,health.driver_approvals,health.closed_sessions,observedSessions,presentations,collectionIssues]);
     if (signature === this._signature) return;
     this._signature = signature;
@@ -105,37 +112,36 @@ class BsvSessionReviewCard extends HTMLElement {
         .notice{padding:10px;border:1px solid var(--divider-color,#ccc);border-radius:6px}
         .qr{max-width:220px;margin:16px auto;background:#fff;line-height:0}.qr svg{width:100%;height:auto}
         textarea{min-height:130px;font-size:12px}.divider{border-top:1px solid var(--divider-color,#ddd);margin:20px 0}
+        .table-scroll{overflow-x:auto;margin-top:16px}table{border-collapse:collapse;width:100%;min-width:780px;font-size:13px}
+        th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--divider-color,#ddd);line-height:1.5}
+        thead th{background:var(--secondary-background-color,#f1f5f7);font-weight:600}td:last-child{min-width:220px}
+        th details{border:0;margin:0;padding:0}th summary{padding:0;min-height:32px}td{font-variant-numeric:tabular-nums}
       </style><style>${styles}</style>
       <ha-card>
-        <div class="head"><div><p class="eyebrow">Settlement</p><h2>Payments & credits</h2></div><span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span></div>
-        <p class="note">Follow each session from review to confirmation. A submitted transaction must be reconciled, never paid again.</p>
+        <div class="head"><div><p class="eyebrow">${mode==="driver_to_operator"?"Driver → Operator":mode==="operator_to_driver"?"Operator → Driver":"Settlement"}</p><h2>${mode==="driver_to_operator"?"Driver collections":mode==="operator_to_driver"?"Operator credits":"Payments & credits"}</h2></div>${creditMode?`<span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span>`:""}</div>
+        <p class="note">${mode==="driver_to_operator"?"Money collected from drivers. Consent, held collections and charge closure are shown here.":mode==="operator_to_driver"?"Money paid to drivers. Receiving registrations, funding and credit confirmation are shown here.":"Follow each session from review to confirmation."} A submitted transaction must be reconciled, never paid again.</p>
         ${collectionIssues.map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
           <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
           <p>${esc(p.diagnostic?.message||"No signing permit or payment is implied by a reserved attempt. Inspect the wallet and recipient history before releasing it.")}</p>
           <code>${esc(p.session_id)}</code>
           <p class="note">${p.diagnostic?"Driver-reported diagnostic, not independent payment evidence. ":""}${p.state==="recovery_ready"?"The driver must select Review and resume collection.":"Use the guarded recovery review service. Never clear the ledger or create a replacement payment."}</p></div>`).join("")}
-        ${ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
+        ${creditMode&&ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
         <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
         <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
-        ${paymentRows.length?`<section class="section" aria-label="Session settlement"><h3>Session settlement</h3>
-        ${paymentRows.map((row,index)=>{const p=presentations[index];return `<article class="notice session-payment" style="margin-top:12px" data-session="${esc(row.session_id)}">
-          <p class="note">Session ${esc(short(p.reference))}</p><strong>${esc(p.title)}</strong><p>${esc(p.detail)}</p>
-          ${row.max_fee_sats!==undefined?`<p class="note">Maximum wallet fee: ${esc(row.max_fee_sats)} sat. This is a limit, not a fee already charged.</p>`:""}
-          ${row.txid?`<details><summary>Transaction reference</summary><code>${esc(row.txid)}</code></details>`:""}
-        </article>`}).join("")}</section>`:""}
-        ${(automatic?.payments || []).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
-        <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p><code>${esc(p.txid || "Not submitted")}</code></details>
+        ${sessionTable(health,observedSessions,mode)}
+        ${(creditMode?automatic?.payments || []:[]).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
+        <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p>${chainRecordLink(p.txid)}</details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
-        <details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a session-specific approval and receiving key registered before session end. Maximum operator spend: 1,000 sat per session including a 10 sat fee. Registration does not guarantee payment; final account, funding and limits are checked.</p>
-        ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>
+        ${creditMode?`<details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a registered receiving key. Maximum operator spend: 1,000 sat per session including a 10 sat fee. Registration does not guarantee payment; final account, funding and limits are checked.</p>
+        ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>`:""}
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
-        <div id="completed-resolution"></div>
-        <details id="new-review"><summary>Manual payment reconciliation and operator credits</summary>
+        ${driverMode?'<div id="completed-resolution"></div>':""}
+        <details id="new-review"><summary>${creditMode&&!driverMode?"Manual operator credit review":"Manual payment reconciliation"}</summary>
         <p class="note">Use only when automatic settlement is not available. Review the account and receiving address before preparing a payment. Preparing a review sends no money.</p>
         <label>Closed session<select id="session">${sessions.map(s =>
           `<option value="${esc(s.session_id)}">${esc(stamp(s.ended_at))} · ${esc(short(s.ocpp_transaction_id))} · AUD ${esc(s.net_cost_aud ?? "unavailable")}</option>`
@@ -167,8 +173,10 @@ class BsvSessionReviewCard extends HTMLElement {
       proxy_config_entry_id: c.proxy_config_entry_id, session_id: $("#session").value,
       conversion_rate_entity: c.rate_entity,
     });
-    if(!this._closureCard){this._closureCard=document.createElement("bsv-completed-session-card");this._closureCard.setConfig(c);}
-    this._closureCard.hass=h;$("#completed-resolution").append(this._closureCard);
+    if(driverMode){
+      if(!this._closureCard){this._closureCard=document.createElement("bsv-completed-session-card");this._closureCard.setConfig(c);}
+      this._closureCard.hass=h;$("#completed-resolution").append(this._closureCard);
+    }
     if(closureFocus){closureFocus.focus({preventScroll:true});if(closureSelection)closureFocus.setSelectionRange(...closureSelection);}
     $("#refresh").onclick = () => this.action("session_review_status");
     if (!r) return;

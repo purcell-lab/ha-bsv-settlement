@@ -6,6 +6,7 @@ import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js
 import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
+import {chainRecordUrl} from "../ui.js";
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -91,7 +92,11 @@ function paintOngoing(){
     const details=document.createElement("details"),summary=document.createElement("summary"),refs=document.createElement("p");
     summary.textContent="Full session and transaction references";refs.className="mono";
     refs.textContent=`Session: ${row.transaction_id}. BSV transaction: ${row.txid||"Not submitted"}. Receiving address: ${row.recipient_address}.`;
-    details.append(summary,refs);box.append(p,note,details);$("ongoing-list").append(box);
+    details.append(summary,refs);
+    const url=chainRecordUrl(row.txid);
+    if(url){const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener noreferrer";
+      a.textContent="View chain-provider record";details.append(a);}
+    box.append(p,note,details);$("ongoing-list").append(box);
   }
   const outstanding=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid));
   $("receive-ongoing").disabled=receivingOngoing||!outstanding;
@@ -232,7 +237,7 @@ function show(invitation) {
       "import:energy_without_matching_state":"Charging energy was recorded while the charger state did not indicate charging",
       "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging"
     })[f]||f).join(". ");
-    $("closed-account").textContent=`Completed session ${t.transaction_id}. Charged ${a.import_kwh} kWh; exported ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
+    $("closed-account").textContent=`Completed session ${t.transaction_id}. Energy Imported to EV: ${a.import_kwh} kWh; Energy Imported from EV: ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
   }
   $("approval-terms").textContent = spending() ?
     `By selecting Approve spending, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
@@ -262,7 +267,7 @@ async function refresh(initial=false) {
     creditEnabled=result.automatic_credit_enabled;creditRegistered=result.credit_destination_registered;
     const s=result.session;
     $("energy-summary").hidden=!s;
-    if(s)$("energy-summary").textContent=`${s.ended_at?"Session ended":"Session in progress"} · Charged ${s.import_kwh ?? "unavailable"} kWh · Exported ${s.export_kwh ?? "unavailable"} kWh${s.net_cost_aud!==null&&s.net_cost_aud!==undefined ? ` · Provisional ${Number(s.net_cost_aud)<0?"credit":"charge"} AUD ${Math.abs(Number(s.net_cost_aud)).toFixed(2)}`:""}`;
+    if(s)$("energy-summary").textContent=`${s.ended_at?"Session ended":"Session in progress"} · Energy Imported to EV: ${s.import_kwh ?? "unavailable"} kWh · Energy Imported from EV: ${s.export_kwh ?? "unavailable"} kWh${s.net_cost_aud!==null&&s.net_cost_aud!==undefined ? ` · Provisional ${Number(s.net_cost_aud)<0?"credit":"charge"} AUD ${Math.abs(Number(s.net_cost_aud)).toFixed(2)}`:""}`;
     $("credit-status").textContent=creditRegistered ?
       "Receiving wallet registered. Eligible net credits are paid automatically by the operator, even if you close this page. Reopen to import the confirmed credit into your wallet." :
       "Receiving wallet is not registered. Automatic credits are not ready for this session.";
@@ -334,6 +339,9 @@ function paintCollection(result) {
     status("Session charge waived. Do not approve or retry this payment.");
   }
   $("collection-txid").textContent=result.txid ? `BSV transaction ID: ${result.txid}` : "";
+  const recordLink=$("collection-chain-link"),recordUrl=chainRecordUrl(result.txid);
+  recordLink.hidden=!recordUrl;
+  if(recordUrl)recordLink.href=recordUrl;else recordLink.removeAttribute("href");
   if(creditDirection){
     $("settlement-heading").textContent="Your session credit";
     $("collection-status").textContent=({

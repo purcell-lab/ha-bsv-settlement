@@ -8,6 +8,7 @@ const uncertain=new Set(["broadcast_unknown","expired_awaiting_reconciliation","
 export function settlementRows(health){
   const rows=new Map();
   for(const r of health.ongoing_credit?.sessions||[])rows.set(r.session_id,r);
+  for(const r of health.automatic_credit?.payments||[])rows.set(r.session_id,{...r,direction:"operator_to_driver"});
   for(const p of health.session_payments||[]){
     const old=rows.get(p.session_id);
     // A signed/submitted attempt must not disappear behind a newer unsigned row.
@@ -17,7 +18,7 @@ export function settlementRows(health){
   for(const r of health.closed_sessions||[]){
     if(!rows.get(r.session_id)?.txid)rows.set(r.session_id,{...r,direction:"driver_to_operator"});
   }
-  return [...rows.values()].reverse().slice(0,8);
+  return [...rows.values()].reverse();
 }
 
 export function paymentStatus(row,sessions=[],now=Date.now()){

@@ -21,7 +21,7 @@
         <p id="collection-failure" class="notice error" role="status" hidden></p>
         <div class="actions"><button id="resume-collection" disabled>Reconnect wallet</button><button id="retry-collection" class="secondary" disabled>Reconcile signed payment</button></div>
         <p id="settlement-detail" class="small"></p>
-        <details><summary>Transaction details</summary><p id="collection-txid" class="mono"></p><p class="small">Confirmation is reported by the chain provider. It is not independent proof of finality.</p></details>
+        <details><summary>Transaction details</summary><p id="collection-txid" class="mono"></p><a id="collection-chain-link" target="_blank" rel="noopener noreferrer" hidden>View chain-provider record</a><p class="small">Confirmation is reported by the chain provider. It is not independent proof of finality.</p></details>
       </section>
       <section id="ongoing-section" hidden>
         <div class="section-head"><h2>Your ongoing credits</h2><span class="badge">Operator funded</span></div>
@@ -33,13 +33,13 @@
         <p id="closed-account" class="notice" hidden></p>
         <div class="section-head"><div><p class="eyebrow">Your operator</p><h2 id="operator-name"></h2></div><span class="badge">Dynamic rates</span></div><p id="contact" class="small"></p>
         <div id="prices" hidden>
-          <div class="price-grid"><div><span>Charging rate</span><strong id="import-price">Unavailable</strong><small>Energy into your EV</small></div><div><span>Export (V2G) rate</span><strong id="export-price">Unavailable</strong><small>Energy out of your EV</small></div></div>
+          <div class="price-grid"><div><span>Buy (Import/ EV Charging) rate</span><strong id="import-price">Unavailable</strong><small>Energy Imported to EV</small></div><div><span>Sell (Export/ V2G) rate</span><strong id="export-price">Unavailable</strong><small>Energy Imported from EV</small></div></div>
           <p id="price-time" class="small"></p><p id="price-warning" class="small"></p>
         </div>
         <div id="energy-summary" class="notice" hidden></div>
         <details id="rate-details"><summary>How charging and export affect your wallet</summary>
-          <p><strong>Charging:</strong> your wallet is debited, except when the charging rate is negative. A negative charging rate credits your wallet.</p>
-          <p><strong>Export (V2G):</strong> your wallet is credited, except when the export rate is negative. A negative export rate debits your wallet.</p>
+          <p><strong>Buy (Import/ EV Charging) rate:</strong> your wallet is debited for energy imported to the EV, except when this rate is negative. A negative rate credits your wallet.</p>
+          <p><strong>Sell (Export/ V2G) rate:</strong> your wallet is credited for energy imported from the EV, except when this rate is negative. A negative rate debits your wallet.</p>
           <p>Zero rates add no energy cost. All intervals combine into one final net debit or credit. Current rates are not a fixed quote for your session.</p>
         </details>
         <details><summary>Session and pricing details</summary><dl><dt>Session</dt><dd id="session" class="mono"></dd><dt>Proxy transaction ID</dt><dd id="transaction" class="mono"></dd><dt>Pricing rule</dt><dd id="pricing"></dd><dt>Account scope</dt><dd id="scope"></dd></dl></details>
