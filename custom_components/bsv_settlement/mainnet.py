@@ -190,6 +190,30 @@ class WoCClient:
             raise WalletError("Coinbase funding is not mature")
         return raw
 
+    async def unconfirmed_unspent(self, address):
+        """Recovery-only evidence; never used by ordinary funding selection."""
+        if not validate_address(address, Network.MAINNET):
+            raise WalletError("Invalid operator address")
+        data = await self.request("GET", f"/address/{address}/unconfirmed/unspent")
+        if (not isinstance(data, dict) or data.get("error")
+                or data.get("address") != address or not isinstance(data.get("result"), list)
+                or data.get("next-page") or data.get("nextPage") or len(data["result"]) > 1000):
+            raise WalletError("Invalid or incomplete unconfirmed UTXO evidence")
+        seen, clean = set(), []
+        for row in data["result"]:
+            if (not isinstance(row, dict) or not TXID.fullmatch(str(row.get("tx_hash", "")))
+                    or type(row.get("tx_pos")) is not int or not 0 <= row["tx_pos"] <= 0xFFFFFFFF
+                    or type(row.get("value")) is not int or not 0 < row["value"] <= 2100000000000000
+                    or type(row.get("isSpentInMempoolTx")) is not bool):
+                raise WalletError("Malformed unconfirmed UTXO evidence")
+            key = (row["tx_hash"], row["tx_pos"])
+            if key in seen:
+                raise WalletError("Duplicate unconfirmed UTXO evidence")
+            seen.add(key)
+            if not row["isSpentInMempoolTx"]:
+                clean.append(row)
+        return clean
+
     async def details(self, txid):
         if not TXID.fullmatch(txid):
             raise WalletError("Invalid transaction ID")

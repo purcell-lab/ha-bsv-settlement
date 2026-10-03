@@ -56,6 +56,10 @@ original bytes, transaction ID, outputs and fee. Reconciliation does not depend
 on obtaining a new fee quote. This update cannot repair or cancel an existing
 low-fee transaction, release its funding, waive its credit, or implement CPFP.
 
+A separate [linked-credit recovery](linked-credit-recovery.md) adds an explicit,
+reviewed CPFP exception. It does not alter this ordinary fee policy or permit
+automatic unconfirmed-funding selection.
+
 Driver-wallet collections still use the driver's wallet and signed spending
 limits. This change does not grant additional driver spending authority.
 

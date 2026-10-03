@@ -156,6 +156,9 @@ class AutomaticCredits:
     def pending(self):
         return any(i["state"] in PENDING for i in self.api.saved["automatic_credits"].values())
 
+    def blocking_pending(self, row):
+        return self.pending()
+
     def used(self):
         return {(i["source_txid"], i["source_index"]) for i in
                 self.api.saved["automatic_credits"].values() if i.get("txid")}
@@ -211,7 +214,7 @@ class AutomaticCredits:
         item.update(fee_sats=fee, fee_quote=quotation)
         await self.save()
         manual = self.api.saved["payments"]
-        if self.pending() or any(p["state"] in ("prepared", *PENDING) for p in manual.values()):
+        if self.blocking_pending(row) or any(p["state"] in ("prepared", *PENDING) for p in manual.values()):
             raise WalletError("Another operator payment is unresolved; credit remains queued")
         source, raw = await self.funding(row, amount, fee)
         if digest(await self.account(row)) != item["source_hash"]:

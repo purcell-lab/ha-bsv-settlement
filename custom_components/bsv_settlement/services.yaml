@@ -10,6 +10,10 @@ prepare_operator_credit_recovery:
       required: true
       selector:
         text:
+    parent_credit_id:
+      description: Optional existing signed pending operator credit. Prepare an explicitly reviewed child payment from its change, with fees for both transactions. Same original recipient only. Does not sign, replace or resend the parent. Combined credits and fees must fit 1000 sat.
+      selector:
+        text:
     replace_expired_review_hash:
       description: Optional exact hash to explicitly renew an expired unsigned review. A signed credit can never be replaced.
       selector:

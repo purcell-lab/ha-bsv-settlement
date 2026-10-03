@@ -45,6 +45,7 @@ async def async_setup(hass, config):
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
         "prepare_operator_credit_recovery": {**common, vol.Required("credit_id"): str,
+            vol.Optional("parent_credit_id"): str,
             vol.Optional("replace_expired_review_hash"): str},
         "broadcast_operator_credit_recovery": {
             **common, vol.Required("credit_id"): str,

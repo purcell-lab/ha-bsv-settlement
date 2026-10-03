@@ -178,6 +178,11 @@ class OngoingCredits(AutomaticCredits):
             return await self.api.credit_recovery.quote_fee(row, amount)
         return await super().quote_fee(row, amount)
 
+    def blocking_pending(self, row):
+        if self.routes[row["standing_route_id"]].get("manual_recovery"):
+            return self.api.credit_recovery.blocking_pending(row)
+        return super().blocking_pending(row)
+
     async def funding(self, row, amount, fee):
         if self.routes[row["standing_route_id"]].get("manual_recovery"):
             return await self.api.credit_recovery.funding(row, amount, fee)
