@@ -6,11 +6,16 @@
 <header><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><div class="header-actions"><span class="badge">Driver · Mainnet</span><button id="theme" class="secondary small-button" aria-label="Switch colour theme">Dark</button></div></header>
 <main id="main">
   <div class="intro"><p class="eyebrow">YOUR CHARGING SESSION</p><h1 id="page-title">Charge. Export. Settle.</h1><p id="page-subtitle">Approve one session in BSV Browser. Review the rates and spending limit before you connect.</p></div>
+  <div id="approval-action" class="top-authorisation" hidden><p id="mobile-fee" class="small"></p><button id="approve" class="wide" disabled>Authorise EV charging budget</button><p class="small">Review the rates and full terms below. Wallet authorisation does not start the charger.</p></div>
   <ol class="steps" aria-label="Session progress"><li id="progress-approve">1 <span>Approve</span></li><li id="progress-session">2 <span>Session</span></li><li id="progress-settle">3 <span>Settle</span></li></ol>
   <p id="status" class="notice" role="status" aria-live="polite">Open the private session link supplied by your charging operator.</p>
   <p id="connection-status" class="notice error" role="status" hidden></p>
   <section id="load-section">
     <h2>Start with your private link</h2><p>Ask the charging operator for a session link or scan their QR code. Open it inside BSV Browser with the wallet you want to use.</p>
+    <label for="private-link-input">Private session link</label>
+    <textarea id="private-link-input" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste the full private link, including #budget and token. Never enter wallet secrets."></textarea>
+    <button id="open-private-link">Open session and show QR</button>
+    <p id="private-link-feedback" class="small" role="status">The public page does not reveal any driver's private session.</p>
     <details><summary>Advanced: load a signed invitation</summary><label for="invitation">Operator-signed invitation</label><textarea id="invitation" rows="5" spellcheck="false" placeholder="Paste invitation JSON. Never enter a seed phrase or private key."></textarea><div class="actions"><button id="load">Load invitation</button><button id="reset" class="secondary">Clear page</button></div></details>
   </section>
   <div class="layout">
@@ -51,6 +56,12 @@
       </section>
     </div>
     <div class="action-column">
+      <section id="private-link-section" hidden>
+        <h2>Your private session link</h2>
+        <p class="small">Scan with your phone camera or a URL scanner, then open the link in BSV Browser. This opens this same session page; it does not approve spending.</p>
+        <div id="private-link-qr" class="session-link-qr"></div>
+        <p class="small">Keep this QR private. For BSV Browser's <strong>Connect to app</strong> scanner, use the separate pairing QR from <strong>Connect BSV Browser</strong> below.</p>
+      </section>
       <section id="pairing-section" hidden>
         <p class="eyebrow">Connect your phone wallet</p>
         <h2>Use BSV Browser</h2>
@@ -69,7 +80,7 @@
         <p class="eyebrow" id="approval-heading">Your spending limit</p><div class="amount"><strong id="budget"></strong><span id="aud"></span></div>
         <dl><dt>Fee allowance</dt><dd id="fee"></dd><dt>Conversion</dt><dd id="rate"></dd><dt>Approval expires</dt><dd id="expiry"></dd></dl>
         <p id="approval-terms" class="small"></p>
-        <div id="approval-action"><span id="mobile-fee" class="mobile-only small"></span><button id="approve" class="wide" disabled>Approve one session</button></div><p id="action-note" class="small"></p>
+        <p id="action-note" class="small"></p>
         <p id="credit-status" class="notice small">Your receiving wallet must be registered before session end for automatic credits.</p>
         <details><summary>Wallet identity and payment safeguards</summary>
           <p class="small">Connected wallet public identity</p><p id="wallet-key" class="mono">Not connected</p>
