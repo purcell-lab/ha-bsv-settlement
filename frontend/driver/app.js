@@ -1,5 +1,5 @@
 import { WalletClient } from "@bsv/sdk";
-import { parseInvitation, signConsent } from "./model.js";
+import { parseInvitation, signConsent,derivedInvitation } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importCredit } from "./credit.js";
 import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js";
@@ -22,6 +22,13 @@ let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
 let latestTxid=null;
 let collectionFailure=null,pendingDiagnostic=null,latestCollection=null;
+let selectedSession=null;
+$("multi-session-select").onchange=()=>{
+  if(collectionBusy||busy||pendingReport||pendingDiagnostic)return;
+  selectedSession=$("multi-session-select").value||null;
+  latestCollection=null;collectionState=null;halted=false;
+  void checkCollection();
+};
 function paintFailure(){
   $("collection-failure").textContent=describeFailure(collectionFailure);
   $("collection-failure").hidden=!collectionFailure || collectionState==="provider_confirmed";
@@ -119,7 +126,7 @@ $("receive-ongoing").onclick=async()=>{
   finally{receivingOngoing=false;paintOngoing();controls();}
 };
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
-const spending = () => checked?.terms.version === 2;
+const spending = () => [2,3].includes(checked?.terms.version);
 const status = (message,error=false) => {
   $("status").textContent = message; $("status").className = error ? "notice error" : "notice";
   $("action-note").textContent = message;
@@ -134,6 +141,7 @@ function controls() {
   document.body.dataset.pairing=pairing?.state || "local";
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
   const waived=collectionState==="waived";
+  $("multi-session-select").disabled=busy||collectionBusy||!!pendingReport||!!pendingDiagnostic;
   $("approve").disabled = waived || framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
     (!!capability && !pricesValid()) || pairingBusy || (!!pairing && pairing.state!=="paired");
   $("pairing-section").hidden=waived || !capability || !checked || framed;
@@ -170,7 +178,7 @@ function controls() {
     (!creditDirection && collectionState==="wallet_attempt_reserved");
   $("retry-collection").hidden=waived||!pendingReport;
   $("retry").hidden=waived||accepted||!receipt;
-  if(showOngoingOverview({accepted,ongoingCount:ongoingRows.length,
+  if(checked?.terms.version!==3&&showOngoingOverview({accepted,ongoingCount:ongoingRows.length,
     sessionMode:checked?.terms.session_mode,binding,state:collectionState})){
     const last=ongoingRows[ongoingRows.length-1], imported=importedCredits.has(last.txid);
     $("page-title").textContent=last.txid?(imported?"Credit accepted by your wallet":last.state==="provider_confirmed"?"Your credit is confirmed":"Credit awaiting confirmation"):
@@ -194,7 +202,9 @@ async function api(action, extra={}) {
   const response = await fetch("/api/bsv_settlement/driver",{
     method:"POST",credentials:"omit",cache:"no-store",referrerPolicy:"no-referrer",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({...capability,action,...extra}),
+    body:JSON.stringify({...capability,action,
+      ...(["collection_status","claim_collection","authorise_collection","report_collection","reconcile_collection","report_collection_failure"].includes(action)&&selectedSession?{session_id:selectedSession}:{}),
+      ...extra}),
     signal:AbortSignal.timeout(action==="authorise_collection" || action==="report_collection" ? 120000 : 20000)
   });
   const result = await response.json();
@@ -221,7 +231,7 @@ function show(invitation) {
   $("fee").textContent=`Up to ${t.max_fee_sats} sat, within the total limit. Not a fixed charge.`;
   $("mobile-fee").textContent=`Total cap ${t.max_total_sats.toLocaleString()} sat, including up to ${t.max_fee_sats} sat fee`;
   $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this approval`;
-  $("session").textContent=t.session_mode==="next_session_reservation" ? "One future charging session" : t.session_id;
+  $("session").textContent=t.version===3?"Multiple future sessions on this charger":t.session_mode==="next_session_reservation" ? "One future charging session" : t.session_id;
   $("transaction").textContent=t.transaction_id;
   $("operator").textContent=t.operator_address;
   $("operator-name").textContent=t.operator_name || "Charging operator";
@@ -244,6 +254,10 @@ function show(invitation) {
     "This is an old consent-only invitation. It cannot authorise spending. Ask the operator to revoke it and issue a new spending invitation. Existing signatures do not change.";
   if(t.closed_session_review)$("approval-terms").textContent=
     `You authorise one payment of ${t.closed_session_review.amount_sats} sat for this completed account, plus the actual fee, up to ${t.max_total_sats} sat total. Review the warnings above. The operator's explanation is not independent validation of the meter. This approval does not authorise another session or change your receiving wallet.`;
+  if(t.version===3){
+    $("approval-terms").textContent=`You authorise collection for multiple future sessions on this charger, up to ${t.max_total_sats} sat TOTAL including all network fees, until ${t.expires_at} or a newer driver registration. No per-session reset. Operator credits do not replenish this allowance. Collection still needs the driver wallet available; this is not a funds reservation or offline payment guarantee.`;
+    $("credit-policy").textContent="Receiving registration covers eligible credits for multiple sessions during this approval window, ending earlier on a newer driver registration. Operator funding and separate per-credit caps still apply. No cumulative operator-credit cap is implied.";
+  }
   $("credit-status").hidden=!!t.closed_session_review;
   $("credit-policy").hidden=!!t.closed_session_review;
   $("terms").hidden=false; $("wallet-section").hidden=false;
@@ -263,6 +277,10 @@ async function refresh(initial=false) {
     paintOngoing();
     if (checked && result.invitation.payload!==checked.invitation.payload) throw Error("Invitation changed. Reopen the operator's link.");
     if (!checked) show(result.invitation);
+    if(result.multi_session){
+      $("collection-section").hidden=false;$("multi-session-panel").hidden=false;
+      $("multi-session-allowance").textContent=`${result.multi_session.remaining_sats} sat available of ${result.multi_session.max_total_sats} sat total. ${result.multi_session.committed_sats} sat paid or reserved, including fees. Valid until ${result.multi_session.expires_at}. ${result.multi_session.error||""}`;
+    }
     live=result.prices; accepted=acceptedStates.includes(result.state) || !!result.driver_identity; binding=result.binding;
     creditEnabled=result.automatic_credit_enabled;creditRegistered=result.credit_destination_registered;
     const s=result.session;
@@ -370,6 +388,20 @@ async function checkCollection() {
   if(!capability || framed || collectionBusy || busy)return;
   collectionBusy=true;controls();
   try {
+    if(checked?.terms.version===3){
+      const list=await api("collection_status",{session_id:null});
+      const sessions=list.sessions||[],select=$("multi-session-select");
+      if(!selectedSession || latestCollection?.state==="provider_confirmed"){
+        const next=sessions.find(s=>s.state!=="provider_confirmed");
+        selectedSession=next?.session_id||selectedSession||sessions[0]?.session_id||null;
+      }
+      select.replaceChildren(...sessions.map(s=>{
+        const o=document.createElement("option");o.value=s.session_id;
+        o.textContent=`${s.transaction_id.slice(0,8)} · AUD ${s.net_cost_aud} · ${s.state.replaceAll("_"," ")}`;
+        o.selected=s.session_id===selectedSession;return o;
+      }));
+      if(!selectedSession){$("collection-section").hidden=false;$("collection-status").textContent="Waiting for an eligible closed session under this approval.";return;}
+    }
     let result=await api("collection_status");
     if(result.direction!=="operator_to_driver" && ["submitted","broadcast_unknown","provider_unconfirmed"].includes(result.state)&&result.txid)
       result=await api("reconcile_collection");
@@ -386,7 +418,10 @@ async function checkCollection() {
       status("Your session credit is confirmed and its receipt is accepted by your wallet.");
     }
     if(result.state==="ready" && connectedWallet && !halted) {
-      const paid=await collectOnce(connectedWallet,checked,binding,result.quote,api,
+      const sessionChecked=checked.terms.version===3?await derivedInvitation(result.session_invitation,checked,selectedSession):checked;
+      const collectionSession=selectedSession;
+      const scopedApi=(action,extra={})=>api(action,{...extra,...(checked.terms.version===3?{session_id:collectionSession}:{})});
+      const paid=await collectOnce(connectedWallet,sessionChecked,checked.terms.version===3?null:binding,result.quote,scopedApi,
         msg=>{$("collection-status").textContent=msg;});
       paintCollection(paid);
     } else if(["ready","waiting_for_session_end"].includes(result.state)&&!connectedWallet) {
@@ -413,7 +448,8 @@ async function connectWallet() {
 function clear() {
   if(pairing){void pairing.disconnect();pairing=null;}
   collectionFailure=null;pendingDiagnostic=null;latestCollection=null;paintFailure();
-  checked=null;receipt=null;accepted=false;live=null;connectedWallet=null;binding=null;halted=false;pendingReport=null;collectionState=null;
+  checked=null;receipt=null;accepted=false;live=null;connectedWallet=null;binding=null;halted=false;pendingReport=null;collectionState=null;selectedSession=null;
+  $("multi-session-panel").hidden=true;$("multi-session-select").replaceChildren();
   $("terms").hidden=true;$("wallet-section").hidden=true;$("result").hidden=true;
   $("receipt").value="";$("wallet-key").textContent="Not connected";
   $("collection-section").hidden=true;$("collection-amount").textContent="";$("collection-txid").textContent="";
@@ -492,7 +528,10 @@ $("resume-collection").onclick=async()=>{
         halted=true;return;
       }
       collectionFailure=null;paintFailure();
-      paintCollection(await collectOnce(wallet,checked,binding,current.quote,api,
+      const sessionChecked=checked.terms.version===3?await derivedInvitation(current.session_invitation,checked,selectedSession):checked;
+      const collectionSession=selectedSession;
+      const scopedApi=(action,extra={})=>api(action,{...extra,...(checked.terms.version===3?{session_id:collectionSession}:{})});
+      paintCollection(await collectOnce(wallet,sessionChecked,checked.terms.version===3?null:binding,current.quote,scopedApi,
         msg=>{$("collection-status").textContent=msg;},true));
     }
   } catch(e){retainFailure(e);status(e.message,true);}

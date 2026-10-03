@@ -7,8 +7,8 @@ class BSVBudgetCard extends HTMLElement {
     this.config=config;this.budget=null;this.initialRead=false;this.busy=false;this.linkBudget=null;
     if(!this.shadowRoot)this.attachShadow({mode:"open"});
     this.shadowRoot.innerHTML=`<style>${styles}</style><ha-card>
-      <div class="head"><div><p class="eyebrow">Driver setup</p><h2>One driver. One session.</h2></div><ha-icon icon="mdi:account-check-outline"></ha-icon></div>
-      <p class="note">Invite the driver, receive approval, then confirm the matching charging session.</p>
+      <div class="head"><div><p class="eyebrow">Driver setup</p><h2>Driver approval and limits</h2></div><ha-icon icon="mdi:account-check-outline"></ha-icon></div>
+      <p class="note">Choose one session or a shared allowance for future sessions. Each needs fresh wallet consent.</p>
       <p id="ongoing-notice" class="notice" hidden></p>
       <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
@@ -25,7 +25,8 @@ class BSVBudgetCard extends HTMLElement {
       <p id="session" class="note" style="margin-top:12px"></p>
       <details id="create-panel" open><summary>Create a driver invitation</summary>
         <form id="create-form">
-        <label>Use this approval for<select id="scope"><option value="next">The next session</option><option id="current-option" value="current" disabled>The current open session</option></select></label>
+        <label>Use this approval for<select id="scope"><option value="next">The next session</option><option id="current-option" value="current" disabled>The current open session</option><option value="multi">Multiple future sessions, up to seven days</option></select></label>
+        <p class="notice">Multi-session approval ends at expiry or a newer driver registration. Its total includes all charging payments and fees, with no per-session reset. Credits do not refill it. Keep the driver wallet available for collection; this is not an offline payment guarantee.</p>
         <div class="notice"><strong id="defaults">1,000 sat total limit · up to 1,000 sat fee within total · 12 hours</strong><span id="rate"></span></div>
         <p class="note">The fee is a ceiling, not a fixed charge. Payment plus actual fee must fit within the total limit. New invitations only: existing signed approvals do not change.</p>
         <details id="limits-panel" open><summary>Change limits or operator contact</summary><div class="form-grid">
@@ -45,7 +46,7 @@ class BSVBudgetCard extends HTMLElement {
       </details>
       <details><summary>Approval details and recovery</summary>
         <p id="collection" class="note"></p>
-        <p class="note">Driver charges need the open BSV Browser page. Registered operator credits run on the server; the driver returns to import the receipt. Matching a session is never automatic.</p>
+        <p class="note">Driver charges need the open BSV Browser page. Registered operator credits run on the server; the driver returns to import receipts. A multi-session approval covers only sessions started after receiving-wallet registration. Single next-session approvals still require operator matching.</p>
         <p id="lost-link" class="note"></p>
         <button id="revoke" class="danger" disabled>Revoke this approval</button>
         <details><summary>Advanced: transfer JSON manually</summary>
@@ -58,17 +59,22 @@ class BSVBudgetCard extends HTMLElement {
     this.$("name").value=config.operator_name||"Charging operator";this.$("contact").value=config.operator_contact||"";
     for(const id of ["total","fee","minutes"])this.$(id).oninput=()=>{
       this.$("defaults").textContent=`${this.$("total").value || "?"} sat total limit · up to ${this.$("fee").value || "?"} sat fee within total · ${this.$("minutes").value || "?"} minutes`;
-      this.$("form-error").textContent=validateInvitationLimits(Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])));
+      this.$("form-error").textContent=validateInvitationLimits({...Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])),multi:this.$("scope").value==="multi"});
     };
-    this.$("scope").onchange=()=>{this.$("replace-pending").checked=false;this.paint();};
+    this.$("scope").onchange=()=>{
+      const multi=this.$("scope").value==="multi";
+      this.$("minutes").max=multi?"10080":"1440";
+      this.$("minutes").value=multi?"10080":String(invitationDefaults.minutes);
+      this.$("minutes").oninput();this.$("replace-pending").checked=false;this.paint();
+    };
     this.$("create-form").onsubmit=async event=>{
       event.preventDefault();
       if(this.busy||!this._hass?.user?.is_admin)return;
       const n=id=>Number(this.$(id).value);
-      const error=validateInvitationLimits(Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])));
+      const error=validateInvitationLimits({...Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])),multi:this.$("scope").value==="multi"});
       this.$("form-error").textContent=error;if(error)return;
       const data={proxy_config_entry_id:config.proxy_config_entry_id,conversion_rate_entity:config.rate_entity,
-        max_total_sats:n("total"),max_fee_sats:n("fee"),valid_minutes:n("minutes"),
+        max_total_sats:n("total"),max_fee_sats:n("fee"),valid_minutes:n("minutes"),multi_session:this.$("scope").value==="multi",
         operator_name:this.$("name").value,operator_contact:this.$("contact").value};
       if(this.$("scope").value==="current"){
         if(!this.session||this.session.ended_at){this.$("status").textContent="That session has ended. Create a next-session invitation instead.";return;}
@@ -121,7 +127,8 @@ class BSVBudgetCard extends HTMLElement {
     if(!admin||b&&!awaitingApproval(b)){
       this.linkBudget=null;this.$("driver-link").value="";this.$("open-link").removeAttribute("href");this.$("qr").replaceChildren();
     }
-    const bound=!!b?.binding||b?.terms.session_mode==="existing_session";
+    const multi=b?.terms.version===3;
+    const bound=!!b?.binding||b?.terms.session_mode==="existing_session"||multi;
     this.$("current").hidden=!b;
     this.$("step1").className=b?"done":"";this.$("step2").className=accepted?"done":"";this.$("step3").className=bound?"done":"";
     this.$("current-option").disabled=!this.session||!!this.session.ended_at;
@@ -131,6 +138,9 @@ class BSVBudgetCard extends HTMLElement {
       this.$("state-title").textContent=stateLabel(b.state);
       this.$("next-step").textContent=!accepted?(b.state==="awaiting_driver_consent"?"Ask the driver to open their private link in BSV Browser and approve.":"This approval is not active. Create a fresh invitation for a future session."):!bound?"Driver approved. Confirm the correct open session below.":b.credit_destination?"Session matched and receiving wallet registered. Final account and payment checks still apply.":"Session matched. Ask the driver to reconnect before session end to register their receiving wallet.";
       this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your pending private link is shown above.":awaitingApproval(b)?"This older invitation's link cannot be recovered automatically. Use the original saved link, or explicitly revoke it before creating a replacement.":"No approval QR is needed. Do not pay or reapprove an already-settled session.";
+      if(multi&&accepted)this.$("next-step").textContent=b.multi_session?
+        `${b.multi_session.remaining_sats} sat remaining of ${b.multi_session.max_total_sats} sat TOTAL including fees. ${b.multi_session.error||"Future-session collection enabled while the wallet is available."}`:
+        "Approval saved. The driver must register their receiving wallet before future sessions qualify.";
     }
     const same=sameInvitationScope(b,this.$("scope").value,this.session);
     const immutable=same&&b.state!=="awaiting_driver_consent";

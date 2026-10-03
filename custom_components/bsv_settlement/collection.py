@@ -50,6 +50,15 @@ class DriverCollections:
         ) if k in item}
 
     def mandate(self, row):
+        if row.get("weekly_parent_id"):
+            from .weekly import guard_child
+            return guard_child(self.api, row)
+        if row["terms"].get("version") == 3:
+            from .weekly import verify_parent
+            verify_parent(self.api,row,active=False)
+            if self.api.budgets.public(row)["state"] != SPENDING_STATE:
+                raise WalletError("Multi-session approval expired or was revoked")
+            return
         from .session_closure import ensure_open
         if self.session_id(row):
             ensure_open(self.api, self.key(row))
@@ -60,6 +69,8 @@ class DriverCollections:
             raise WalletError("The spending mandate does not match its signed terms")
 
     def session_id(self, row):
+        if row["terms"].get("session_mode") == "multi_session":
+            return None
         return (row.get("binding") or {}).get("session_id") if row["terms"].get(
             "session_mode") == "next_session_reservation" else row["terms"]["session_id"]
 
@@ -153,6 +164,11 @@ class DriverCollections:
             item = {"state": "ready", "created_at": q["created_at"], "source_hash": digest(account),
                     "quote": {"payload": payload, "hash": sha(payload),
                               "signature": operator.sign(payload.encode(), hasher=message_hash).hex()}}
+            if row.get("weekly_parent_id"):
+                from .weekly import remaining
+                parent=self.api.saved["session_budgets"][row["weekly_parent_id"]]
+                if amount+fee_cap>remaining(self.api,parent,terms["budget_id"]):
+                    raise WalletError("Aggregate allowance changed; no collection reservation was created")
             self.api.saved["driver_collections"][terms["budget_id"]] = item
             self.api.saved["driver_collection_index"][self.key(row)] = terms["budget_id"]
             await self.save()

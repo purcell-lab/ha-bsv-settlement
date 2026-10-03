@@ -3,6 +3,7 @@ import { PublicKey, Signature, KeyDeriver } from "@bsv/sdk";
 export const protocol = [2, "ha ev session budget"];
 export const spendingProtocol = [2, "ev session spending"];
 export const spendingScope = "one_session_capped_spending_no_charger_authority";
+export const multiScope = "multi_session_aggregate_spending_until_expiry_or_new_driver";
 export const canonical = x => JSON.stringify(x, (_, v) =>
   v && !Array.isArray(v) && typeof v === "object"
     ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
@@ -27,7 +28,10 @@ export const paymentAuthority = t => ({
   wallet_transaction_permission_required: true,
   operator_credit_requires_separate_authority: true,
   funds_reserved: false,
-  charger_control: false
+  charger_control: false,
+  ...(t.version===3?{trigger:"each_closed_session_opened_after_receiving_registration",
+    max_payments:null,aggregate_limit:true,terminates_on_new_driver_registration:true,
+    credits_replenish_budget:false,receiving_expires_at:t.expires_at}:{})
 });
 export function parseInvitation(text, clock = Date.now(), allowExpired = false) {
   if (text.length > 20000) throw Error("The invitation is too large.");
@@ -36,7 +40,7 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
       !/^[0-9a-f]{16,144}$/.test(invitation.signature)) throw Error("Invalid invitation format.");
   const t = JSON.parse(invitation.payload);
   const legacy = t.version === 1 && t.scope === "one_session_consent_only_no_payment_or_charger_authority";
-  const spending = t.version === 2 && t.scope === spendingScope &&
+  const spending = [2,3].includes(t.version) && t.scope === (t.version===3?multiScope:spendingScope) &&
     canonical(t.payment_authority) === canonical(paymentAuthority(t));
   if ((!legacy && !spending) || t.network !== "BSV mainnet" ||
       !/^[0-9a-f-]{36}$/.test(t.budget_id) ||
@@ -48,7 +52,7 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
       Number(t.satoshis_per_aud) > 100000000 ||
       !Number.isFinite(Date.parse(t.created_at)) || Date.parse(t.created_at) > clock + 60000 ||
       !Number.isFinite(Date.parse(t.expires_at)) || (!allowExpired && Date.parse(t.expires_at) <= clock) ||
-      Date.parse(t.expires_at) - Date.parse(t.created_at) > 86401000 ||
+      Date.parse(t.expires_at) - Date.parse(t.created_at) > (t.version===3||t.weekly_parent_hash?604801000:86401000) ||
       typeof t.session_id !== "string" || !t.session_id || t.session_id.length > 200 ||
       typeof t.transaction_id !== "string" || typeof t.pricing_rule !== "string" ||
       typeof t.import_price_entity !== "string" || typeof t.export_price_entity !== "string" ||
@@ -78,22 +82,37 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
 export async function signConsent(wallet, checked, identity) {
   // Revalidate immediately before and after wallet interaction, including expiry.
   const { invitation, terms } = parseInvitation(JSON.stringify(checked.invitation));
-  if (terms.version !== 2) throw Error("This old invitation cannot approve spending. Ask the operator for a new invitation.");
+  if (![2,3].includes(terms.version)) throw Error("This old invitation cannot approve spending. Ask the operator for a new invitation.");
+  if(terms.weekly_parent_hash)throw Error("A session ticket cannot be approved as a standalone invitation.");
   const current = (await wallet.getPublicKey({ identityKey: true })).publicKey;
   if (current !== identity) throw Error("The connected wallet changed. Reconnect before approving.");
   const payload = canonical({
-    action: "authorise_one_session_spending", budget_id: terms.budget_id,
+    action: terms.version===3?"authorise_multi_session_aggregate_spending":"authorise_one_session_spending", budget_id: terms.budget_id,
     driver_identity: identity, invitation_hash: await hash(invitation.payload),
-    payment_authority: terms.payment_authority, version: 2
+    payment_authority: terms.payment_authority, version: terms.version
   });
   const { signature } = await wallet.createSignature({
     protocolID: spendingProtocol, keyID: terms.budget_id, counterparty: "anyone",
     data: bytes(payload),
-    description: `Approve one final EV session debit up to ${terms.max_total_sats} sat including fees (fee cap ${terms.max_fee_sats} sat).`
+    description: terms.version===3?`Approve multiple EV sessions: ${terms.max_total_sats} sat TOTAL including all fees until ${terms.expires_at} or a new driver registers. Credits do not replenish allowance.`:
+      `Approve one final EV session debit up to ${terms.max_total_sats} sat including fees (fee cap ${terms.max_fee_sats} sat).`
   });
   const key = new KeyDeriver("anyone").derivePublicKey(spendingProtocol, terms.budget_id, identity);
   if (!key.verify(bytes(payload), Signature.fromDER(signature))) throw Error("The wallet signature did not verify.");
   parseInvitation(JSON.stringify(invitation));
-  return { version: 2, budget_id: terms.budget_id, driver_identity: identity,
+  return { version: terms.version, budget_id: terms.budget_id, driver_identity: identity,
            payload, signature: hex(signature) };
+}
+export async function derivedInvitation(invitation,parent,sessionId){
+  parseInvitation(JSON.stringify(parent.invitation));
+  const checked=parseInvitation(JSON.stringify(invitation)),t=checked.terms,p=parent.terms;
+  if(p.version!==3||t.version!==2||t.weekly_parent_hash!==await hash(parent.invitation.payload)||
+    t.session_id!==sessionId||t.session_mode!=="existing_session"||
+    t.expires_at!==p.expires_at||t.max_total_sats>p.max_total_sats||t.max_fee_sats>p.max_fee_sats||
+    t.satoshis_per_aud!==p.satoshis_per_aud||t.operator_address!==p.operator_address||
+    t.operator_identity!==p.operator_identity||t.import_price_entity!==p.import_price_entity||
+    t.export_price_entity!==p.export_price_entity||t.pricing_rule!==p.pricing_rule||
+    Date.parse(t.created_at)<Date.parse(p.created_at))
+    throw Error("Session ticket exceeds or differs from the multi-session approval.");
+  return checked;
 }

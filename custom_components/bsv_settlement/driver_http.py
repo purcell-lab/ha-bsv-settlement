@@ -86,9 +86,28 @@ class DriverBudgetView(HomeAssistantView):
                 }
                 if action == "report_collection_failure":
                     from .collection_recovery import record_failure
+                    if row["terms"].get("version")==3:
+                        from .weekly import ticket
+                        row=await ticket(coord.api,row,data.get("session_id"))
                     return web.json_response(await record_failure(
                         coord.api.collections, row, data), headers=headers)
                 if action in handlers:
+                    if row["terms"].get("version")==3 and action in (
+                            "collection_status","claim_collection","authorise_collection",
+                            "report_collection","reconcile_collection"):
+                        from .weekly import ticket, candidates
+                        if not data.get("session_id"):
+                            return web.json_response({"state":"choose_session",
+                                "sessions":await candidates(coord.api,row)},headers=headers)
+                        child=await ticket(coord.api,row,data["session_id"])
+                        functions={
+                            "collection_status":lambda:coord.api.collections.status(child),
+                            "claim_collection":lambda:coord.api.collections.claim(child,data),
+                            "authorise_collection":lambda:coord.api.collections.authorise(child,data),
+                            "report_collection":lambda:coord.api.collections.report(child,data),
+                            "reconcile_collection":lambda:coord.api.collections.reconcile(child)}
+                        result=await functions[action]()
+                        return web.json_response(result|{"session_invitation":child["invitation"]},headers=headers)
                     return web.json_response(await handlers[action](), headers=headers)
                 if data["action"] == "approve":
                     # Retry an already accepted receipt even if live rates are temporarily unavailable.
