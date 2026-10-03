@@ -38,6 +38,20 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+def collection_display_terms(item, budget_id, session_id):
+    """Whitelist frozen quote display fields, never expose the signed payload."""
+    try:
+        quote = json.loads(item["quote"]["payload"])
+        if (quote["budget_id"] != budget_id or
+                quote["account"]["session_id"] != session_id or
+                type(quote["amount_sats"]) is not int or quote["amount_sats"] < 1):
+            return {}
+        return {key: quote[key] for key in (
+            "amount_sats", "max_fee_sats", "satoshis_per_aud", "expires_at")}
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+
 def validate_driver(field, value):
     value = value.strip()
     if not value:
@@ -265,11 +279,15 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         for budget_id, item in list(self.saved.get("driver_collections", {}).items())[-20:]:
             row = self.saved["session_budgets"].get(budget_id)
             if row:
+                session_id = self.collections.session_id(row)
                 rows.append({
-                    "session_id": self.collections.session_id(row),
+                    "session_id": session_id,
+                    "transaction_id": (row.get("binding") or {}).get(
+                        "transaction_id", row["terms"].get("transaction_id")),
                     "state": item["state"], "direction": "driver_to_operator",
                     "txid": item.get("txid"), "error": item.get("error"),
                     "source": "driver",
+                    **collection_display_terms(item, budget_id, session_id),
                 })
         return rows
 

@@ -1,5 +1,6 @@
 import qrcode from "qrcode-generator";
 import {styles, stateLabel, short, stamp} from "./ui.js";
+import {settlementRows,paymentStatus} from "./payment-status.js";
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -65,8 +66,11 @@ class BsvSessionReviewCard extends HTMLElement {
     const admin = h.user?.is_admin === true;
     const sessions = [proxy?.attributes?.latest_session, proxy?.attributes?.previous_session]
       .filter(s => s && s.ended_at);
+    const observedSessions=[proxy?.attributes?.latest_session,proxy?.attributes?.previous_session].filter(Boolean);
+    const health=wallet?.attributes||{},paymentRows=settlementRows(health);
+    const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message, automatic, ongoing]);
+      this._busy, this._message, automatic, ongoing,health.session_payments,observedSessions,presentations]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -104,9 +108,14 @@ class BsvSessionReviewCard extends HTMLElement {
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
         <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
-        ${(ongoing.sessions||[]).slice().reverse().filter(s=>!s.txid).slice(0,5).map(s=>`<div class="notice" style="margin-top:12px"><strong>Session ${esc(short(s.transaction_id))} · ${esc(stateLabel(s.state))}</strong><code>${esc(s.recipient_address)}</code><span>${esc(s.satoshis_per_aud)} sat/AUD · ${esc(s.error||"Final account and funding checks still apply.")}</span></div>`).join("")}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
+        ${paymentRows.length?`<section class="section" aria-label="Session settlement"><h3>Session settlement</h3>
+        ${paymentRows.map((row,index)=>{const p=presentations[index];return `<article class="notice session-payment" style="margin-top:12px" data-session="${esc(row.session_id)}">
+          <p class="note">Session ${esc(short(p.reference))}</p><strong>${esc(p.title)}</strong><p>${esc(p.detail)}</p>
+          ${row.max_fee_sats!==undefined?`<p class="note">Maximum wallet fee: ${esc(row.max_fee_sats)} sat. This is a limit, not a fee already charged.</p>`:""}
+          ${row.txid?`<details><summary>Transaction reference</summary><code>${esc(row.txid)}</code></details>`:""}
+        </article>`}).join("")}</section>`:""}
         ${(automatic?.payments || []).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
         <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p><code>${esc(p.txid || "Not submitted")}</code></details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
