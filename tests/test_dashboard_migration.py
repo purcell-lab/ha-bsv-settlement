@@ -27,7 +27,7 @@ def test_legacy_then_repeat_is_idempotent_without_mutating_input():
     first = redesign(initial)
     assert initial == original
     assert [v["path"] for v in first["views"]] == [
-        "overview","drivers","payments","wallet","testing"]
+        "overview","drivers","payments","operator-credits","wallet","testing"]
     assert redesign(first) == first
     assert any(c.get("type")=="custom:bsv-receive-qr-card" for c in cards(first))
     assert any(c.get("title")=="Manual-payment recipient" for c in cards(first))
@@ -55,7 +55,7 @@ def test_partial_redesign_refuses_destructive_rebuild(problem):
     elif problem == "wrong_view_type":
         current["views"][0]["type"] = "masonry"
     else:
-        current["views"][3]["sections"][1]["cards"].pop(0)
+        current["views"][4]["sections"][1]["cards"].pop(0)
     before = deepcopy(current)
     with pytest.raises(ValueError,match="Partially redesigned"):
         redesign(current)

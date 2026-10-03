@@ -35,7 +35,7 @@ def redesign(config):
                 raise ValueError("Partially redesigned dashboard; review its backup before migration")
         # Keep native controls, user cards, private config, metadata and extra
         # views exactly as supplied. The only repair is the derived wallet link.
-        return old
+        return split_settlement_views(old)
     qr = next(c for c in flat if c.get("type") == "custom:bsv-receive-qr-card")
     balance = next(c["entity"] for c in flat if str(c.get("entity", "")).endswith("_confirmed_wallet_balance"))
     operator = {"type": "custom:bsv-operator-card", "wallet_entity": review["wallet_entity"],
@@ -77,7 +77,7 @@ def redesign(config):
                           "Last saved offline self-test" in c.get("content", ""))
     mock_entities = list(dict.fromkeys(c["entity"] for c in flat
                                      if str(c.get("entity", "")).startswith("sensor.bsv_settlement_mock")))
-    return {"views": [
+    return split_settlement_views({"views": [
         view("Overview", "overview", "mdi:ev-station", "## Charging & settlement\nThe latest session, its next action and the operator's funds.",
              [section(operator), section(operator | {"mode": "wallet"})]),
         view("Drivers", "drivers", "mdi:account-check-outline", "## Set up a driver\nOne approval belongs to one session. Never reuse a previous driver's approval.",
@@ -102,4 +102,40 @@ def redesign(config):
               section({"type": "entities", "title": "Fictional mock results", "entities": mock_entities,
                        "show_header_toggle": False},
                       {"type": "markdown", "content": "Mock and offline tests do not move money. Their results are not proof of live payment readiness."})]),
-    ]}
+    ]})
+
+
+def split_settlement_views(config):
+    """Keep existing paths/user cards; split the managed settlement card only."""
+    result = deepcopy(config)
+    views = result["views"]
+    payment_views = [v for v in views if v.get("path") == "payments"]
+    operator_views = [v for v in views if v.get("path") == "operator-credits"]
+    if len(payment_views) != 1 or len(operator_views) > 1:
+        raise ValueError("Ambiguous settlement views; review before migration")
+    driver = payment_views[0]
+    review_cards = [c for c in cards(driver) if c.get("type") == "custom:bsv-session-review-card"]
+    if len(review_cards) != 1:
+        raise ValueError("Ambiguous settlement cards; review before migration")
+    review = review_cards[0]
+    driver["title"] = "Driver collections"
+    review["direction"] = "driver_to_operator"
+    driver["header"] = {"layout": "responsive", "card": {"type": "markdown", "text_only": True,
+        "content": "## Driver collections\nMoney received from drivers. Review consent, amounts, fees and collection status."}}
+    if operator_views:
+        existing = [c for c in cards(operator_views[0]) if c.get("type") == "custom:bsv-session-review-card"]
+        if len(existing) != 1 or existing[0].get("direction") != "operator_to_driver":
+            raise ValueError("Existing operator-credit view is not a managed split view")
+    else:
+        views.insert(views.index(driver) + 1, {
+            "title": "Operator credits", "path": "operator-credits", "icon": "mdi:cash-minus",
+            "type": "sections", "max_columns": 2, "subview": False,
+            "header": {"layout": "responsive", "card": {"type": "markdown", "text_only": True,
+                "content": "## Operator credits\nMoney paid to drivers. Check receiving registrations, funding and confirmation."}},
+            "sections": [{"type": "grid", "column_span": 2, "cards": [
+                deepcopy(review) | {"direction": "operator_to_driver",
+                                    "grid_options": {"columns": "full", "rows": "auto"}}]}]})
+    for view in views:
+        if view.get("path") == "overview":
+            view["title"] = "Status"
+    return result

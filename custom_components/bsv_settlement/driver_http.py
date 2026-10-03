@@ -93,7 +93,7 @@ class DriverBudgetView(HomeAssistantView):
                 if data["action"] == "approve":
                     # Retry an already accepted receipt even if live rates are temporarily unavailable.
                     if not row.get("receipt") and not coord.api.budgets.prices(row)["valid"]:
-                        raise WalletError("Current Amber prices are unavailable or stale. Try again later.")
+                        raise WalletError("Current buy and sell rates are unavailable or stale. Try again later.")
                     await coord.api.budgets.accept(row, data.get("receipt"), "driver_capability")
                 result = coord.api.budgets.driver_view(row)
             return web.json_response(result,headers=headers)

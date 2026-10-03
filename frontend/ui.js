@@ -3,11 +3,55 @@ export const finite = v => v !== null && v !== undefined && v !== "" && Number.i
 export const num = (v,d=0) => finite(v) ? Number(v).toLocaleString("en-AU",{minimumFractionDigits:d,maximumFractionDigits:d}) : "Unavailable";
 export const stamp = v => v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "Not checked";
 export const short = v => v ? String(v).slice(0,8) : "No reference";
+export function provisionalSats(session,health={},rateState) {
+  const id=session?.session_id;
+  const candidate=health.ongoing_credit?.sessions?.find(r=>r.session_id===id) ??
+    health.driver_approvals?.find(r=>r.session_id===id&&r.approved);
+  const fixed=candidate?.satoshis_per_aud!==undefined?candidate:null;
+  const rate=fixed ? fixed.satoshis_per_aud : rateState?.state;
+  // Decimal arithmetic mirrors the settlement's positive ROUND_HALF_UP value.
+  const parts=v=>{
+    if(!["string","number"].includes(typeof v))return null;
+    const m=String(v).match(/^-?(\d{1,16})(?:\.(\d{1,16}))?$/);
+    return m?{n:BigInt(m[1]+(m[2]||"")),d:10n**BigInt((m[2]||"").length)}:null;
+  };
+  const amount=parts(session?.net_cost_aud),r=parts(rate);
+  if(!amount||!r||Number(rate)<=0)return {sats:null,rate:null,fixed:!!fixed};
+  const numerator=amount.n*r.n,denominator=amount.d*r.d;
+  const rounded=(numerator*2n+denominator)/(denominator*2n);
+  return {sats:rounded<=BigInt(Number.MAX_SAFE_INTEGER)?Number(rounded):null,
+    rate:Number(rate),fixed:!!fixed};
+}
+export const chainRecordUrl=txid=>typeof txid==="string"&&/^[0-9a-f]{64}$/.test(txid)
+  ?`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`:null;
+export const chainRecordLink=txid=>{
+  const url=chainRecordUrl(txid);
+  return url?`<a href="${url}" target="_blank" rel="noopener noreferrer">View chain-provider record</a><code>${esc(txid)}</code>`:
+    `<code>${esc(txid||"Not submitted")}</code>`;
+};
+export function energyMetrics(session={}) {
+  const numeric=v=>(typeof v==="number" || typeof v==="string"&&v.trim()!=="")&&Number.isFinite(Number(v));
+  const direction=(energy,amount)=>{
+    const kwh=numeric(energy)&&Number(energy)>=0?Number(energy):null;
+    return {kwh,average:kwh>0&&numeric(amount)?Number(amount)/kwh:null};
+  };
+  return {toEV:direction(session.import_kwh,session.import_cost_aud),
+    fromEV:direction(session.export_kwh,session.export_credit_aud)};
+}
+export function currentPrice(state,clock=Date.now()){
+  const a=state?.attributes||{},start=Date.parse(a.start_time),end=Date.parse(a.end_time);
+  const valid=state&&typeof state.state==="string"&&state.state.trim()!==""&&finite(state.state)&&
+    ["$/kWh","AUD/kWh"].includes(a.unit_of_measurement)&&
+    Number.isFinite(start)&&Number.isFinite(end)&&end>start&&start<=clock&&clock<end;
+  return {value:valid?Number(state.state):null,available:!!valid,estimated:a.estimate!==false,
+    end:valid?a.end_time:null};
+}
 export function stateLabel(s) {
   return ({
     provider_confirmed:"Confirmed on chain",driver_payment_provider_confirmed:"Confirmed on chain",
     provider_unconfirmed:"Awaiting block confirmation",driver_payment_provider_unconfirmed:"Awaiting block confirmation",
     submitted:"Payment submitted",broadcast_unknown:"Submission uncertain",
+    ready:"Awaiting wallet collection",
     credit_queued:"Waiting for funding checks",awaiting_account_approval:"Review account",
     credit_review_approved:"Prepare credit",prepared:"Ready for payment approval",
     awaiting_driver_payment:"Waiting for driver payment",cancelled:"Cancelled",
@@ -59,7 +103,7 @@ export function sessionStatus(s,health,now=Date.now()) {
   return {label:"Driver collection approved",tone:"info",detail:"The driver must keep BSV Browser open. Wallet permission and final checks still apply.",target:"drivers"};
 }
 export const styles = `
-:host{display:block;color:var(--primary-text-color,#152a3a);font-family:var(--primary-font-family,Arial,sans-serif);--accent:var(--primary-color,#186776);--muted:var(--secondary-text-color,#526472);--line:var(--divider-color,#d8e0e5);--surface:var(--card-background-color,#fff);--soft:var(--secondary-background-color,#f1f5f7);--text-xs:.78rem;--text-sm:.88rem;--text-base:1rem;--text-lg:1.22rem;--text-xl:1.8rem}
+:host{display:block;min-width:0;max-width:100%;color:var(--primary-text-color,#152a3a);font-family:var(--primary-font-family,Arial,sans-serif);--accent:var(--primary-color,#186776);--muted:var(--secondary-text-color,#526472);--line:var(--divider-color,#d8e0e5);--surface:var(--card-background-color,#fff);--soft:var(--secondary-background-color,#f1f5f7);--text-xs:.78rem;--text-sm:.88rem;--text-base:1rem;--text-lg:1.22rem;--text-xl:1.8rem}
 *{box-sizing:border-box}ha-card{display:block;background:var(--surface);color:inherit;padding:24px;border:1px solid var(--line);border-radius:16px;box-shadow:none}
 h2,h3,p{margin:0}h2{font-size:var(--text-lg);font-weight:650}h3{font-size:var(--text-base);font-weight:650}
 p{line-height:1.55;overflow-wrap:anywhere}p+p{margin-top:8px}.muted,.note,.eyebrow{color:var(--muted)}.note{font-size:var(--text-sm);line-height:1.5}.eyebrow{font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;font-weight:650}
