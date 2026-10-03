@@ -84,7 +84,11 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
     $("bsv-session-review-card").hass=hass;
   }
   if(service==="prepare_session_review")throw Error("Preview only. No payment review is created.");
-  const result=budget?structuredClone(budget):{};if(budget&&budget.state!=="awaiting_driver_consent")delete result.driver_link_fragment;return {response:result};
+  const result=budget?structuredClone(budget):{};
+  // The real fresh-create response lacks admin-only registration context.
+  if(service==="create_session_budget"&&!budget.invitation_reused)delete result.public_registration;
+  if(budget&&budget.state!=="awaiting_driver_consent")delete result.driver_link_fragment;
+  return {response:result};
 }};
 function state(){
  const s=$("#scenario").value;
