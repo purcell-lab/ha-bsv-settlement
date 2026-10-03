@@ -209,7 +209,7 @@ function paintPrices() {
   }
   $("price-time").textContent = live?.checked_at
     ? `Checked ${new Date(live.checked_at).toLocaleTimeString()}. Rates change during charging.`
-    : "Waiting for current Amber prices.";
+    : "Waiting for current buy and sell rates.";
   $("price-warning").textContent = pricesValid() ? "Indicative now, not a fixed tariff. The signed rule uses each interval's price." :
     "Prices are unavailable or stale. Approval is paused until current prices return.";
 }
@@ -452,7 +452,7 @@ $("approve").onclick=async()=>{
       if(result.invitation.payload!==checked.invitation.payload || result.state!=="awaiting_driver_consent")
         throw Error("This invitation has changed or is already used. Reload the page.");
       live=result.prices;paintPrices();
-      if(!pricesValid())throw Error("Current Amber prices are unavailable. Try again later.");
+      if(!pricesValid())throw Error("Current buy and sell rates are unavailable. Try again later.");
     }
     status(checked.terms.closed_session_review?
       "Waiting for BSV Browser. Approval permits immediate collection of this completed account within the displayed limits.":

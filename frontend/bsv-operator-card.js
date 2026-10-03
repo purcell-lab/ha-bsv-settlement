@@ -35,7 +35,7 @@ class BSVOperatorCard extends HTMLElement{
         (summary.payment&&!summary.payment.direction)||Number(s?.net_cost_aud)<0?"operator-credits":"payments";
       body=`<div class="head"><div><p class="eyebrow">Charging & settlement</p><h2>${unavailable?"Recorder unavailable":!s?"Ready for the next driver":s.ended_at?"Latest session complete":"Session in progress"}</h2></div><ha-icon icon="mdi:ev-station"></ha-icon></div>
       <div class="metrics" aria-label="Current buy and sell prices">${[[buy,"Buy (Import/ EV Charging) rate"],[sell,"Sell (Export/ V2G) rate"]].map(([p,label])=>`<div class="metric"><span>${label}</span><strong>${num(p.value,4)} <small>$/kWh</small></strong><p class="note">${p.available?`${p.estimated?"Estimated current rate":"Current rate"} · until ${esc(stamp(p.end))}`:"Unavailable or stale"}</p></div>`).join("")}</div>
-      <p class="note" style="margin:12px 0 20px">Current Amber prices in AUD. These are not the session-average prices or a fixed quote.</p>
+      <p class="note" style="margin:12px 0 20px">Current buy and sell rates in AUD. These are not the session-average prices or a fixed quote.</p>
       ${unavailable?`<p class="notice">Session data is unavailable. Do not infer a completed payment from an old reading.</p>`:`
       <div class="notice"><strong>${esc(summary.label)}</strong>${esc(summary.detail)}</div>
       <div class="actions">${link(summary.target==="payments"?settlementPath:summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${link("wallet","View funds")}</div>
