@@ -50,8 +50,8 @@ async def async_setup(hass, config):
             **common, vol.Required("credit_id"): str,
             vol.Required("expected_review_hash"): str,
             vol.Required("recipient_address"): str,
-            vol.Required("amount_sats"): vol.All(int, vol.Range(min=1, max=990)),
-            vol.Required("fee_sats"): vol.In([10]),
+            vol.Required("amount_sats"): vol.All(int, vol.Range(min=1, max=999)),
+            vol.Required("fee_sats"): vol.All(int, vol.Range(min=1)),
             vol.Required("confirm_mainnet_payment"): vol.In([True])},
         "prepare_collection_recovery": {**common, vol.Required("budget_id"): str},
         "get_reviewed_collection_link": {

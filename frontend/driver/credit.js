@@ -57,7 +57,9 @@ export function creditTransaction(receipt, expectedAddress) {
     !Array.isArray(p.nodes) || p.nodes.length>40 ||
     !/^[0-9a-f]{64}$/.test(b.merkleroot) ||
     receipt.recipient_address!==expectedAddress ||
-    !Number.isSafeInteger(receipt.amount_sats) || receipt.amount_sats<1 || receipt.amount_sats>990 ||
+    !Number.isSafeInteger(receipt.amount_sats) || receipt.amount_sats<1 ||
+    !Number.isSafeInteger(receipt.fee_sats) || receipt.fee_sats<1 ||
+    receipt.amount_sats+receipt.fee_sats>1000 ||
     tx.outputs[0]?.satoshis!==receipt.amount_sats ||
     tx.outputs[0]?.lockingScript.toHex()!==new P2PKH().lock(expectedAddress).toHex())
     throw Error("The credit receipt does not match this wallet and session.");

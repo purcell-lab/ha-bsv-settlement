@@ -55,7 +55,8 @@ The separate operator policy and receiving path are now implemented for
 [automatic operator credits](automatic-operator-credits.md). After one-time
 operator enablement, eligible negative balances are paid without per-payment
 approval. New invitations register a driver-controlled BRC-29 receiving key.
-The operator spends at most 1,000 sat per session, including a 10 sat fee.
+The operator spends at most 1,000 sat per session, including the
+[live size-based fee](operator-fee-policy.md), with no separate fee ceiling.
 No amount is deducted from the driver's calculated credit to pay that fee.
 
 Unlike driver collection, this server-side credit can proceed with the browser

@@ -9,7 +9,8 @@ from datetime import datetime
 
 from bsv import PrivateKey, PublicKey
 from .api import WalletError
-from .auto_credit import AutomaticCredits, MAX_TOTAL, FEE
+from .auto_credit import AutomaticCredits, MAX_TOTAL
+from .fees import MODE
 from .budget import approval_payload, message_hash
 from .const import DOMAIN
 from .session_review import account_snapshot, decimal, now
@@ -172,10 +173,15 @@ class OngoingCredits(AutomaticCredits):
         if self.verified_registration(registered) != route["recipient"]:
             raise WalletError("Frozen receiving registration changed")
 
-    async def funding(self, row, amount):
+    async def quote_fee(self, row, amount):
         if self.routes[row["standing_route_id"]].get("manual_recovery"):
-            return await self.api.credit_recovery.funding(row, amount)
-        return await super().funding(row, amount)
+            return await self.api.credit_recovery.quote_fee(row, amount)
+        return await super().quote_fee(row, amount)
+
+    async def funding(self, row, amount, fee):
+        if self.routes[row["standing_route_id"]].get("manual_recovery"):
+            return await self.api.credit_recovery.funding(row, amount, fee)
+        return await super().funding(row, amount, fee)
 
     async def account(self, row):
         self.guard(row)
@@ -268,7 +274,8 @@ class OngoingCredits(AutomaticCredits):
         return {"enabled": self.policy.get("enabled", False),
                 "effective": bool(self.policy.get("enabled") and self.api.auto_credits.policy.get("enabled")),
                 "enabled_at": self.policy.get("enabled_at"), "recipient": recipient,
-                "error": self.policy.get("error"), "max_total_sats": MAX_TOTAL, "fee_sats": FEE,
+                "error": self.policy.get("error"), "max_total_sats": MAX_TOTAL,
+                "fee_sats": None, "fee_mode": MODE,
                 "routing": "latest_verified_registration_at_session_open",
                 "sessions": [self.route_public(r) for r in list(self.routes.values())[-20:]]}
 

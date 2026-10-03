@@ -6,13 +6,14 @@ const ongoingOption=document.createElement("option");ongoingOption.value="ongoin
 const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
 const heldOption=document.createElement("option");heldOption.value="held";heldOption.textContent="Driver collection interrupted";$("#scenario").append(heldOption);
 const warningOption=document.createElement("option");warningOption.value="metering-warning";warningOption.textContent="Metering warning: settlement allowed";$("#scenario").append(warningOption);
+const feeOption=document.createElement("option");feeOption.value="fee-aware";feeOption.textContent="Fee-aware operator credit";$("#scenario").append(feeOption);
 for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"],
   ["waived","Waived charge: funds received separately"],["waived-held","Waived charge: held attempt closed"]]){
  const option=document.createElement("option");option.value=value;option.textContent=label;$("#scenario").append(option);
 }
 const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictional-proxy",wallet_entity:"sensor.wallet",proxy_entity:"sensor.proxy",rate_entity:"sensor.rate",balance_entity:"sensor.balance",operator_name:"Demonstration operator",operator_contact:"operator@example.test"};
 const session={session_id:"fictional-session",ocpp_transaction_id:"demo-8427-transaction",opened_at:new Date().toISOString(),ended_at:new Date().toISOString(),import_kwh:1.06,export_kwh:14.33,import_cost_aud:0.212,export_credit_aud:1.452,net_cost_aud:-1.24};
-const payment={session_id:session.session_id,state:"provider_confirmed",amount_sats:124,fee_sats:10,txid:"fictional-transaction-reference",recipient_address:"Fictional driver address",updated_at:new Date().toISOString()};
+const payment={session_id:session.session_id,transaction_id:session.ocpp_transaction_id,state:"provider_confirmed",amount_sats:124,fee_sats:10,txid:"fictional-transaction-reference",recipient_address:"Fictional driver address",updated_at:new Date().toISOString()};
 let budget=null,tab="overview",closedRecord=null;
 const closedAccount=()=>({session_id:session.session_id,ocpp_transaction_id:session.ocpp_transaction_id,
   currency:"AUD",ended_at:session.ended_at,import_kwh:1.94,export_kwh:0,
@@ -99,6 +100,12 @@ function state(){
    start_time:new Date(Date.now()-60000).toISOString(),end_time:new Date(Date.now()+240000).toISOString()}});
  hass.states["sensor.buy"]=price(0.1234);hass.states["sensor.sell"]=price(0.0826);
  hass.states["sensor.proxy"].attributes.source_entities={import_price:"sensor.buy",export_price:"sensor.sell"};
+ if(s==="fee-aware"){
+   hass.states["sensor.wallet"].attributes.automatic_credit={
+     enabled:true,max_total_sats:1000,fee_sats:null,fee_mode:"provider_quote_per_transaction",
+     payments:[{...payment,fee_sats:23,fee_quote:{rate_sat_per_kb:"100",
+       estimated_signed_bytes:227,observed_at:new Date().toISOString()}}]};
+ }
  if(s==="metering-warning"){
    hass.states["sensor.proxy"].attributes.latest_session.quality_flags=[
      "export:energy_without_matching_state","interval_energy_allocation_estimated"];
@@ -155,11 +162,11 @@ function render(){
        message:"A network request failed; the response or wallet outcome may be unknown."}}];
  }
  $("#content").replaceChildren();$("#notice").textContent="";
- const labels={overview:["Charging & settlement","Live prices, session energy and average prices, next action and operator funds."],drivers:["Set up a driver","Open next-driver registration, or share a private invitation. Existing approvals keep their original terms."],payments:["Driver collections","Money received from drivers. Review each session and its actual collection status."],"operator-credits":["Operator credits","Money paid to drivers. Follow each credit through funding and confirmation."],wallet:["Operator wallet","Confirmed funds and pending change are different."],testing:["Settings & diagnostics","Keep fictional tests separate from real mainnet settlements."]};
+ const labels={overview:["Charging & settlement","Live prices, session energy and average prices, next action and operator funds."],drivers:["Set up a driver","Open next-driver registration, or share a private invitation. Existing approvals keep their original terms."],payments:["Owner credits","Money received from drivers. Review each session and its actual collection status."],"operator-credits":["Driver credits","Money paid to drivers. Follow each credit through funding and confirmation."],wallet:["Operator wallet","Confirmed funds and pending change are different."],testing:["Settings & diagnostics","Keep fictional tests separate from real mainnet settlements."]};
  $("#title").textContent=labels[tab][0];$("#intro").textContent=labels[tab][1];
  document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.tab===tab)));
  if(tab==="overview"){card("bsv-operator-card");card("bsv-operator-card",{mode:"wallet"});}
- if(tab==="drivers"){card("bsv-budget-card");panel('<h2>Receiving credits and approving charges</h2><p>Open public registration only when the intended driver is ready. Historical settlements retain their original approvals and recipients.</p><ol><li>Open registration or share a private invitation.</li><li>Ask the driver to authorise the budget and register their wallet in BSV Browser.</li><li>Check the signed scope, expiry and remaining spending limit.</li><li>Check the receiving wallet and policy in Operator credits.</li></ol><p>A fresh multi-session approval covers up to seven days and 1,000 sat total, including fees. Credits do not refill it. Driver collection needs the connected wallet; public registration never changes payment policies.</p><button id="simulate">Simulate driver approval</button><p>This preview button is not part of the live dashboard.</p>');$("#simulate").onclick=()=>{if(!budget){$("#notice").textContent="Create a fictional invitation first.";return;}budget.state="spending_authorised_wallet_permission_required";budget.credit_destination={registered:true};if(budget.public_registration)budget.public_registration.available=false;const c=$("bsv-budget-card");c.budget=structuredClone(budget);c.paint();$("#notice").textContent="Fictional driver approved. Select Approval needed to demonstrate an open session.";};}
+ if(tab==="drivers"){card("bsv-budget-card");panel('<h2>Receiving credits and approving charges</h2><p>Open public registration only when the intended driver is ready. Historical settlements retain their original approvals and recipients.</p><ol><li>Open registration or share a private invitation.</li><li>Ask the driver to authorise the budget and register their wallet in BSV Browser.</li><li>Check the signed scope, expiry and remaining spending limit.</li><li>Check the receiving wallet and policy in Driver credits.</li></ol><p>A fresh multi-session approval covers up to seven days and 1,000 sat total, including fees. Credits do not refill it. Driver collection needs the connected wallet; public registration never changes payment policies.</p><button id="simulate">Simulate driver approval</button><p>This preview button is not part of the live dashboard.</p>');$("#simulate").onclick=()=>{if(!budget){$("#notice").textContent="Create a fictional invitation first.";return;}budget.state="spending_authorised_wallet_permission_required";budget.credit_destination={registered:true};if(budget.public_registration)budget.public_registration.available=false;const c=$("bsv-budget-card");c.budget=structuredClone(budget);c.paint();$("#notice").textContent="Fictional driver approved. Select Approval needed to demonstrate an open session.";};}
  if(tab==="payments"||tab==="operator-credits"){
    const c=card("bsv-session-review-card",{direction:tab==="payments"?"driver_to_operator":"operator_to_driver"});
    c.style.gridColumn="1 / -1";

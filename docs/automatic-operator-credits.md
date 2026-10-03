@@ -6,9 +6,10 @@ the policy. The feature is disabled by default in a new installation.
 
 ## Payment policy
 
-- **Total operator spend:** at most 1,000 sat per session, including a fixed
-  10 sat network fee. The driver receives the full calculated credit, at most
-  990 sat. An oversized credit is blocked, not reduced or split into payments.
+- **Total operator spend:** at most 1,000 sat per session, including the
+  [provider-quoted size-based fee](operator-fee-policy.md). There is no separate
+  fee ceiling. The driver receives the full calculated credit; a credit plus fee
+  above the total limit is blocked, not reduced or split into payments.
 - **Session account:** closed, fully priced, without blocking quality flags.
   The existing interval calculation combines charging cost and export revenue,
   including negative rates. The invitation's fixed sat/AUD rate applies.

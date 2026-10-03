@@ -198,6 +198,9 @@ class WoCClient:
             raise WalletError("Chain transaction ID mismatch")
         return result
 
+    async def fee_policy(self):
+        return await self.request("GET", "/feerecommendation")
+
     async def broadcast(self, raw):
         # The only network write in this module. Called after durable approval.
         return await self.request("POST", "/tx/raw", {"txhex": raw}, raw=True)
@@ -409,6 +412,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         if (type(amount) is not int or not 1 <= amount <= MAX_PAYMENT_SATS
                 or type(fee) is not int or not 1 <= fee <= MAX_FEE_SATS):
             raise WalletError("Payment or fee outside demonstration limits")
+        from .fees import quote, validate
+        fee_quote = await quote(self.chain)
+        validate(fee_quote, fee)
         rows = await self.chain.unspent(self.identity["address"])
         # Never reuse a source we have signed, even if the indexer is stale.
         used = {(p["source_txid"], p["source_index"]) for p in self.saved["payments"].values() if p.get("txid")}
@@ -426,6 +432,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             driver["driver_receive_address"], amount, fee, False)
         if checked["source_txid"] != source["tx_hash"] or checked["source_value"] != source["value"]:
             raise WalletError("Funding evidence does not match the raw transaction")
+        validate(fee_quote, fee)
         draft_id = str(uuid4())
         payment = {
             "draft_id": draft_id, "reference": reference, "state": "prepared",
@@ -435,7 +442,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             "source_value": source["value"], "source_hex": raw,
             "change_sats": checked["change_sats"], "expires_at": (utcnow() + timedelta(minutes=10)).isoformat(),
             "txid": None, "signed_raw": None,
-            "session_review_id": data.get("session_review_id"),
+            "session_review_id": data.get("session_review_id"), "fee_quote": fee_quote,
         }
         self.saved["payments"][draft_id] = payment
         self.saved["active_payment"] = draft_id
@@ -473,9 +480,14 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             if (not review or review["state"] != "credit_review_approved"
                     or utcnow() >= datetime.fromisoformat(review["expires_at"])):
                 raise WalletError("Session account approval expired before signing")
+        from .fees import quote, validate
+        fee_quote = await quote(self.chain)
+        validate(fee_quote, p["fee_sats"])
         signed = await self.hass.async_add_executor_job(
             build_transaction, self.identity["secret_hex"], p["source_hex"], p["source_index"],
             p["recipient_address"], p["amount_sats"], p["fee_sats"], True)
+        validate(fee_quote, p["fee_sats"], len(signed["raw"]) // 2)
+        p["fee_quote"] = fee_quote
         p.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                  approved_at=utcnow().isoformat(), approving_user_id=approving_user_id)
         self.invalidate_balance("refresh_required_after_submission")

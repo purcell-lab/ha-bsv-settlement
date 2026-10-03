@@ -12,7 +12,7 @@ with `config_entry_id` and the historical `credit_id`. The service:
 - Verifies the original signed receiving registration and immutable route.
 - Checks the closed account, conversion rate, quality rules and exclusive session ownership.
 - Builds an unsigned transaction using one confirmed operator output.
-- Freezes the original recipient, credit, fixed 10 sat fee, selected input, change,
+- Freezes the original recipient, credit, provider-quoted fee, selected input, change,
   energy account and a ten-minute review hash.
 - Holds the route at `credit_review_required`. Restarting HA or enabling the
   prospective automatic-credit policy does not release this hold.
@@ -31,7 +31,7 @@ credit_id: "<original historical route>"
 expected_review_hash: "<hash from preparation>"
 recipient_address: "<original BRC-29 receiving address>"
 amount_sats: 119
-fee_sats: 10
+fee_sats: 23  # Example only: repeat the actual fee from the prepared review.
 confirm_mainnet_payment: true
 ```
 
@@ -55,8 +55,8 @@ An uncertain transaction cannot supply a confirmed receipt or be replaced.
 
 Prospective ongoing payments remain a separate administrator-authorised policy.
 They select the latest verified receiving registration at session opening, use
-the configured fixed conversion rate, and retain the 1,000 sat total cap and
-10 sat fee. Enabling the policy without `initial_session_id` does not sweep
+the configured fixed conversion rate, and retain the 1,000 sat total cap including
+the live size-based fee. Enabling the policy without `initial_session_id` does not sweep
 historical sessions. Existing routes from an earlier policy activation do not
 inherit the new authority.
 
@@ -70,3 +70,7 @@ conflicting settlements cannot be replaced by this action.
 
 This remains a sensor-proxy proof of concept, not certified energy billing.
 Provider confirmations are not independent proof of finality.
+
+The fee is frozen for review, not silently raised on approval. If the live quote
+increases beyond the reviewed fee, prepare a new review after expiry and obtain
+fresh exact approval. Signed transactions are never repriced or rebroadcast.
