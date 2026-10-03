@@ -8,7 +8,11 @@ import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
 import {chainRecordUrl} from "../ui.js";
 import {privateSessionUrl} from "./private-link.js";
-import {drawApprovalQR} from "../approval-qr.js";
+function drawApprovalQR(holder,url){
+  const qr=qrcode(0,"M");qr.addData(url,"Byte");qr.make();
+  holder.innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});
+  holder.querySelector("svg").setAttribute("role","img");
+}
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
