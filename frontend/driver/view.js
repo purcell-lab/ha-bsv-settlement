@@ -1,3 +1,24 @@
+// Existing-session approvals use terms.session_id and need no binding object.
+// Only a genuinely unbound future reservation can yield the primary view.
+export function showOngoingOverview({accepted,ongoingCount,sessionMode,binding,state}){
+  return !!accepted && ongoingCount>0 && sessionMode==="next_session_reservation" &&
+    !binding?.session_id && state==="waiting_for_operator_binding";
+}
+
+export function ongoingCreditMessage(state,imported=false){
+  if(imported)return "Receipt accepted by wallet";
+  return ({
+    waiting_for_session_end:"Session in progress. Any operator credit will be checked when the session ends.",
+    no_operator_credit:"No operator credit is due for this session.",
+    credit_queued:"Operator credit queued for funding and account checks.",
+    credit_blocked:"Operator credit needs attention. Contact the operator.",
+    submitted:"Operator credit submitted. Waiting for provider evidence.",
+    provider_unconfirmed:"Operator credit seen by the chain provider, awaiting confirmation.",
+    provider_confirmed:"Operator credit confirmed by the chain provider.",
+    broadcast_unknown:"Operator credit submission is uncertain. Tracking the existing payment.",
+  })[state] || "Operator credit status needs review.";
+}
+
 export function driverView({accepted,registered,connected,state,credit,imported,hasInvitation,creditEnabled=true}){
   if(!hasInvitation)return {title:"Charge. Export. Settle.",subtitle:"Open your operator's private link inside BSV Browser.",stage:"start"};
   if(!accepted)return {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};

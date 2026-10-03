@@ -2,7 +2,7 @@ import { WalletClient } from "@bsv/sdk";
 import { parseInvitation, signConsent } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importCredit } from "./credit.js";
-import { driverView } from "./view.js";
+import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js";
 import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
@@ -86,7 +86,7 @@ function paintOngoing(){
   for(const row of ongoingRows.slice().reverse()){
     const box=document.createElement("div");box.className="notice small";
     const p=document.createElement("p");p.className="strong";
-    p.textContent=`${row.amount_sats?row.amount_sats+" sat credit · ":""}${importedCredits.has(row.txid)?"Receipt accepted by wallet":(collectionMessages[row.state]||row.state.replaceAll("_"," "))}`;
+    p.textContent=`${row.amount_sats?row.amount_sats+" sat credit · ":""}${ongoingCreditMessage(row.state,importedCredits.has(row.txid))}`;
     const note=document.createElement("p");note.textContent=`Session ${row.transaction_id.slice(0,8)}${row.amount_sats?" · "+row.fee_sats+" sat operator fee":""}. ${row.error||""}`;
     const details=document.createElement("details"),summary=document.createElement("summary"),refs=document.createElement("p");
     summary.textContent="Full session and transaction references";refs.className="mono";
@@ -161,7 +161,8 @@ function controls() {
     (!creditDirection && collectionState==="wallet_attempt_reserved");
   $("retry-collection").hidden=!pendingReport;
   $("retry").hidden=accepted||!receipt;
-  if(ongoingRows.length && (!binding || collectionState==="waiting_for_operator_binding")){
+  if(showOngoingOverview({accepted,ongoingCount:ongoingRows.length,
+    sessionMode:checked?.terms.session_mode,binding,state:collectionState})){
     const last=ongoingRows[ongoingRows.length-1], imported=importedCredits.has(last.txid);
     $("page-title").textContent=last.txid?(imported?"Credit accepted by your wallet":last.state==="provider_confirmed"?"Your credit is confirmed":"Credit awaiting confirmation"):
       last.state==="no_operator_credit"?"No operator credit due":ongoingEnabled?"Automatic driver credits":"Automatic credits paused";
