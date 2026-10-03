@@ -28,6 +28,8 @@ The endpoint requires exactly one loaded embedded-mainnet operator coordinator. 
 
 History is projected from stored records without ticking collection, refreshing metering, creating quotes or reconciling payments. It shows direction, amount in sat, fee, provider confirmation, wallet receipt acceptance, session references, energy in both directions, available average prices, and metering warnings. Missing historical values are shown as unavailable.
 
+Each session starts as one compact line: local date/time, payment direction and amount, and settlement status. Wider screens also show import/export energy. Tap or keyboard-activate a row to expand its complete details table. Multiple payments remain separate in the expanded table; the summary does not invent a net payment. A `!` flags a metering warning. Expanded rows stay open during refresh, pagination and receipt sync, but this UI state is cleared at sign-out or expiry.
+
 “Sync credits on this page” imports only already-confirmed operator payments belonging to the signed-in identity. Receipt retrieval can refresh provider evidence and cache an existing proof. Reporting acceptance requires the separate existing wallet-signed acknowledgement. Login alone cannot mark a receipt accepted. No new payment is created or broadcast.
 
 Sync is explicit in this first portal revision. Load more pages to sync older credits. A page reload may restore a valid server login, but the wallet must be available again for receipt import. Chain confirmation and wallet-reported receipt acceptance remain distinct.

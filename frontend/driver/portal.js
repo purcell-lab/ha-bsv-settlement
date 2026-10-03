@@ -1,6 +1,6 @@
 import {WalletClient} from "@bsv/sdk";
 import {BrowserPairing} from "./pairing.js";
-import {signPortalLogin,averageNet,averageRate,transactionStatus} from "./portal-model.js";
+import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary} from "./portal-model.js";
 import {parseInvitation} from "./model.js";
 import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
@@ -26,6 +26,7 @@ document.querySelector("main").innerHTML=`
 <div class="actions"><button id="portal-refresh" class="secondary">Refresh history</button><button id="portal-sync">Sync credits on this page</button></div>
 <p class="small">History does not enable charging payments. Credit sync imports existing confirmed payments and records wallet acceptance; it never sends another payment.</p></section>
 <section id="portal-history" hidden><div class="section-head"><h2>Sessions and transactions</h2><span id="portal-count" class="badge"></span></div>
+<p class="small">Tap a session for details. ! indicates a metering warning.</p>
 <p id="portal-empty" hidden>No sessions are linked to this wallet yet. New charging authority must be registered separately by the operator.</p>
 <div id="portal-sessions"></div><button id="portal-more" class="secondary wide" hidden>Load more sessions</button>
 <p class="small">Only retained charging records with verified wallet ownership are shown. Unattributed legacy payments and unrelated wallet activity are excluded. Average net $/kWh excludes network fees. Chain confirmation is provider-reported; wallet acceptance is a separate signed report.</p></section>
@@ -37,6 +38,7 @@ const $=id=>document.getElementById(id),message=text=>{$("portal-status").textCo
 const framed=window.top!==window;
 let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
 const imports=new Map();
+const expandedSessions=new Set();
 function controls(){
   for(const id of ["portal-login","portal-pair","portal-refresh","portal-sync","portal-logout","portal-more","portal-open"])
     $(id).disabled=busy||framed;
@@ -53,6 +55,7 @@ async function api(action,extra={}){
 function clearPrivate(){
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
+  expandedSessions.clear();
   $("portal-sessions").replaceChildren();$("portal-identity").textContent="";
   $("portal-account").hidden=true;$("portal-history").hidden=true;$("portal-signin").hidden=false;
 }
@@ -65,9 +68,32 @@ function render(){
   $("portal-expiry").textContent=`Private access expires at ${new Date(expires).toLocaleTimeString()}. Signing out or restarting the operator service ends access.`;
   const list=$("portal-sessions");list.replaceChildren();
   for(const s of sessions){
-    const box=node("article","", "portal-session"),heading=node("h3",s.ended_at?"Completed session":"Recorded session");
-    box.append(heading,node("p",`${s.opened_at?new Date(s.opened_at).toLocaleString():"Date unavailable"} · ${s.transaction_id||s.session_id}`,"small mono"));
-    const grid=node("dl","","portal-energy");
+    const box=node("details","","portal-session"),summary=node("summary","","portal-session-summary");
+    box.open=expandedSessions.has(s.session_key);
+    box.addEventListener("toggle",()=>{if(box.open)expandedSessions.add(s.session_key);else expandedSessions.delete(s.session_key);});
+    const overview=sessionSummary(s),date=new Date(s.opened_at||s.ended_at||"");
+    const shortDate=Number.isFinite(date.getTime())?date.toLocaleDateString("en-AU",{day:"2-digit",month:"2-digit"})+" "+
+      date.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",hour12:false}):"No date";
+    const arrow=node("span","›","portal-chevron");arrow.setAttribute("aria-hidden","true");
+    summary.append(arrow,node("span",shortDate,"portal-row-date"),
+      node("span",overview.payment,"portal-row-payment"),
+      node("span",`${number(s.import_kwh)} in / ${number(s.export_kwh)} out kWh`,"portal-row-energy"),
+      node("span",overview.status+(overview.warning?" !":""),"portal-row-status"));
+    summary.setAttribute("aria-label",`${shortDate}, ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}. Session ${s.transaction_id||s.session_id}. Expand details.`);
+    summary.title=`${s.transaction_id||s.session_id}: ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}`;
+    box.append(summary);
+    const table=node("table","","portal-detail-table"),caption=node("caption","Session details");
+    table.append(caption);
+    const body=document.createElement("tbody");table.append(body);
+    const addRow=(label,value,cls="")=>{
+      const tr=node("tr","",cls),th=node("th",label);th.scope="row";
+      const td=document.createElement("td");
+      if(value instanceof Node)td.append(value);else td.textContent=value;
+      tr.append(th,td);body.append(tr);
+    };
+    addRow("Opened",s.opened_at?new Date(s.opened_at).toLocaleString():"Unavailable");
+    addRow("Ended",s.ended_at?new Date(s.ended_at).toLocaleString():"Not recorded");
+    addRow("Transaction ID",s.transaction_id||"Unavailable","portal-reference");
     const buy=averageRate(s.import_cost_aud,s.import_kwh),sell=averageRate(s.export_credit_aud,s.export_kwh);
     for(const [label,value] of [
       ["Energy Imported to EV",number(s.import_kwh," kWh")],["Energy Imported from EV",number(s.export_kwh," kWh")],
@@ -75,23 +101,21 @@ function render(){
       ["Average sell price",sell===null?"Unavailable":`${sell.toFixed(4)} $/kWh`],
       ["Net energy account",number(s.net_amount_aud," AUD")],
       ["Average net price",averageNet(s)===null?"Unavailable":`${averageNet(s).toFixed(4)} $/kWh`]])
-      grid.append(node("dt",label),node("dd",value));
-    box.append(grid);
-    if(s.quality_flags?.length)box.append(node("p","Metering warning: "+s.quality_flags.join(", "),"notice small"));
-    if(s.closure)box.append(node("p","Account: "+s.closure.state.replaceAll("_"," "),"notice small"));
-    if(!s.transactions.length)box.append(node("p","No recorded payment. Sign-in does not collect this session.","small"));
+      addRow(label,value);
+    if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
+    if(s.closure)addRow("Account",s.closure.state.replaceAll("_"," "));
+    if(!s.transactions.length)addRow("Payment","No recorded payment. Sign-in does not collect this session.");
     for(const t of s.transactions){
-      const payment=node("div","","portal-payment");
-      payment.append(node("p",`${t.direction==="operator_to_driver"?"Credit to driver":"Payment to operator"}: ${Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded"}`,"strong"),
-        node("p",transactionStatus(t),"small"),
-        node("p",`Network fee: ${Number.isSafeInteger(t.fee_sats)?t.fee_sats+" sat":"Not recorded"}`,"small"));
+      addRow(t.direction==="operator_to_driver"?"Credit to driver":"Payment to operator",
+        Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded","portal-payment-heading");
+      addRow("Settlement status",transactionStatus(t));
+      addRow("Network fee",Number.isSafeInteger(t.fee_sats)?t.fee_sats+" sat":"Not recorded");
       const url=chainRecordUrl(t.txid);
-      if(url){const a=node("a","View chain-provider record");a.href=url;a.target="_blank";a.rel="noopener noreferrer";payment.append(a);}
-      box.append(payment);
+      if(url){const a=node("a","View chain-provider record");a.href=url;a.target="_blank";a.rel="noopener noreferrer";addRow("Transaction",a);}
     }
-    const detail=document.createElement("details");detail.append(node("summary","Session references and approval history"),
-      node("p",s.session_id,"mono"),node("p",s.agreements.map(a=>`${a.state.replaceAll("_"," ")} · expires ${new Date(a.expires_at).toLocaleString()}`).join("; ")||"Original operator-credit routing","small"));
-    box.append(detail);list.append(box);
+    addRow("Session ID",s.session_id,"portal-reference");
+    addRow("Approval history",s.agreements.map(a=>`${a.state.replaceAll("_"," ")} · expires ${new Date(a.expires_at).toLocaleString()}`).join("; ")||"Original operator-credit routing");
+    box.append(table);list.append(box);
   }
   controls();
 }

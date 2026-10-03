@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {PrivateKey,ProtoWallet} from "@bsv/sdk";
 import {canonical} from "./model.js";
-import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus} from "./portal-model.js";
+import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary} from "./portal-model.js";
 const origin="https://charging.example.com";
 function challenge(patch={}){
   const payload={action:"sign_in_driver_portal",version:1,origin,scope:loginScope,
@@ -38,4 +38,23 @@ test("provider confirmation and wallet acceptance remain separate",()=>{
   assert.match(transactionStatus(row),/sync needed/);
   assert.match(transactionStatus({...row,wallet_receipt_status:"wallet_reported_accepted"}),/acceptance recorded/);
   assert.match(transactionStatus({...row,state:"provider_unconfirmed"}),/Awaiting block/);
+});
+test("compact session rows distinguish payment direction and receipt acceptance",()=>{
+  const s={ended_at:"2026-10-04",transactions:[{direction:"operator_to_driver",amount_sats:119,state:"provider_confirmed"}]};
+  assert.deepEqual(sessionSummary(s),{payment:"Credit 119 sat",status:"Receipt due",warning:false});
+  Object.assign(s.transactions[0],{wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-04T00:00:00Z"});
+  assert.equal(sessionSummary(s).status,"Synced");
+  s.transactions[0].direction="driver_to_operator";
+  assert.equal(sessionSummary(s).payment,"Pay 119 sat");
+  assert.equal(sessionSummary(s).status,"Confirmed");
+  s.transactions[0].state="provider_unconfirmed";
+  assert.equal(sessionSummary(s).status,"Confirming");
+  s.quality_flags=["provisional"];assert.equal(sessionSummary(s).warning,true);
+});
+test("compact rows never invent totals, payments or settlement success",()=>{
+  assert.equal(sessionSummary({transactions:[]}).payment,"No payment");
+  assert.equal(sessionSummary({transactions:[],closure:{state:"charge_waived"}}).status,"Waived");
+  assert.equal(sessionSummary({transactions:[{},{}]}).payment,"2 payments");
+  assert.equal(sessionSummary({transactions:[{direction:"driver_to_operator"}]}).payment,"Pay amount unknown");
+  assert.equal(sessionSummary({transactions:[{state:"broadcast_unknown"}]}).status,"Review");
 });
