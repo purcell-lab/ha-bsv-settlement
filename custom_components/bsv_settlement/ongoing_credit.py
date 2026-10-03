@@ -157,6 +157,9 @@ class OngoingCredits(AutomaticCredits):
         route = self.routes.get(row["standing_route_id"])
         if not route or row != self.wrapper(route):
             raise WalletError("Ongoing credit route changed")
+        if route.get("manual_recovery"):
+            self.api.credit_recovery.guard(row)
+            return
         if (not self.policy.get("enabled") or not self.api.auto_credits.policy.get("enabled") or
                 self.api.entry.data.get("enable_broadcast") is not True):
             raise WalletError("Ongoing operator credits are paused")
@@ -168,6 +171,11 @@ class OngoingCredits(AutomaticCredits):
             verify_parent(self.api,registered)
         if self.verified_registration(registered) != route["recipient"]:
             raise WalletError("Frozen receiving registration changed")
+
+    async def funding(self, row, amount):
+        if self.routes[row["standing_route_id"]].get("manual_recovery"):
+            return await self.api.credit_recovery.funding(row, amount)
+        return await super().funding(row, amount)
 
     async def account(self, row):
         self.guard(row)
@@ -211,7 +219,8 @@ class OngoingCredits(AutomaticCredits):
                 route["state"] = item["state"]
                 await self.save()
                 continue
-            if not self.policy.get("enabled") or route["state"] == "no_operator_credit":
+            if (route.get("manual_recovery") or not self.policy.get("enabled")
+                    or route["state"] == "no_operator_credit"):
                 continue
             try:
                 record = await self.api.collections.source(row)
@@ -248,7 +257,8 @@ class OngoingCredits(AutomaticCredits):
                 "satoshis_per_aud": route["satoshis_per_aud"],
                 "assigned_at": route["assigned_at"], "error": route.get("error"),
                 **(self.public(item) if item else {}),
-                "error": route.get("error") or (item or {}).get("error")}
+                "error": route.get("error") or (item or {}).get("error"),
+                "recovery": self.api.credit_recovery.public(route) if route.get("manual_recovery") else None}
 
     def summary(self):
         try:
