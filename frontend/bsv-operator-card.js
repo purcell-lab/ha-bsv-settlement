@@ -1,5 +1,6 @@
 import {esc,num,stamp,short,styles,sessionStatus,energyMetrics,currentPrice,provisionalSats} from "./ui.js";
 import {awaitingApproval,approvalUrl,drawApprovalQR,pendingForSession} from "./approval-qr.js";
+import {warningMessage} from "./quality.js";
 class BSVOperatorCard extends HTMLElement{
   setConfig(c){this.config=c;if(!this.shadowRoot)this.attachShadow({mode:"open"});this.render();}
   set hass(h){this._hass=h;this.render();}
@@ -38,6 +39,7 @@ class BSVOperatorCard extends HTMLElement{
       <p class="note" style="margin:12px 0 20px">Current buy and sell rates in AUD. These are not the session-average prices or a fixed quote.</p>
       ${unavailable?`<p class="notice">Session data is unavailable. Do not infer a completed payment from an old reading.</p>`:`
       <div class="notice"><strong>${esc(summary.label)}</strong>${esc(summary.detail)}</div>
+      ${warningMessage(s?.quality_flags)?`<p class="notice" style="margin-top:12px" role="note"><strong>Metering warning · settlement not blocked by this flag</strong>${esc(warningMessage(s.quality_flags))} Consent, valid amounts, complete pricing and payment safety checks still apply.</p>`:""}
       <div class="actions">${link(summary.target==="payments"?settlementPath:summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${link("wallet","View funds")}</div>
       <section id="approval-qr" class="section" hidden aria-label="Driver approval"></section>
       ${s?`<div class="section"><div class="row"><div><p class="note">${Number(s.net_cost_aud)<0?"Provisional credit to driver":"Provisional driver charge"}</p><p class="amount">${num(estimate.sats)} sat</p><p class="note">AUD ${num(s.net_cost_aud===null?null:Math.abs(Number(s.net_cost_aud)),2)} · ${estimate.rate===null?"Conversion unavailable":`${num(estimate.rate,2)} sat/AUD (${estimate.fixed?"session rate":"current indicative rate"})`}</p><p class="note">Estimate only; network fees excluded. Actual payment and confirmation appear in settlement.</p></div><span class="badge ${summary.tone}">${esc(summary.label)}</span></div>

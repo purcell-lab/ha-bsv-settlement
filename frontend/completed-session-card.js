@@ -1,10 +1,8 @@
 import {styles,esc,stamp,short} from "./ui.js";
 import {approvalUrl,drawApprovalQR} from "./approval-qr.js";
 import {validateInvitationLimits} from "./invitation-form.js";
-const warningText=f=>({
-  "import:energy_without_matching_state":"Charging energy was recorded while the charger state did not indicate charging.",
-  "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging."
-})[f]||f;
+import {meteringWarnings} from "./quality.js";
+const warningText=f=>meteringWarnings[f]||f;
 
 class CompletedSessionCard extends HTMLElement{
   constructor(){super();this.attachShadow({mode:"open"});this.plan=null;this.busy=false;}
@@ -114,7 +112,8 @@ class CompletedSessionCard extends HTMLElement{
           <p>${esc(r.account.import_kwh)} kWh charged · ${esc(r.account.export_kwh)} kWh exported · AUD ${esc(r.account.net_amount_aud)}</p>
           <code>${esc(r.account.ocpp_transaction_id)}</code>
           <p>${r.closed?esc(r.reason):`${esc(r.amount_sats)} sat energy charge at ${esc(r.satoshis_per_aud)} sat/AUD. Network fee excluded.`}</p>
-          ${!r.closed&&r.accepted_flags.length?`<p>Data review required: ${esc(r.accepted_flags.map(warningText).join(" "))}</p>`:""}</div>`;
+          ${!r.closed&&r.accepted_flags.length?`<p>Data review required: ${esc(r.accepted_flags.map(warningText).join(" "))}</p>`:""}
+          ${r.warning_flags?.length?`<p>Metering warning (non-blocking): ${esc(r.warning_flags.map(warningText).join(" "))}</p>`:""}</div>`;
         this.$("actions").hidden=r.closed;this.$("quality-label").hidden=!r.accepted_flags?.length;
         this.$("replace-label").hidden=!r.pending_budget_id;
         for(const id of ["account-reviewed","quality-reviewed","replace"])this.$(id).checked=false;

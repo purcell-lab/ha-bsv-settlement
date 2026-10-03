@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {sessionStatus,num,esc,provisionalSats} from "./ui.js";
+import {qualityFlags,warningMessage} from "./quality.js";
 test("provisional sat amounts use exact half-up rounding and fixed session rates",()=>{
  assert.equal(provisionalSats({net_cost_aud:"-0.38"},{},{state:"100"}).sats,38);
  assert.equal(provisionalSats({net_cost_aud:"0.29"},{},{state:"50"}).sats,15);
@@ -34,13 +35,26 @@ test("waiver is not paid and a changed closed amount requires review",()=>{
  assert.equal(sessionStatus(ended,h).label,"Waived");
  assert.equal(sessionStatus({...ended,net_cost_aud:0.06},h).label,"Closed account changed");
 });
-test("closed timing warning needs review unless a reviewed consent exists",()=>{
+test("closed timing warning does not veto settlement or existing consent",()=>{
  const ended={...s,net_cost_aud:0.05,ended_at:"2026-10-02T00:00:00Z",
    quality_flags:["import:energy_without_matching_state"]};
- assert.equal(sessionStatus(ended,{}).label,"Data review required");
+ assert.notEqual(sessionStatus(ended,{}).label,"Data review required");
  const h={driver_approvals:[{session_id:s.session_id,state:"awaiting_driver_consent",reviewed_closed_account:true,
    expires_at:new Date(Date.now()+60000).toISOString()}]};
  assert.equal(sessionStatus(ended,h).label,"Awaiting consent");
+});
+test("known quality flags are disclosed, while unknown or incomplete metering still blocks",()=>{
+ const flags=["export:energy_without_matching_state","interval_energy_allocation_estimated","meter_reset"];
+ assert.deepEqual(qualityFlags(flags).blockers,["meter_reset"]);
+ assert.match(warningMessage(flags),/Export energy/);
+ assert.match(warningMessage(flags),/allocation/);
+ assert.equal(sessionStatus({...s,ended_at:"2026-10-02T00:00:00Z",quality_flags:["meter_reset"]},{}).label,"Data review required");
+});
+test("state mismatch preserves automatic credit readiness but never invents approval",()=>{
+ const ended={...s,ended_at:"2026-10-02T00:00:00Z",quality_flags:["export:energy_without_matching_state"]};
+ const h={ongoing_credit:{effective:true,sessions:[{session_id:s.session_id,recipient_address:"fictional"}]}};
+ assert.equal(sessionStatus(ended,h).label,"Ongoing credit assigned");
+ assert.equal(sessionStatus(ended,{}).label,"Review needed");
 });
 test("previous session approval cannot imply readiness",()=>{
  assert.equal(sessionStatus(s,{driver_approvals:[{session_id:"old",approved:true}]}).label,"Driver approval needed");

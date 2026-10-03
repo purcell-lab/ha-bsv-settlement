@@ -52,7 +52,8 @@ class AutomaticCredits:
             "state", "budget_id", "session_id", "transaction_id", "recipient_address",
             "amount_sats", "fee_sats", "net_amount_aud", "txid", "confirmations",
             "created_at", "checked_at", "error", "wallet_imported_at",
-        ) if k in item}
+        ) if k in item} | {"quality_flags": copy.deepcopy(
+            (item.get("account") or {}).get("quality_flags", []))}
 
     def summary(self):
         return {
@@ -349,5 +350,5 @@ class AutomaticCredits:
             "sender_identity": self.api.identity["public_key"],
             "energy_account": ({k: copy.deepcopy(account[k]) for k in (
                 "session_id", "ocpp_transaction_id", "import_kwh", "export_kwh",
-                "net_amount_aud", "currency")} if account else None),
+                "net_amount_aud", "currency", "quality_flags")} if account else None),
         }

@@ -13,6 +13,9 @@ from .const import DOMAIN
 
 SIGNED_STATES = {"broadcast_unknown", "submitted", "provider_unconfirmed", "provider_confirmed"}
 BENIGN_FLAGS = {"interval_energy_allocation_estimated", "not_a_final_bill"}
+WARNING_FLAGS = BENIGN_FLAGS | {
+    "import:energy_without_matching_state", "export:energy_without_matching_state",
+}
 CAP = 100000
 
 
@@ -38,7 +41,9 @@ def decimal(value):
 def account_snapshot(record):
     if not record.get("ended_at") or record.get("status") != "ended_observed":
         raise WalletError("Only a closed session can enter payment review")
-    blockers = set(record.get("quality_flags", [])) - BENIGN_FLAGS
+    # State/meter timing mismatches are disclosed, not payment vetoes. Unknown
+    # flags still fail closed; never infer complete metering from a warning label.
+    blockers = set(record.get("quality_flags", [])) - WARNING_FLAGS
     if blockers:
         raise WalletError("Resolve session quality issues before review: " + ", ".join(sorted(blockers)))
     for field in ("unpriced_import_wh", "unpriced_export_wh",
@@ -49,6 +54,9 @@ def account_snapshot(record):
         raise WalletError("The final session amount is unavailable")
     if record.get("import_kwh") is None or record.get("export_kwh") is None:
         raise WalletError("Session energy is unavailable")
+    if any(not 0 <= decimal(record[field]) <= 1000000000
+           for field in ("import_kwh", "export_kwh")):
+        raise WalletError("Invalid session energy")
     amount = decimal(record["net_cost_aud_unrounded"]).quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
     if abs(amount) > 1000000:
         raise WalletError("Session account exceeds demonstration limits")

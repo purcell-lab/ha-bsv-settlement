@@ -5,6 +5,7 @@ const $=s=>document.querySelector(s);
 const ongoingOption=document.createElement("option");ongoingOption.value="ongoing";ongoingOption.textContent="Ongoing credits";$("#scenario").append(ongoingOption);
 const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
 const heldOption=document.createElement("option");heldOption.value="held";heldOption.textContent="Driver collection interrupted";$("#scenario").append(heldOption);
+const warningOption=document.createElement("option");warningOption.value="metering-warning";warningOption.textContent="Metering warning: settlement allowed";$("#scenario").append(warningOption);
 for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"],
   ["waived","Waived charge: funds received separately"],["waived-held","Waived charge: held attempt closed"]]){
  const option=document.createElement("option");option.value=value;option.textContent=label;$("#scenario").append(option);
@@ -94,6 +95,14 @@ function state(){
    start_time:new Date(Date.now()-60000).toISOString(),end_time:new Date(Date.now()+240000).toISOString()}});
  hass.states["sensor.buy"]=price(0.1234);hass.states["sensor.sell"]=price(0.0826);
  hass.states["sensor.proxy"].attributes.source_entities={import_price:"sensor.buy",export_price:"sensor.sell"};
+ if(s==="metering-warning"){
+   hass.states["sensor.proxy"].attributes.latest_session.quality_flags=[
+     "export:energy_without_matching_state","interval_energy_allocation_estimated"];
+   hass.states["sensor.wallet"].attributes.automatic_credit.payments=[];
+   hass.states["sensor.wallet"].attributes.ongoing_credit={enabled:true,effective:true,
+     sessions:[{session_id:session.session_id,transaction_id:session.ocpp_transaction_id,
+       recipient_address:"Fictional registered driver address",state:"waiting_for_session_end"}]};
+ }
  if(s==="debit"){
    hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:2.02,export_kwh:0.18,import_cost_aud:0.202,export_credit_aud:0.012,net_cost_aud:0.19};
    Object.assign(hass.states["sensor.wallet"].attributes,{
