@@ -235,6 +235,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.auto_credits = AutomaticCredits(self)
         from .ongoing_credit import OngoingCredits
         self.ongoing_credits = OngoingCredits(self)
+        from .credit_recovery import OperatorCreditRecovery
+        self.credit_recovery = OperatorCreditRecovery(self)
         from .session_closure import ClosedSessions
         self.closures = ClosedSessions(self)
 

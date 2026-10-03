@@ -1,3 +1,57 @@
+prepare_operator_credit_recovery:
+  name: Prepare original-recipient credit recovery
+  description: Administrator only. Freeze an unsigned historical credit using its original signed receiving registration. Hold it for separate approval even if automatic credits resume. No signature or broadcast; funding is checked but not reserved.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    credit_id:
+      required: true
+      selector:
+        text:
+    replace_expired_review_hash:
+      description: Optional exact hash to explicitly renew an expired unsigned review. A signed credit can never be replaced.
+      selector:
+        text:
+broadcast_operator_credit_recovery:
+  name: Approve original-recipient credit
+  description: REAL MAINNET FUNDS. Send only the exact reviewed historical credit. Original BRC-29 wallet receipt is retained. A signed or uncertain outcome can never be re-signed or rebroadcast by this action.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    credit_id:
+      required: true
+      selector:
+        text:
+    expected_review_hash:
+      required: true
+      selector:
+        text:
+    recipient_address:
+      required: true
+      selector:
+        text:
+    amount_sats:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 990
+          mode: box
+    fee_sats:
+      required: true
+      selector:
+        number:
+          min: 10
+          max: 10
+          mode: box
+    confirm_mainnet_payment:
+      required: true
+      selector:
+        boolean:
 configure_automatic_credit:
   name: Set automatic operator credit policy
   description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fixed 10 sat fee. Disable stops new signatures, not transactions already submitted.

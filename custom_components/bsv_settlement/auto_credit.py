@@ -160,6 +160,17 @@ class AutomaticCredits:
         return {(i["source_txid"], i["source_index"]) for i in
                 self.api.saved["automatic_credits"].values() if i.get("txid")}
 
+    async def funding(self, row, amount):
+        used = self.used() | {(p["source_txid"], p["source_index"])
+                              for p in self.api.saved["payments"].values() if p.get("txid")}
+        rows = await self.api.chain.unspent(self.api.identity["address"])
+        candidates = [r for r in rows if r["value"] >= amount + FEE + MIN_CHANGE_SATS
+                      and (r["tx_hash"], r["tx_pos"]) not in used]
+        if not candidates:
+            raise WalletError("No suitable confirmed operator funding output")
+        source = min(candidates, key=lambda r: r["value"])
+        return source, await self.api.chain.source(source["tx_hash"])
+
     async def process(self, row):
         item = self.get(row)
         if item and item.get("txid"):
@@ -191,15 +202,7 @@ class AutomaticCredits:
         manual = self.api.saved["payments"]
         if self.pending() or any(p["state"] in ("prepared", *PENDING) for p in manual.values()):
             raise WalletError("Another operator payment is unresolved; credit remains queued")
-        used = self.used() | {(p["source_txid"], p["source_index"])
-                              for p in manual.values() if p.get("txid")}
-        rows = await self.api.chain.unspent(self.api.identity["address"])
-        candidates = [r for r in rows if r["value"] >= amount + FEE + MIN_CHANGE_SATS
-                      and (r["tx_hash"], r["tx_pos"]) not in used]
-        if not candidates:
-            raise WalletError("No suitable confirmed operator funding output")
-        source = min(candidates, key=lambda r: r["value"])
-        raw = await self.api.chain.source(source["tx_hash"])
+        source, raw = await self.funding(row, amount)
         if digest(await self.account(row)) != item["source_hash"]:
             raise WalletError("Session account changed before signing")
         signed = await self.api.hass.async_add_executor_job(

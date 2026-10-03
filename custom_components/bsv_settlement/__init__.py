@@ -9,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.importlib import async_import_module
 
 from .api import WalletAPI
-from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES
+from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
@@ -44,6 +44,15 @@ async def async_setup(hass, config):
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
+        "prepare_operator_credit_recovery": {**common, vol.Required("credit_id"): str,
+            vol.Optional("replace_expired_review_hash"): str},
+        "broadcast_operator_credit_recovery": {
+            **common, vol.Required("credit_id"): str,
+            vol.Required("expected_review_hash"): str,
+            vol.Required("recipient_address"): str,
+            vol.Required("amount_sats"): vol.All(int, vol.Range(min=1, max=990)),
+            vol.Required("fee_sats"): vol.In([10]),
+            vol.Required("confirm_mainnet_payment"): vol.In([True])},
         "prepare_collection_recovery": {**common, vol.Required("budget_id"): str},
         "get_reviewed_collection_link": {
             **common, vol.Required("budget_id"): str,
@@ -178,7 +187,8 @@ async def async_setup(hass, config):
         if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
                             "configure_automatic_credit", "configure_ongoing_credit",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
-                            *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES):
+                            *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES,
+                            *CREDIT_RECOVERY_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
             user = (await hass.auth.async_get_user(call.context.user_id)
                     if call.context.user_id else None)
