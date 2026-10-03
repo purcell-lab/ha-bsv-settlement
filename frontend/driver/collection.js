@@ -1,5 +1,6 @@
 import { Transaction, P2PKH, PublicKey, Signature } from "@bsv/sdk";
 import { canonical, bytes, hash, hex, parseInvitation, spendingProtocol } from "./model.js";
+import { failureDiagnostic } from "./diagnostics.js";
 
 // Exact decimal arithmetic. Reject unsupported magnitudes instead of using float money.
 function decimalParts(value) {
@@ -73,22 +74,31 @@ export function inspectDraft(beef,q) {
   return {tx,draft,fee};
 }
 
-export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=>{}) {
+export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=>{},recoveryConfirmed=false) {
+  let stage="check_quote",token=null;
+  try {
   const q=await checkQuote(envelope,checked,binding);
+  stage="wallet_identity";
   const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
-  if(identity!==q.driver_identity || (await wallet.getNetwork()).network!=="mainnet")
+  if(identity!==q.driver_identity)throw Error("Connect the approved driver's wallet.");
+  stage="wallet_network";
+  if((await wallet.getNetwork()).network!=="mainnet")
     throw Error("Connect the approved driver's mainnet wallet.");
-  const token=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+  token=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
     .replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
   const payload=canonical({version:1,action:"claim_session_collection",budget_id:q.budget_id,
     quote_hash:envelope.hash,attempt_token_hash:await hash(token),driver_identity:identity});
+  stage="sign_claim";
   const proof=await wallet.createSignature({protocolID:spendingProtocol,keyID:q.budget_id,
     counterparty:"anyone",data:bytes(payload),description:"Collect the approved EV session payment"});
   parseInvitation(JSON.stringify(checked.invitation));
-  const claim=await api("claim_collection",{attempt_token:token,proof:{payload,signature:hex(proof.signature)}});
+  stage="claim_collection";
+  const claim=await api("claim_collection",{attempt_token:token,proof:{payload,signature:hex(proof.signature)},
+    confirm_recovered_attempt:recoveryConfirmed});
   if(claim.claimed!==true)throw Error("Collection attempt was not reserved. Do not retry payment.");
   notify("Preparing the session payment. Keep this page open.");
   // Never let the wallet sign or broadcast before the fee/recipient checks.
+  stage="create_draft";
   const created=await wallet.createAction({
     description:"EV charging session settlement",
     outputs:[{lockingScript:new P2PKH().lock(q.recipient_address).toHex(),
@@ -97,29 +107,44 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
     options:{signAndProcess:false,noSend:true,acceptDelayedBroadcast:false,
       returnTXIDOnly:false,randomizeOutputs:false}
   });
+  stage="inspect_draft";
   if(!created.signableTransaction || created.txid || created.tx)
     throw Error("Wallet did not return an unsigned draft. Operator reconciliation is required.");
   const {draft,fee}=inspectDraft(created.signableTransaction.tx,q);
+  stage="authorise_draft";
   const permit=await api("authorise_collection",{attempt_token:token,draft});
   if(permit.submit_once!==true || permit.draft_hash!==await hash(canonical(draft)) || permit.fee_sats!==fee)
     throw Error("The one-use signing permit does not match the wallet draft.");
   parseInvitation(JSON.stringify(checked.invitation));
+  stage="recheck_wallet";
   if((await wallet.getPublicKey({identityKey:true})).publicKey!==identity ||
       (await wallet.getNetwork()).network!=="mainnet")throw Error("Wallet identity or network changed.");
   notify("Wallet signing may require permission. No second payment attempt will be made.");
   // noSend ensures the server can recheck revocation and expiry after wallet prompts.
+  stage="sign_payment";
   const signed=await wallet.signAction({reference:created.signableTransaction.reference,spends:{},
     options:{noSend:true,acceptDelayedBroadcast:false,returnTXIDOnly:false}});
+  stage="inspect_signed";
   const result=inspectDraft(signed.tx,q);
   if(canonical(shape(result.tx))!==canonical(draft))throw Error("Signed transaction differs from the reviewed draft.");
   const raw=result.tx.toHex();
   if(raw.length>16000)throw Error("Signed transaction exceeds the endpoint limit.");
   const report={attempt_token:token,raw_tx:raw};
   try {
+    stage="submit_payment";
     notify("Submitting the approved payment once. Waiting for chain evidence.");
     return await api("report_collection",report);
   } catch(e) {
     e.pendingReport=report; // Memory only. Resending exact bytes cannot create a second payment.
+    throw e;
+  }
+  } catch(e) {
+    e.diagnostic=failureDiagnostic(stage,e);
+    if(token){
+      const report={attempt_token:token,diagnostic:e.diagnostic};
+      try{await api("report_collection_failure",report);}
+      catch{e.pendingDiagnostic=report;} // Retry only metadata when connectivity returns.
+    }
     throw e;
   }
 }

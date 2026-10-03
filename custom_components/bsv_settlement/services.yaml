@@ -432,6 +432,52 @@ configure_ongoing_credit:
     confirm_ongoing_mainnet_credits:
       selector:
         boolean:
+prepare_collection_recovery:
+  name: Review a held driver collection
+  description: Read-only review. Does not prove absence of a wallet payment or release the attempt.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {text: {}}
+    budget_id:
+      required: true
+      selector: {text: {}}
+recover_driver_collection:
+  name: Release a reviewed pre-signing collection
+  description: Administrator only. Requires external wallet and recipient-history review. Refuses any signing permit or transaction. Invalidates the old claim and requires a new explicit driver confirmation. Does not send payment.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {text: {}}
+    budget_id:
+      required: true
+      selector: {text: {}}
+    expected_quote_hash:
+      required: true
+      selector: {text: {}}
+    expected_claimed_at:
+      required: true
+      selector: {text: {}}
+    evidence_reference:
+      required: true
+      description: Nonsecret reference to the completed reconciliation. Do not paste wallet data, keys or private URLs.
+      selector: {text: {}}
+    confirm_driver_wallet_checked:
+      required: true
+      description: The driver wallet has no completed or signed payment for this account.
+      selector: {boolean: {}}
+    confirm_recipient_history_checked:
+      required: true
+      description: Confirmed and unconfirmed receiving-address history was checked and no payment belongs to this account.
+      selector: {boolean: {}}
+    confirm_unsigned_draft_cancelled_or_absent:
+      required: true
+      description: Any old unsigned wallet draft was cancelled, or the wallet confirms none exists.
+      selector: {boolean: {}}
+    confirm_old_driver_pages_closed:
+      required: true
+      description: All old driver pages are closed. A fresh page must explicitly confirm resuming.
+      selector: {boolean: {}}
 session_budget_status:
   name: Read session budget status
   description: Read a stored invitation and consent without making a wallet or chain request.

@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 import logging
 
 from .api import WalletError
-from .const import DOMAIN, SESSION_REVIEW_SERVICES, BUDGET_SERVICES
+from .const import DOMAIN, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES
 from .ledger import freeze, timestamp, validate_interval
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,6 +72,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
         try:
             async with self.lock:
                 session_id = data.get("session_id")
+                if action in COLLECTION_RECOVERY_SERVICES:
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    from .collection_recovery import execute
+                    result = await execute(self.api.collections, action, data, approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
                 if action == "configure_automatic_credit":
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")

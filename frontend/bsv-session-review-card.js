@@ -61,6 +61,8 @@ class BsvSessionReviewCard extends HTMLElement {
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
     const automatic = wallet?.attributes?.automatic_credit;
     const ongoing = wallet?.attributes?.ongoing_credit;
+    const collectionIssues=(wallet?.attributes?.session_payments||[]).filter(p=>
+      p.source==="driver" && !p.txid && (p.diagnostic || ["wallet_attempt_reserved","recovery_ready"].includes(p.state)));
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;
@@ -70,7 +72,7 @@ class BsvSessionReviewCard extends HTMLElement {
     const health=wallet?.attributes||{},paymentRows=settlementRows(health);
     const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message, automatic, ongoing,health.session_payments,observedSessions,presentations]);
+      this._busy, this._message, automatic, ongoing,health.session_payments,observedSessions,presentations,collectionIssues]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -103,6 +105,11 @@ class BsvSessionReviewCard extends HTMLElement {
       <ha-card>
         <div class="head"><div><p class="eyebrow">Settlement</p><h2>Payments & credits</h2></div><span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span></div>
         <p class="note">Follow each session from review to confirmation. A submitted transaction must be reconciled, never paid again.</p>
+        ${collectionIssues.map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
+          <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
+          <p>${esc(p.diagnostic?.message||"No signing permit or payment is implied by a reserved attempt. Inspect the wallet and recipient history before releasing it.")}</p>
+          <code>${esc(p.session_id)}</code>
+          <p class="note">${p.diagnostic?"Driver-reported diagnostic, not independent payment evidence. ":""}${p.state==="recovery_ready"?"The driver must select Review and resume collection.":"Use the guarded recovery review service. Never clear the ledger or create a replacement payment."}</p></div>`).join("")}
         ${ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
         <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>

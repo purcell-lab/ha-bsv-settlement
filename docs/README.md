@@ -9,6 +9,8 @@ an implemented control. The original no-budget mock documentation remains below.
 
 - **[Connect BSV Browser](browser-pairing.md):** encrypted mobile pairing,
   separate session spending approval and the wallet network-capability gate.
+- **[Driver collection recovery](collection-recovery.md):** persistent failure
+  stages and explicitly reviewed, pre-signing recovery without automatic retry.
 
 - **[Acceptance evidence](acceptance-evidence.md):** all ten roadmap outcomes,
   test references, evidence classes and remaining gates.

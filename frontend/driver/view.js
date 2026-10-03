@@ -9,6 +9,8 @@ export function driverView({accepted,registered,connected,state,credit,imported,
     subtitle:"We are tracking the existing transaction. Do not send another payment.",stage:"approved"};
   if(state==="provider_confirmed")return {title:"Session payment confirmed",subtitle:"Your payment is confirmed by the chain provider.",stage:"settled"};
   if(state==="no_payment_due")return {title:"No payment due",subtitle:"Your final session account is zero.",stage:"settled"};
+  if(state==="recovery_ready")return {title:"Review and resume collection",subtitle:"The operator reviewed the previous attempt. Check the same session amount before explicitly resuming. No automatic retry has occurred.",stage:"approved",reconnect:"Review and resume collection"};
+  if(state==="wallet_attempt_reserved")return {title:"Collection needs review",subtitle:"The existing attempt is held to prevent duplicate payment. Ask the operator to review it; do not start another payment.",stage:"approved"};
   if(state && /blocked|failed|expired|revoked|rejected/.test(state))return {title:"Settlement needs attention",subtitle:"No new payment should be sent. Contact the operator to review the saved account and transaction status.",stage:"approved"};
   if(creditEnabled&&!registered)return {title:"Finish connecting your wallet",subtitle:"Reconnect before session end to register where credits should be sent.",stage:"approved",reconnect:"Register receiving wallet"};
   if(state==="waiting_for_operator_binding")return {title:"Approval saved",subtitle:"The operator must match this approval to your charging session.",stage:"approved",reconnect:connected?null:"Reconnect wallet"};
