@@ -86,5 +86,6 @@ window.fetch=async(url,options)=>{
 };
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
+banner.style.cssText="max-width:1012px;width:calc(100% - 32px);margin:16px auto";
 document.querySelector("header").after(banner);
 await import("./portal.js");
