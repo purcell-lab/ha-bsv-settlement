@@ -7,6 +7,8 @@ import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
 import { describeFailure } from "./diagnostics.js";
 import {chainRecordUrl} from "../ui.js";
+import {privateSessionUrl} from "./private-link.js";
+import {drawApprovalQR} from "../approval-qr.js";
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -16,6 +18,11 @@ window.addEventListener("hashchange", () => location.reload());
 const capability = fragment.has("budget") && fragment.has("token")
   ? {budget_id:fragment.get("budget"),token:fragment.get("token")} : null;
 const framed = !!capability && window.top !== window;
+$("open-private-link").onclick=()=>{
+  const url=privateSessionUrl($("private-link-input").value.trim(),location.origin);
+  if(!url){$("private-link-feedback").textContent="Paste a complete private session link from this charging operator, including its #budget and token.";return;}
+  location.href=url;
+};
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
@@ -247,6 +254,13 @@ function show(invitation) {
   $("credit-status").hidden=!!t.closed_session_review;
   $("credit-policy").hidden=!!t.closed_session_review;
   $("terms").hidden=false; $("wallet-section").hidden=false;
+  const privateUrl=!framed&&capability?privateSessionUrl(location.href,location.origin):null;
+  $("private-link-section").hidden=!privateUrl;
+  $("private-link-qr").replaceChildren();
+  if(privateUrl){
+    drawApprovalQR($("private-link-qr"),privateUrl);
+    $("private-link-qr").querySelector("svg").setAttribute("aria-label","Private link to this driver session; not wallet pairing or spending approval");
+  }
   $("invitation").value=JSON.stringify(invitation,null,2);
   controls();
 }
@@ -417,6 +431,7 @@ function clear() {
   $("terms").hidden=true;$("wallet-section").hidden=true;$("result").hidden=true;
   $("receipt").value="";$("wallet-key").textContent="Not connected";
   $("collection-section").hidden=true;$("collection-amount").textContent="";$("collection-txid").textContent="";
+  $("private-link-section").hidden=true;$("private-link-qr").replaceChildren();
 }
 $("load").onclick=()=>{
   clear();

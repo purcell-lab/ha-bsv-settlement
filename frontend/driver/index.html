@@ -11,6 +11,10 @@
   <p id="connection-status" class="notice error" role="status" hidden></p>
   <section id="load-section">
     <h2>Start with your private link</h2><p>Ask the charging operator for a session link or scan their QR code. Open it inside BSV Browser with the wallet you want to use.</p>
+    <label for="private-link-input">Private session link</label>
+    <textarea id="private-link-input" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste the full private link, including #budget and token. Never enter wallet secrets."></textarea>
+    <button id="open-private-link">Open session and show QR</button>
+    <p id="private-link-feedback" class="small" role="status">The public page does not reveal any driver's private session.</p>
     <details><summary>Advanced: load a signed invitation</summary><label for="invitation">Operator-signed invitation</label><textarea id="invitation" rows="5" spellcheck="false" placeholder="Paste invitation JSON. Never enter a seed phrase or private key."></textarea><div class="actions"><button id="load">Load invitation</button><button id="reset" class="secondary">Clear page</button></div></details>
   </section>
   <div class="layout">
@@ -46,6 +50,12 @@
       </section>
     </div>
     <div class="action-column">
+      <section id="private-link-section" hidden>
+        <h2>Your private session link</h2>
+        <p class="small">Scan with your phone camera or a URL scanner, then open the link in BSV Browser. This opens this same session page; it does not approve spending.</p>
+        <div id="private-link-qr" class="session-link-qr"></div>
+        <p class="small">Keep this QR private. For BSV Browser's <strong>Connect to app</strong> scanner, use the separate pairing QR from <strong>Connect BSV Browser</strong> below.</p>
+      </section>
       <section id="pairing-section" hidden>
         <p class="eyebrow">Connect your phone wallet</p>
         <h2>Use BSV Browser</h2>
