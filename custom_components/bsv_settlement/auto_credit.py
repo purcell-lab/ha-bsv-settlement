@@ -236,15 +236,31 @@ class AutomaticCredits:
         try:
             details = await self.api.chain.details(item["txid"])
             raw = await self.api.chain.request("GET", f"/tx/{item['txid']}/hex", raw=True)
-            if details.get("txid") != item["txid"] or raw != item["signed_raw"]:
+            if (not isinstance(details, dict) or details.get("txid") != item["txid"]
+                    or raw != item["signed_raw"]):
                 raise WalletError("Provider credit evidence does not match the signed transaction")
             try:
-                matches = Transaction.from_hex(raw).txid() == item["txid"]
+                tx = Transaction.from_hex(raw)
+                matches = tx.txid() == item["txid"]
             except Exception:
                 matches = False
             if not matches:
                 raise WalletError("Provider credit transaction is invalid")
             confirmations = details.get("confirmations")
+            if "confirmations" not in details:
+                # WoC omits confirmation/block fields for an unmined transaction.
+                # Recognise only its complete shape, after exact signed-byte and
+                # transaction-ID verification. Missing metadata is not evidence
+                # of zero confirmations; explicit null/invalid counts stay errors.
+                if (any(k in details for k in ("blockhash", "blockheight", "blocktime"))
+                        or details.get("hash") != item["txid"]
+                        or type(details.get("version")) is not int or details["version"] != tx.version
+                        or type(details.get("locktime")) is not int or details["locktime"] != tx.locktime
+                        or type(details.get("size")) is not int or details["size"] != len(raw) // 2
+                        or not isinstance(details.get("vin"), list) or len(details["vin"]) != len(tx.inputs)
+                        or not isinstance(details.get("vout"), list) or len(details["vout"]) != len(tx.outputs)):
+                    raise WalletError("Invalid confirmation evidence")
+                confirmations = 0
             if type(confirmations) is not int or confirmations < 0:
                 raise WalletError("Invalid confirmation evidence")
         except WalletError:
