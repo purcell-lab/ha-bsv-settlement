@@ -44,6 +44,12 @@ async def async_setup(hass, config):
     common = {vol.Required("config_entry_id"): str}
     per_session = {**common, vol.Required("session_id"): vol.All(str, vol.Length(min=1, max=200))}
     schemas = {
+        "get_credit_receipt_link": {
+            **common, vol.Required("credit_id"): vol.All(str, vol.Length(min=1, max=300)),
+            vol.Required("expected_txid"): vol.Match(r"^[0-9a-f]{64}$"),
+            vol.Required("expected_recipient_address"): str,
+            vol.Required("confirm_private_link_disclosure"): vol.In([True]),
+        },
         "prepare_operator_credit_recovery": {**common, vol.Required("credit_id"): str,
             vol.Optional("parent_credit_id"): str,
             vol.Optional("replace_expired_review_hash"): str},
@@ -185,7 +191,7 @@ async def async_setup(hass, config):
         vol.Optional("confirm_received_funds_unallocated", default=False): bool}
 
     async def handle(call):
-        if call.service in ("prepare_operator_payment", "broadcast_operator_payment",
+        if call.service in ("get_credit_receipt_link", "prepare_operator_payment", "broadcast_operator_payment",
                             "configure_automatic_credit", "configure_ongoing_credit",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
                             *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES,

@@ -522,6 +522,28 @@ configure_ongoing_credit:
     confirm_ongoing_mainnet_credits:
       selector:
         boolean:
+get_credit_receipt_link:
+  name: Recover original private link for a confirmed driver credit
+  description: Administrator only. Returns the existing private session link after matching the confirmed credit, transaction and original receiving wallet. No payment, refresh, new invitation, token rotation or change to consent. Share the response only with the original driver.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {text: {}}
+    credit_id:
+      required: true
+      description: Exact budget_id from automatic_credit.payments, or credit_id from ongoing_credit.sessions.
+      selector: {text: {}}
+    expected_txid:
+      required: true
+      selector: {text: {}}
+    expected_recipient_address:
+      required: true
+      description: Original receiving address shown on the selected payment, not the latest registered driver.
+      selector: {text: {}}
+    confirm_private_link_disclosure:
+      required: true
+      description: Reveal the original private capability in the administrator response. It retains its original scope; do not publish or log it.
+      selector: {boolean: {}}
 get_reviewed_collection_link:
   name: Retrieve the private link for a reviewed collection
   description: Administrator only. Returns the original private link only for an unclaimed recovery-ready collection. Does not rotate the link, extend approval, release a hold, or initiate payment. Treat the response as private.
