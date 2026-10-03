@@ -57,8 +57,10 @@ async def test_invitation_signature_limits_and_idempotence(tmp_path):
     assert row["terms"]["max_total_sats"] == 1000
     assert "session_key" not in row
     hass.states.async_set("sensor.demo_rate", "200", {"unit_of_measurement":"sat/AUD"})
-    again = await api.budgets.execute("create_session_budget", data | {"max_total_sats":2000}, "admin")
-    assert again == {k:v for k,v in row.items() if k != "driver_link_fragment"}
+    again = await api.budgets.execute("create_session_budget", data, "admin")
+    assert again == row | {"invitation_reused": True}
+    with pytest.raises(WalletError, match="Confirm replacement"):
+        await api.budgets.execute("create_session_budget", data | {"max_total_sats":2000}, "admin")
     assert api.chain.posts == []
 
 
@@ -110,7 +112,7 @@ async def test_no_context_and_bad_limits(tmp_path):
     with pytest.raises(WalletError,match="administrator"):
         await api.budgets.execute("create_session_budget",data,None)
     await api.budgets.execute("revoke_session_budget",{"budget_id":row["terms"]["budget_id"]},"admin")
-    for values in ({"max_total_sats":True},{"max_total_sats":10,"max_fee_sats":10},{"valid_minutes":1441}):
+    for values in ({"max_total_sats":True},{"max_total_sats":9,"max_fee_sats":10},{"valid_minutes":1441}):
         with pytest.raises(WalletError):
             await api.budgets.execute("create_session_budget",data | values,"admin")
 
@@ -244,8 +246,10 @@ async def test_legacy_consent_remains_legacy_after_reload_and_replay(tmp_path):
     await restored.load()
     assert (await restored.budgets.execute("accept_session_budget", args, "admin"))["state"] == LEGACY_STATE
     # Creating another invitation does not overwrite signed legacy terms.
-    again = await restored.budgets.execute("create_session_budget", data, "admin")
-    assert again["terms"]["version"] == 1
+    with pytest.raises(WalletError, match="signed approval"):
+        await restored.budgets.execute("create_session_budget", data, "admin")
+    assert restored.saved["session_budgets"][terms["budget_id"]]["terms"]["version"] == 1
+    assert restored.saved["session_budgets"][terms["budget_id"]]["receipt"] == saved["receipt"]
     # Even a valid old signature cannot be submitted as a v2 spending receipt.
     with pytest.raises(WalletError):
         await restored.budgets.execute("accept_session_budget", args | {"receipt": receipt | {"version": 2}}, "admin")

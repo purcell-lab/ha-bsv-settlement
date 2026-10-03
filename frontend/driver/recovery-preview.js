@@ -6,6 +6,7 @@ banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or paymen
 <label for="preview-mode">Collection scenario</label>
 <select id="preview-mode" style="font:inherit;padding:10px;width:100%">
 <option value="held">Interrupted wallet draft</option>
+<option value="fee">Draft exceeds an existing 10 sat fee cap</option>
 <option value="recovery">Operator reviewed, driver confirmation needed</option>
 <option value="ongoing">Reviewed collection with a separate ongoing session</option>
 <option value="reservation">Unbound future reservation with ongoing credits</option>
@@ -42,6 +43,9 @@ let state=mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
+if(mode==="fee")diagnostic={event_id:"11111111-2222-4333-8444-555555555555",
+  stage:"inspect_draft",code:"validation_failed",reason:"fee_limit_exceeded",
+  details:{payment_sats:89,fee_sats:38,fee_cap_sats:10,total_debit_sats:127,total_cap_sats:1000}};
 window.previewCalls={claims:0,drafts:0,signs:0,reports:0};
 window.CWI={
   getVersion:async()=>({version:"fictional-preview"}),

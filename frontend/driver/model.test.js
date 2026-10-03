@@ -48,9 +48,14 @@ test("tampering, wrong address, expired and invalid fee limits rejected", () => 
   const item=invitation();item.payload=item.payload.replace('"max_total_sats":1000','"max_total_sats":9999');
   assert.throws(()=>parseInvitation(JSON.stringify(item)));
   for (const updates of [{operator_address:PrivateKey.fromRandom().toPublicKey().toAddress()},
-      {max_fee_sats:1000},{max_total_sats:-1},{expires_at:new Date(1).toISOString()}]) {
+      {max_fee_sats:1001},{max_total_sats:-1},{expires_at:new Date(1).toISOString()}]) {
     assert.throws(()=>parseInvitation(JSON.stringify(invitation({...terms,...updates}))));
   }
+});
+test("fee ceiling may equal total without increasing the total spending authority",()=>{
+ const checked=parseInvitation(JSON.stringify(invitation({...terms,max_fee_sats:1000})));
+ assert.equal(checked.terms.payment_authority.max_total_sats_including_fees,1000);
+ assert.equal(checked.terms.payment_authority.max_fee_sats,1000);
 });
 test("changed wallet and rejected signature do not return consent", async () => {
   const checked=parseInvitation(JSON.stringify(invitation()));

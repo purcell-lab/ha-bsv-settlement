@@ -1,4 +1,5 @@
 """Versioned driver mandates. Message approval is not wallet transaction permission."""
+import asyncio
 import copy
 from datetime import timedelta, datetime
 import hashlib
@@ -299,21 +300,45 @@ class SessionBudgets:
             raise WalletError("Resolve recorder issues before inviting the driver")
         reservation = str(uuid4())
         key = f"{data['proxy_config_entry_id']}:{data.get('session_id') or 'next_session'}"
-        for old in self.api.saved["session_budgets"].values():
-            if old["session_key"] == key and not old.get("binding") and self.public(old)["state"] not in ("revoked", "expired"):
-                return self.public(old)
         state = self.api.hass.states.get(data["conversion_rate_entity"])
         if state is None or state.attributes.get("unit_of_measurement") != "sat/AUD":
             raise WalletError("Select a positive conversion-rate sensor in sat/AUD")
         rate = decimal(state.state)
         if not 0 < rate <= 100000000:
             raise WalletError("Invalid conversion rate")
-        maximum, fee = data.get("max_total_sats", 1000), data.get("max_fee_sats", 10)
-        if type(maximum) is not int or not 1 <= maximum <= 100000 or type(fee) is not int or not 0 <= fee < maximum or fee > 1000:
-            raise WalletError("Budget must exceed its fee allowance and stay within demonstration limits")
+        maximum, fee = data.get("max_total_sats", 1000), data.get("max_fee_sats", 1000)
+        if type(maximum) is not int or not 1 <= maximum <= 100000 or type(fee) is not int or not 0 <= fee <= maximum or fee > 1000:
+            raise WalletError("Fee cap must not exceed the total budget or 1,000 sat")
         minutes = data.get("valid_minutes", 720)
         if type(minutes) is not int or not 1 <= minutes <= 1440:
             raise WalletError("Expiry must be between one minute and 24 hours")
+        old = next((r for r in self.api.saved["session_budgets"].values()
+                    if r["session_key"] == key and not r.get("binding")
+                    and self.public(r)["state"] not in ("revoked", "expired")), None)
+        replacement = any(k in data for k in (
+            "replace_pending_budget_id", "expected_invitation_hash", "confirm_replace_pending"))
+        if old:
+            if old.get("receipt") or old["state"] != "awaiting_driver_consent":
+                raise WalletError("This session already has a signed approval. Its limits cannot be edited or replaced here")
+            if self.api.collections.get(old) or self.api.auto_credits.get(old):
+                raise WalletError("A settlement record already exists. Review it; do not replace this invitation")
+            t = old["terms"]
+            same = (t["max_total_sats"] == maximum and t["max_fee_sats"] == fee
+                    and round((datetime.fromisoformat(t["expires_at"]) -
+                               datetime.fromisoformat(t["created_at"])).total_seconds() / 60) == minutes
+                    and t["operator_name"] == data.get("operator_name", "Charging operator")
+                    and t["operator_contact"] == data.get("operator_contact", "")
+                    and t["conversion_rate_entity"] == data["conversion_rate_entity"])
+            if not replacement:
+                if not same:
+                    raise WalletError("An unapproved invitation already exists. Confirm replacement to apply changed limits or operator details")
+                return self.admin_status(old) | {"invitation_reused": True}
+            if (data.get("replace_pending_budget_id") != t["budget_id"]
+                    or data.get("expected_invitation_hash") != sha(old["invitation"]["payload"])
+                    or data.get("confirm_replace_pending") is not True):
+                raise WalletError("The pending invitation changed. Reload before confirming replacement")
+        elif replacement:
+            raise WalletError("The pending invitation is no longer replaceable. Reload its status")
         budget_id = str(uuid4())
         sources = proxy.sources
         terms = {
@@ -352,7 +377,20 @@ class SessionBudgets:
                "session_key": key, "proxy_config_entry_id": data["proxy_config_entry_id"],
                "created_by": user_id, "receipt": None, "driver_token_hash": sha(token),
                "driver_link_scheme": "hmac-sha256-v1"}
+        previous_latest = self.api.saved.get("latest_session_budget")
+        if old:
+            old["state"] = "revoked"
         self.api.saved["session_budgets"][budget_id] = row
         self.api.saved["latest_session_budget"] = budget_id
-        await self.api.store.async_save(self.api.saved)
+        try:
+            await self.api.store.async_save(self.api.saved)
+        except (Exception, asyncio.CancelledError):
+            self.api.saved["session_budgets"].pop(budget_id, None)
+            if old:
+                old["state"] = "awaiting_driver_consent"
+            if previous_latest is None:
+                self.api.saved.pop("latest_session_budget", None)
+            else:
+                self.api.saved["latest_session_budget"] = previous_latest
+            raise
         return self.public(row) | {"driver_link_fragment": f"#budget={budget_id}&token={token}"}

@@ -34,24 +34,51 @@ CODES = {
     "validation_failed": "The quote, wallet draft or signing-permit checks did not pass.",
     "unexpected_error": "Collection stopped unexpectedly; inspect the wallet before recovery.",
 }
+DRAFT_REASONS = {
+    "unsigned_draft_required": "The wallet did not return an unsigned draft.",
+    "invalid_beef": "The wallet transaction could not be decoded as complete Atomic BEEF.",
+    "unsupported_shape": "The transaction version, locktime, input count or output count is unsupported.",
+    "funding_evidence_missing": "Complete matching funding transactions and final input sequences are required.",
+    "payment_output_mismatch": "The outputs do not match the exact operator payment and supported change format.",
+    "invalid_fee": "The draft fee is not a valid nonnegative integer.",
+    "fee_limit_exceeded": "The wallet draft fee exceeds the approved fee cap.",
+    "total_limit_exceeded": "The total wallet debit exceeds the approved spending limit.",
+}
+DRAFT_FIELDS = {"payment_sats", "fee_sats", "fee_cap_sats", "total_debit_sats",
+                "total_cap_sats", "input_count", "output_count"}
 
 
 async def record_failure(collections, row, data):
     item = collections.attempt(row, data)
     report = data.get("diagnostic")
-    if (not isinstance(report, dict) or set(report) != {"event_id", "stage", "code"}
+    if (not isinstance(report, dict) or set(report) not in (
+            {"event_id", "stage", "code"}, {"event_id", "stage", "code", "reason", "details"})
             or not isinstance(report["event_id"], str)
             or not re.fullmatch(r"[0-9a-f-]{36}", report["event_id"])
             or not isinstance(report["stage"], str) or not isinstance(report["code"], str)
             or report["stage"] not in STAGES or report["code"] not in CODES):
         raise WalletError("Invalid collection diagnostic")
+    if "reason" in report and (
+            report["stage"] not in ("inspect_draft", "inspect_signed")
+            or report["code"] != "validation_failed"
+            or not isinstance(report["reason"], str) or report["reason"] not in DRAFT_REASONS
+            or not isinstance(report["details"], dict) or not set(report["details"]) <= DRAFT_FIELDS
+            or any(type(v) is not int or not 0 <= v <= 2100000000000000
+                   for v in report["details"].values())):
+        raise WalletError("Invalid bounded draft diagnostic")
     if item.get("diagnostic", {}).get("event_id") == report["event_id"]:
         return {"diagnostic_saved": True}
     # Preserve the first failure, including across repeated refresh/reports.
     if not item.get("diagnostic"):
+        message = DRAFT_REASONS.get(report.get("reason"), CODES[report["code"]])
+        labels = {"payment_sats": "Payment", "fee_sats": "Wallet fee", "fee_cap_sats": "Fee cap",
+                  "total_debit_sats": "Total debit", "total_cap_sats": "Total cap"}
+        for key, label in labels.items():
+            if key in report.get("details", {}):
+                message += f" {label}: {report['details'][key]} sat."
         item["diagnostic"] = {
             **report, "recorded_at": now().isoformat(), "reported_by": "driver_browser",
-            "verified": False, "step": STAGES[report["stage"]], "message": CODES[report["code"]],
+            "verified": False, "step": STAGES[report["stage"]], "message": message,
         }
         try:
             await collections.save()

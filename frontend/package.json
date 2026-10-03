@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test ui.test.js approval-qr.test.js payment-status.test.js"
+    "test": "node --test ui.test.js approval-qr.test.js payment-status.test.js invitation-form.test.js"
   },
   "dependencies": {"qrcode-generator": "1.4.4", "@fontsource-variable/dm-sans": "5.2.8"},
   "devDependencies": {"esbuild": "0.25.12"}

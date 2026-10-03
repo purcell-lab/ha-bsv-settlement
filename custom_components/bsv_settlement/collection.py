@@ -117,8 +117,11 @@ class DriverCollections:
             terms = row["terms"]
             amount = int((aud * decimal(terms["satoshis_per_aud"])).quantize(
                 DecimalOne, rounding=ROUND_HALF_UP))
-            if amount < 1 or amount + terms["max_fee_sats"] > terms["max_total_sats"]:
-                raise WalletError("The final account plus fee allowance exceeds the signed limit or rounds below one satoshi")
+            if amount < 1 or amount > terms["max_total_sats"]:
+                raise WalletError("The final account exceeds the signed total limit or rounds below one satoshi")
+            if amount == terms["max_total_sats"] and terms["max_fee_sats"] > 0:
+                raise WalletError("The final account leaves no room within the signed total for a network fee")
+            fee_cap = min(terms["max_fee_sats"], terms["max_total_sats"] - amount)
             owner = self.api.saved["driver_collection_index"].get(self.key(row))
             if owner and owner != terms["budget_id"]:
                 raise WalletError("Another spending approval already owns this session")
@@ -128,7 +131,7 @@ class DriverCollections:
                 "driver_identity": row["receipt"]["driver_identity"],
                 "recipient_address": terms["operator_address"],
                 "operator_identity": terms["operator_identity"],
-                "amount_sats": amount, "max_fee_sats": terms["max_fee_sats"],
+                "amount_sats": amount, "max_fee_sats": fee_cap,
                 "max_total_sats": terms["max_total_sats"],
                 "satoshis_per_aud": terms["satoshis_per_aud"],
                 "expires_at": terms["expires_at"], "account": account,
