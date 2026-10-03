@@ -5,14 +5,42 @@ const $=s=>document.querySelector(s);
 const ongoingOption=document.createElement("option");ongoingOption.value="ongoing";ongoingOption.textContent="Ongoing credits";$("#scenario").append(ongoingOption);
 const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
 const heldOption=document.createElement("option");heldOption.value="held";heldOption.textContent="Driver collection interrupted";$("#scenario").append(heldOption);
+for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"]]){
+ const option=document.createElement("option");option.value=value;option.textContent=label;$("#scenario").append(option);
+}
 const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictional-proxy",wallet_entity:"sensor.wallet",proxy_entity:"sensor.proxy",rate_entity:"sensor.rate",balance_entity:"sensor.balance",operator_name:"Demonstration operator",operator_contact:"operator@example.test"};
 const session={session_id:"fictional-session",ocpp_transaction_id:"demo-8427-transaction",opened_at:new Date().toISOString(),ended_at:new Date().toISOString(),import_kwh:1.06,export_kwh:14.33,net_cost_aud:-1.24};
 const payment={session_id:session.session_id,state:"provider_confirmed",amount_sats:124,fee_sats:10,txid:"fictional-transaction-reference",recipient_address:"Fictional driver address",updated_at:new Date().toISOString()};
-let budget=null,tab="overview";
+let budget=null,tab="overview",closedRecord=null;
+const closedAccount=()=>({session_id:session.session_id,ocpp_transaction_id:session.ocpp_transaction_id,
+  currency:"AUD",ended_at:session.ended_at,import_kwh:1.94,export_kwh:0,
+  net_amount_aud:$("#scenario").value==="zero"?"0.00":"0.05",
+  quality_flags:$("#scenario").value==="zero"?[]:["import:energy_without_matching_state"]});
 window.previewCalls=[];
 const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d})=>{
   window.previewCalls.push({service,data:structuredClone(d)});
   $("#notice").textContent=`Preview only: ${service.replaceAll("_"," ")}. No live call was made.`;
+  if(service==="prepare_session_closure"){
+    if(!["closure","zero"].includes($("#scenario").value))throw Error("Preview: existing credit or payment requires reconciliation. Select a completed-account scenario.");
+    return {response:{closed:!!closedRecord,state:closedRecord?.state||"data_review_required",reason:closedRecord?.reason,
+      account:closedAccount(),amount_sats:$("#scenario").value==="zero"?0:5,satoshis_per_aud:"100",
+      accepted_flags:closedAccount().quality_flags,review_hash:"fictional-review-hash",pending_budget_id:budget?.terms.budget_id}};
+  }
+  if(service==="waive_session_charge"){
+    closedRecord={session_id:session.session_id,transaction_id:session.ocpp_transaction_id,state:$("#scenario").value==="zero"?"closed_zero":"waived",
+      net_amount_aud:closedAccount().net_amount_aud,reason:d.reason,closed_at:new Date().toISOString()};
+    if(budget)budget.state="revoked";
+    hass.states["sensor.wallet"].attributes.closed_sessions=[closedRecord];
+    return {response:closedRecord};
+  }
+  if(service==="request_closed_session_consent"){
+    const id=crypto.randomUUID();
+    budget={state:"awaiting_driver_consent",terms:{budget_id:id,session_id:session.session_id,
+      session_mode:"existing_session",max_total_sats:d.max_total_sats,max_fee_sats:d.max_fee_sats,
+      expires_at:new Date(Date.now()+d.valid_minutes*60000).toISOString(),closed_session_review:{account:closedAccount()}},
+      driver_link_fragment:`#budget=${id}&token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`};
+    return {response:budget};
+  }
   if(service==="session_budget_status"&&!budget)throw Error("No fictional approval yet.");
   if(service==="create_session_budget"){
     const mode=d.session_id?"existing_session":"next_session_reservation";
@@ -66,6 +94,13 @@ function state(){
        satoshis_per_aud:"100",expires_at:new Date(Date.now()+3600000).toISOString()}],
    });
  }
+ if(["closure","zero"].includes(s)){
+   hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:1.94,export_kwh:0,
+     net_cost_aud:s==="zero"?0:0.05,quality_flags:closedAccount().quality_flags};
+   hass.states["sensor.wallet"].attributes.automatic_credit.payments=[];
+   hass.states["sensor.wallet"].attributes.closed_sessions=closedRecord?[closedRecord]:[];
+   for(const a of hass.states["sensor.wallet"].attributes.driver_approvals)a.reviewed_closed_account=true;
+ }
 }
 function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);return el;}
 function panel(html){const p=document.createElement("section");p.className="panel";p.innerHTML=html;$("#content").append(p);}
@@ -92,5 +127,6 @@ function render(){
  document.querySelectorAll("bsv-operator-card").forEach(c=>c.shadowRoot.addEventListener("click",e=>{const a=e.composedPath().find(n=>n.tagName==="A");if(a){e.preventDefault();tab=a.getAttribute("href").split("/").pop();render();}}));
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
-$("#scenario").onchange=render;$("#theme").onclick=()=>{$("body").classList.toggle("dark");$("#theme").textContent=$("body").classList.contains("dark")?"Light theme":"Dark theme";};
+$("#scenario").onchange=()=>{closedRecord=null;budget=null;render();};$("#theme").onclick=()=>{$("body").classList.toggle("dark");$("#theme").textContent=$("body").classList.contains("dark")?"Light theme":"Dark theme";};
+window.previewRefresh=()=>{for(const c of document.querySelectorAll("bsv-session-review-card,bsv-operator-card"))c.hass=hass;};
 render();

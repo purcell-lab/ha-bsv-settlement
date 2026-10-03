@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {driverView,showOngoingOverview,ongoingCreditMessage} from "./view.js";
+test("post-session approval explains immediate collection without starting a session",()=>{
+ const v=driverView({hasInvitation:true,closedSession:true});
+ assert.equal(v.title,"Review your completed session");
+ assert.match(v.subtitle,/immediately/);
+});
 test("confirmed credit is not wallet acceptance until import succeeds",()=>{
  const args={hasInvitation:true,accepted:true,registered:true,credit:true,state:"provider_confirmed"};
  assert.equal(driverView(args).reconnect,"Receive credit in wallet");

@@ -147,6 +147,8 @@ class SessionReviews:
 
     async def prepare(self, data, user_id):
         session_key = data["proxy_config_entry_id"] + "|" + data["session_id"]
+        from .session_closure import ensure_open
+        ensure_open(self.api, session_key)
         if self.api.saved.get("automatic_credit_index", {}).get(session_key):
             raise WalletError("Automatic credit already owns this session; reconcile that payment instead")
         if self.api.saved.get("driver_collection_index", {}).get(session_key):

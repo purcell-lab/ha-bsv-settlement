@@ -30,6 +30,7 @@
         <p id="ongoing-feedback" class="small" role="status"></p>
       </section>
       <section id="terms" hidden>
+        <p id="closed-account" class="notice" hidden></p>
         <div class="section-head"><div><p class="eyebrow">Your operator</p><h2 id="operator-name"></h2></div><span class="badge">Dynamic rates</span></div><p id="contact" class="small"></p>
         <div id="prices" hidden>
           <div class="price-grid"><div><span>Charging rate</span><strong id="import-price">Unavailable</strong><small>Energy into your EV</small></div><div><span>Export (V2G) rate</span><strong id="export-price">Unavailable</strong><small>Energy out of your EV</small></div></div>
@@ -69,7 +70,7 @@
           <p class="small">Connected wallet public identity</p><p id="wallet-key" class="mono">Not connected</p>
           <p class="small">Operator receives at</p><p id="operator" class="mono"></p><p class="small">Operator public identity</p><p id="operator-key" class="mono"></p>
           <p class="small">Approval does not reserve funds or start charging. Keep this page open for a driver payment; wallet permission may still be required. Operator credits can be sent with the browser closed once your receiving wallet is registered.</p>
-          <p class="small">Automatic operator credits are capped at 1,000 sat total, including the 10 sat fee. Closing this page does not revoke approval. Ask the operator to revoke it before submission. A submitted payment cannot be recalled here.</p>
+          <p id="credit-policy" class="small">Automatic operator credits are capped at 1,000 sat total, including the 10 sat fee. Closing this page does not revoke approval. Ask the operator to revoke it before submission. A submitted payment cannot be recalled here.</p>
         </details>
       </section>
       <section id="result" hidden>
