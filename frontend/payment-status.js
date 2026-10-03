@@ -52,7 +52,8 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
       amount===null?"warn":"info");
     const details={
       claimed:"Wallet collection in progress. Do not start another payment.",
-      wallet_attempt_reserved:"Wallet collection in progress. Do not start another payment.",
+      wallet_attempt_reserved:"Collection held for review. Do not start another payment.",
+      recovery_ready:"Operator review complete. Awaiting explicit driver confirmation; no automatic retry.",
       submission_authorised:"Wallet submission authorised. Awaiting transaction evidence; do not pay again.",
       awaiting_driver_payment:"Awaiting driver payment.",
       awaiting_account_approval:"Awaiting account review.",
@@ -62,7 +63,7 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
     };
     return result("Driver payment due"+suffix,details[row.state]||
       `Collection status: ${stateLabel(row.state)}. No payment is confirmed.`,
-      ["cancelled","expired"].includes(row.state)?"warn":"info");
+      ["cancelled","expired","wallet_attempt_reserved"].includes(row.state)?"warn":"info");
   }
   if(row.state==="waiting_for_session_end"){
     const known=s&&finite(s.net_cost_aud),aud=known?Number(s.net_cost_aud):null;

@@ -50,7 +50,16 @@ test("payment summaries remain present when ongoing-credit policy is disabled",(
  assert.equal(settlementRows({ongoing_credit:{enabled:false},session_payments:[p]}).length,1);
 });
 test("claimed wallet attempt and missing confirmation evidence are explicit",()=>{
- assert.match(paymentStatus({...p,state:"wallet_attempt_reserved"}).detail,/collection in progress/);
+ assert.match(paymentStatus({...p,state:"wallet_attempt_reserved"}).detail,/held for review/);
  for(const state of ["provider_confirmed","provider_unconfirmed","submitted"])
   assert.match(paymentStatus({...p,state}).detail,/Transaction reference missing/);
+});
+test("reviewed recovery preserves debit direction and never implies automatic retry",()=>{
+  const r=paymentStatus({state:"recovery_ready",direction:"driver_to_operator",amount_sats:89});
+  assert.equal(r.title,"Driver payment due: 89 sat");
+  assert.match(r.detail,/explicit driver confirmation/);
+  assert.match(r.detail,/no automatic retry/);
+  const held=paymentStatus({state:"wallet_attempt_reserved",direction:"driver_to_operator",amount_sats:89});
+  assert.match(held.detail,/held for review/);
+  assert.equal(held.tone,"warn");
 });
