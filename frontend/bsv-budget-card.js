@@ -1,6 +1,7 @@
 import {awaitingApproval,approvalUrl,drawApprovalQR} from "./approval-qr.js";
 import {styles,esc,stamp,short,stateLabel} from "./ui.js";
 import {invitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
+import {registrationOpenRequest} from "./public-registration.js";
 class BSVBudgetCard extends HTMLElement {
   setConfig(config) {
     for(const key of ["config_entry_id","proxy_config_entry_id","proxy_entity","rate_entity"])if(!config[key])throw Error(`${key} is required`);
@@ -105,10 +106,9 @@ class BSVBudgetCard extends HTMLElement {
         operator_name:this.$("name").value,operator_contact:this.$("contact").value});
       if(!b)return;
       try{
-        const hash=(await pendingReplacement(b)).expected_invitation_hash;
-        await this.perform("open_public_registration",{budget_id:b.terms.budget_id,
-          expected_invitation_hash:hash,expected_context_hash:b.public_registration.context_hash,
-          confirm_public_registration:true});
+        const request=await registrationOpenRequest(b,
+          data=>this.perform("session_budget_status",data,true));
+        await this.perform("open_public_registration",request);
       }catch(e){this.$("status").textContent=`Public registration was not opened: ${e.message}`;}
     };
     this.$("close-registration").onclick=async()=>{
