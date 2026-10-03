@@ -44,7 +44,7 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
   }
   if(service==="session_budget_status"&&!budget)throw Error("No fictional approval yet.");
   if(service==="create_session_budget"){
-    const mode=d.session_id?"existing_session":"next_session_reservation";
+    const mode=d.multi_session?"multi_session":d.session_id?"existing_session":"next_session_reservation";
     const same=budget&&!budget.binding&&!["revoked","expired"].includes(budget.state)&&budget.terms.session_mode===mode&&(!d.session_id||budget.terms.session_id===d.session_id);
     let reuse=false;
     if(same){
@@ -59,7 +59,7 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
     }
     if(reuse){budget.invitation_reused=true;}
     else{
-      const id=crypto.randomUUID(),terms={budget_id:id,session_id:d.session_id||"reservation:fictional",
+      const id=crypto.randomUUID(),terms={version:d.multi_session?3:2,budget_id:id,session_id:d.session_id||"reservation:fictional",
         expires_at:new Date(Date.now()+d.valid_minutes*60000).toISOString(),session_mode:mode,
         max_total_sats:d.max_total_sats,max_fee_sats:d.max_fee_sats,valid_minutes:d.valid_minutes,
         operator_name:d.operator_name,operator_contact:d.operator_contact};

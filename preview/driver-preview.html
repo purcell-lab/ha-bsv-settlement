@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BSV Settlement driver page preview</title>
+<style>
+@font-face{font-family:DM;src:url('./dm-sans-latin-wght-normal.woff2')}
+*{box-sizing:border-box}body{margin:0;background:#f1f5f7;color:#172f3e;font:16px/1.55 DM,Arial,sans-serif}
+main{max-width:1160px;margin:auto;padding:32px 24px}h1{font-size:30px;line-height:1.2;margin:24px 0 12px}h2{font-size:19px}p{color:#536775;max-width:76ch}a{color:#165f70}
+.notice{padding:16px;border:1px solid #d3dfe5;background:white;border-radius:8px}.grid{display:grid;grid-template-columns:2fr 1fr;gap:24px;align-items:start}figure{margin:0}img{display:block;width:100%;height:auto;border:1px solid #d3dfe5;border-radius:12px}figcaption{font-size:14px;color:#536775;margin:12px 0 24px}
+@media(max-width:720px){main{padding:20px 16px}.grid{grid-template-columns:1fr}h1{font-size:26px}.mobile{max-width:390px}}
+</style></head><body><main>
+<a href="./index.html">Back to the operator dashboard preview</a>
+<h1>Charge. Export. Settle.</h1>
+<p>The staged driver interface puts budget authorisation first, adds EV, charging-point and wallet graphics, and shows a public enrolment QR only when no driver is assigned.</p>
+<p class="notice">Read-only screenshots from browser tests with fictional data. These QR codes are test fixtures, not live invitations. No wallet is connected and no payment can be made from this preview.</p>
+<div class="grid"><figure><h2>Public page: ready for a new driver</h2><img src="./driver-public-desktop.png" alt="Public driver page with local EV charging wallet icons and an automatically displayed one-time enrolment QR"><figcaption>The public QR stops working at approval. A copied public QR cannot expose the driver's subsequent private session.</figcaption></figure>
+<figure class="mobile"><h2>Mobile: authorise the budget</h2><img src="./driver-mobile.png" alt="Mobile driver page showing Authorise EV charging budget at the top, three energy workflow icons, and current buy and sell rates"><figcaption>The button stays disabled until the invitation and required rates are verified. Authorisation does not start the charger.</figcaption></figure></div>
+</main></body></html>
