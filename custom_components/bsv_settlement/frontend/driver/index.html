@@ -43,6 +43,20 @@
       </section>
     </div>
     <div class="action-column">
+      <section id="pairing-section" hidden>
+        <p class="eyebrow">Connect your phone wallet</p>
+        <h2>Use BSV Browser</h2>
+        <p class="small">On another screen? Pair your phone here, then approve the session spending limit separately.</p>
+        <button id="pairing-connect" class="wide">Connect BSV Browser</button>
+        <p id="pairing-status" class="small" role="status" aria-live="polite">A connection is not a spending approval. No payment is made by scanning.</p>
+        <div id="pairing-qr" hidden></div>
+        <button id="pairing-disconnect" class="secondary wide" hidden>Disconnect / use driver link</button>
+        <details><summary>Already using BSV Browser?</summary>
+          <p class="small">Use the session approval button below without pairing. Or copy this private link and paste it into BSV Browser on your phone.</p>
+          <button id="driver-link-copy" class="secondary">Copy private driver link</button>
+        </details>
+        <p class="small">Keep both devices and this page open for driver collection. Review wallet permissions: a wallet's app-level allowance is separate from this session's limit.</p>
+      </section>
       <section id="wallet-section" hidden>
         <p class="eyebrow" id="approval-heading">Your spending limit</p><div class="amount"><strong id="budget"></strong><span id="aud"></span></div>
         <dl><dt>Fee allowance</dt><dd id="fee"></dd><dt>Conversion</dt><dd id="rate"></dd><dt>Approval expires</dt><dd id="expiry"></dd></dl>

@@ -3,6 +3,8 @@ import { parseInvitation, signConsent } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importCredit } from "./credit.js";
 import { driverView } from "./view.js";
+import { BrowserPairing } from "./pairing.js";
+import qrcode from "qrcode-generator";
 
 const $ = id => document.getElementById(id);
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -18,6 +20,54 @@ let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set(), attemptedImports=new Set();
 let latestTxid=null;
 let ongoingRows=[],registeredIdentity=null,receivingOngoing=false,ongoingEnabled=false;
+let pairing=null, pairingBusy=false;
+function pairingState(state, detail) {
+  $("pairing-status").textContent=detail || ({
+    creating:"Creating a private, short-lived pairing code…",
+    scanning:"In BSV Browser, select Connect to app and scan this code. Check the app domain before approving. This QR expires in two minutes.",
+  }[state] || state);
+  $("pairing-qr").replaceChildren();
+  $("pairing-qr").hidden=state!=="scanning";
+  if(state==="scanning" && pairing?.uri) {
+    const qr=qrcode(0,"M");qr.addData(pairing.uri);qr.make();
+    const img=document.createElement("img");img.src=qr.createDataURL(4,16);
+    img.alt="Private BSV Browser connection QR, not a payment or session approval";
+    $("pairing-qr").append(img);
+  }
+  $("pairing-disconnect").hidden=!pairing;
+  if(["disconnected","incompatible"].includes(state) && connectedWallet===pairing?.wallet){
+    connectedWallet=null;halted=true;
+  }
+  controls();
+}
+$("pairing-connect").onclick=async()=>{
+  if(busy||collectionBusy||pairingBusy||framed||!capability||!checked)return;
+  pairingBusy=true;controls();
+  try {
+    if(pairing)await pairing.disconnect();
+    pairing=new BrowserPairing({api,origin:location.origin,onState:pairingState});
+    await pairing.start();
+  }catch(e){$("pairing-status").textContent=e.message;}
+  finally{pairingBusy=false;controls();}
+};
+$("pairing-disconnect").onclick=async()=>{
+  if(busy||collectionBusy||pairingBusy)return;
+  pairingBusy=true;controls();
+  if(pairing)await pairing.disconnect();
+  pairing=null;pairingBusy=false;
+  $("pairing-qr").hidden=true;$("pairing-disconnect").hidden=true;
+  $("pairing-status").textContent="Using the local wallet fallback. Open this same private link inside BSV Browser. Disconnecting does not revoke a saved approval.";
+  controls();
+};
+$("driver-link-copy").onclick=async()=>{
+  let timer;
+  try{await Promise.race([navigator.clipboard.writeText(location.href),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Clipboard unavailable")),2000);})]);
+    $("pairing-status").textContent="Private driver link copied. Paste it into BSV Browser on your phone.";}
+  catch{$("pairing-status").textContent="Copy the full address from your browser, including everything after #. Keep it private.";}
+  finally{clearTimeout(timer);}
+};
+window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
 function paintOngoing(){
   $("ongoing-section").hidden=!ongoingRows.length;
   $("ongoing-list").replaceChildren();
@@ -63,14 +113,20 @@ function pricesValid() {
     Date.parse(live[k].end) + 90000 >= Date.now());
 }
 function controls() {
+  document.body.dataset.pairing=pairing?.state || "local";
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
   $("approve").disabled = framed || busy || !checked || !spending() || expired || accepted || !!receipt ||
-    (!!capability && !pricesValid());
+    (!!capability && !pricesValid()) || pairingBusy || (!!pairing && pairing.state!=="paired");
+  $("pairing-section").hidden=!capability || !checked || framed;
+  $("pairing-connect").disabled=busy||collectionBusy||pairingBusy||!!pairing&&["creating","scanning","paired"].includes(pairing.state);
+  $("pairing-disconnect").disabled=busy||collectionBusy||pairingBusy;
+  $("driver-link-copy").disabled=!capability;
   $("load").disabled = busy; $("invitation").disabled = busy;
   $("reset").disabled = busy || collectionBusy; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
   $("resume-collection").disabled=busy || collectionBusy || !accepted || !spending() ||
     (!!connectedWallet && !halted) || !!pendingReport || framed ||
+    pairingBusy || (!!pairing && pairing.state!=="paired") ||
     (!creditDirection && collectionState && !["waiting_for_operator_binding","waiting_for_session_end","ready"].includes(collectionState));
   $("retry-collection").disabled=busy || collectionBusy || !pendingReport;
   if (expired && !accepted) status("This invitation has expired. Ask the operator for a new link.",true);
@@ -272,6 +328,7 @@ async function checkCollection() {
   } finally {collectionBusy=false;controls();}
 }
 async function connectWallet() {
+  if(pairing)return pairing.verifiedWallet(registeredIdentity || receipt?.driver_identity || null);
   const wallet=new WalletClient("auto");
   let timer;
   const identity=(await Promise.race([
@@ -282,6 +339,7 @@ async function connectWallet() {
   return {wallet,identity};
 }
 function clear() {
+  if(pairing){void pairing.disconnect();pairing=null;}
   checked=null;receipt=null;accepted=false;live=null;connectedWallet=null;binding=null;halted=false;pendingReport=null;collectionState=null;
   $("terms").hidden=true;$("wallet-section").hidden=true;$("result").hidden=true;
   $("receipt").value="";$("wallet-key").textContent="Not connected";

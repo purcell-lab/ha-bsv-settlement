@@ -40,7 +40,8 @@ class DriverBudgetView(HomeAssistantView):
             if not isinstance(data, dict) or data.get("action") not in (
                     "read", "approve", "collection_status", "claim_collection",
                     "register_credit_destination", "credit_receipt", "ongoing_credit_receipt",
-                    "authorise_collection", "report_collection", "reconcile_collection"):
+                    "authorise_collection", "report_collection", "reconcile_collection",
+                    "pairing_create", "pairing_cancel"):
                 raise WalletError("Unsupported action")
             budget_id, token = data.get("budget_id"), data.get("token")
             if not isinstance(budget_id,str) or len(budget_id) != 36:
@@ -58,6 +59,21 @@ class DriverBudgetView(HomeAssistantView):
                 if (action == "read" and row["state"] == "revoked" and not coord.api.auto_credits.get(row)
                         and not coord.api.ongoing_credits.driver_rows(row)):
                     raise WalletError("Driver link is revoked")
+                if action in ("pairing_create", "pairing_cancel"):
+                    from .pairing import KEY
+                    hub = self.hass.data.get(KEY)
+                    if hub is None:
+                        raise WalletError("Wallet pairing is unavailable")
+                    if action == "pairing_create":
+                        return web.json_response(await hub.create(
+                            coord, row, data.get("backend_identity"),
+                            request.headers.get("Origin")), headers=headers)
+                    topic = data.get("topic")
+                    item = hub.sessions.get(topic) if isinstance(topic, str) else None
+                    if item and item["budget_id"] != budget_id:
+                        raise WalletError("Pairing does not belong to this invitation")
+                    await hub.close(topic)
+                    return web.json_response({"disconnected": True}, headers=headers)
                 handlers = {
                     "register_credit_destination": lambda: coord.api.auto_credits.register(row, data),
                     "credit_receipt": lambda: coord.api.auto_credits.receipt(row),
