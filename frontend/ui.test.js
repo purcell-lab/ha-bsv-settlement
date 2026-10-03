@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {sessionStatus,num,esc} from "./ui.js";
+import {sessionStatus,num,esc,provisionalSats} from "./ui.js";
+test("provisional sat amounts use exact half-up rounding and fixed session rates",()=>{
+ assert.equal(provisionalSats({net_cost_aud:"-0.38"},{},{state:"100"}).sats,38);
+ assert.equal(provisionalSats({net_cost_aud:"0.29"},{},{state:"50"}).sats,15);
+ assert.equal(provisionalSats({net_cost_aud:"0"},{},{state:"100"}).sats,0);
+ const session={session_id:"s",net_cost_aud:"-1.24"};
+ const health={ongoing_credit:{sessions:[{session_id:"s",satoshis_per_aud:"100"}]}};
+ assert.deepEqual(provisionalSats(session,health,{state:"500"}),{sats:124,rate:100,fixed:true});
+ for(const value of [null,undefined,"unknown","",true,"-1","0"])
+  assert.equal(provisionalSats(session,{},{state:value}).sats,null);
+ for(const value of [null,undefined,"",true,"bad"])
+  assert.equal(provisionalSats({net_cost_aud:value},{},{state:"100"}).sats,null);
+ assert.equal(provisionalSats(session,{driver_approvals:[{session_id:"s",approved:true,satoshis_per_aud:"80"}]},{state:"100"}).sats,99);
+});
 const s={session_id:"new-session",net_cost_aud:-1.24};
 test("zero-balance closure is not labelled a waived charge",()=>{
  const view=sessionStatus({...s,net_cost_aud:0}, {closed_sessions:[

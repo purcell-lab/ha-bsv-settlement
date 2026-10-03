@@ -45,3 +45,10 @@ as a result of the dashboard migration. Multi-session consent is a separate chan
 - Empty/missing-data and stale-rate cases: no invented zero or price.
 - Dark/light themes and keyboard focus: readable data and controls.
 - Existing private configuration and extra cards survive migration unchanged.
+# Provisional amount units
+
+The Status card shows provisional driver credits and charges in sat. AUD remains
+a secondary accounting reference. Use the session's fixed conversion where
+available, otherwise label the configured sensor rate as indicative. Missing
+conversion data is unavailable, never zero. Round positive sat amounts half up;
+exclude network fees and retain the actual settlement status separately.

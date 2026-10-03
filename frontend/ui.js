@@ -3,6 +3,24 @@ export const finite = v => v !== null && v !== undefined && v !== "" && Number.i
 export const num = (v,d=0) => finite(v) ? Number(v).toLocaleString("en-AU",{minimumFractionDigits:d,maximumFractionDigits:d}) : "Unavailable";
 export const stamp = v => v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "Not checked";
 export const short = v => v ? String(v).slice(0,8) : "No reference";
+export function provisionalSats(session,health={},rateState) {
+  const id=session?.session_id;
+  const fixed=health.ongoing_credit?.sessions?.find(r=>r.session_id===id) ??
+    health.driver_approvals?.find(r=>r.session_id===id&&r.approved);
+  const rate=fixed ? fixed.satoshis_per_aud : rateState?.state;
+  // Decimal arithmetic mirrors the settlement's positive ROUND_HALF_UP value.
+  const parts=v=>{
+    if(!["string","number"].includes(typeof v))return null;
+    const m=String(v).match(/^-?(\d{1,16})(?:\.(\d{1,16}))?$/);
+    return m?{n:BigInt(m[1]+(m[2]||"")),d:10n**BigInt((m[2]||"").length)}:null;
+  };
+  const amount=parts(session?.net_cost_aud),r=parts(rate);
+  if(!amount||!r||Number(rate)<=0)return {sats:null,rate:null,fixed:!!fixed};
+  const numerator=amount.n*r.n,denominator=amount.d*r.d;
+  const rounded=(numerator*2n+denominator)/(denominator*2n);
+  return {sats:rounded<=BigInt(Number.MAX_SAFE_INTEGER)?Number(rounded):null,
+    rate:Number(rate),fixed:!!fixed};
+}
 export const chainRecordUrl=txid=>typeof txid==="string"&&/^[0-9a-f]{64}$/.test(txid)
   ?`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`:null;
 export const chainRecordLink=txid=>{
