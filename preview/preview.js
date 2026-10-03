@@ -3,6 +3,8 @@ import "./budget-card.js";
 import "./session-review-card.js";
 const $=s=>document.querySelector(s);
 const ongoingOption=document.createElement("option");ongoingOption.value="ongoing";ongoingOption.textContent="Ongoing credits";$("#scenario").append(ongoingOption);
+const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
+const heldOption=document.createElement("option");heldOption.value="held";heldOption.textContent="Driver collection interrupted";$("#scenario").append(heldOption);
 const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictional-proxy",wallet_entity:"sensor.wallet",proxy_entity:"sensor.proxy",rate_entity:"sensor.rate",balance_entity:"sensor.balance",operator_name:"Demonstration operator",operator_contact:"operator@example.test"};
 const session={session_id:"fictional-session",ocpp_transaction_id:"demo-8427-transaction",opened_at:new Date().toISOString(),ended_at:new Date().toISOString(),import_kwh:1.06,export_kwh:14.33,net_cost_aud:-1.24};
 const payment={session_id:session.session_id,state:"provider_confirmed",amount_sats:124,fee_sats:10,txid:"fictional-transaction-reference",recipient_address:"Fictional driver address",updated_at:new Date().toISOString()};
@@ -27,11 +29,32 @@ function state(){
  hass.states={"sensor.rate":{state:"100"},"sensor.balance":{state:s==="pending"?"76":"4652"},"sensor.proxy":{state:"ready",attributes:{latest_session:{...session,ended_at:s==="missing"?null:session.ended_at},updated_at:new Date().toISOString()}},
  "sensor.wallet":{state:s==="unavailable"?"unavailable":"ready",attributes:{pending_change_sats:s==="pending"?4576:0,chain_checked_at:new Date().toISOString(),automatic_credit:{enabled:true,max_total_sats:1000,fee_sats:10,payments:["missing","ongoing"].includes(s)?[]:[{...payment,state:s==="pending"?"provider_unconfirmed":"provider_confirmed"}]},session_payments:[],driver_approvals:budget?[{budget_id:budget.terms.budget_id,session_id:budget.terms.session_id,state:budget.state,approved:budget.state!=="awaiting_driver_consent",expires_at:budget.terms.expires_at}]:[],
  ongoing_credit:s==="ongoing"?{enabled:true,effective:true,recipient:{address:"Fictional registered driver address"},sessions:[{session_id:session.session_id,transaction_id:session.ocpp_transaction_id,recipient_address:"Fictional registered driver address",satoshis_per_aud:"100",state:"waiting_for_session_end"}]}:null}}};
+ if(s==="debit"){
+   hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:2.02,export_kwh:0.18,net_cost_aud:0.19};
+   Object.assign(hass.states["sensor.wallet"].attributes,{
+     automatic_credit:{enabled:true,max_total_sats:1000,fee_sats:10,payments:[]},
+     ongoing_credit:{enabled:true,effective:true,recipient:{address:"Fictional registered driver address"},sessions:[
+       {session_id:session.session_id,transaction_id:session.ocpp_transaction_id,state:"no_operator_credit",satoshis_per_aud:"100"}]},
+     session_payments:[{session_id:session.session_id,transaction_id:session.ocpp_transaction_id,
+       state:"ready",direction:"driver_to_operator",source:"driver",amount_sats:19,max_fee_sats:10,
+       satoshis_per_aud:"100",expires_at:new Date(Date.now()+3600000).toISOString()}],
+   });
+ }
 }
 function card(name,extra={}){const el=document.createElement(name);el.setConfig({...config,...extra});el.hass=hass;$("#content").append(el);return el;}
 function panel(html){const p=document.createElement("section");p.className="panel";p.innerHTML=html;$("#content").append(p);}
 function render(){
- state();$("#content").replaceChildren();$("#notice").textContent="";
+ state();
+ if($("#scenario").value==="held"){
+   hass.states["sensor.wallet"].attributes.automatic_credit.payments=[];
+   hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:3.8,export_kwh:0.2,net_cost_aud:0.89};
+   hass.states["sensor.wallet"].attributes.session_payments=[{
+     source:"driver",direction:"driver_to_operator",transaction_id:session.ocpp_transaction_id,
+     session_id:"fictional-session",state:"wallet_attempt_reserved",
+     amount_sats:89,diagnostic:{step:"Create the unsigned wallet draft",
+       message:"A network request failed; the response or wallet outcome may be unknown."}}];
+ }
+ $("#content").replaceChildren();$("#notice").textContent="";
  const labels={overview:["Charging & settlement","The latest session, its next action and the operator's funds."],drivers:["Set up a driver","Register a receiving wallet for operator credits. Driver spending approval remains session-specific."],payments:["Settle a session","Automatic credits and manual exceptions, with exact amounts and transaction status."],wallet:["Operator wallet","Confirmed funds and pending change are different."],testing:["Settings & diagnostics","Keep fictional tests separate from real mainnet settlements."]};
  $("#title").textContent=labels[tab][0];$("#intro").textContent=labels[tab][1];
  document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.tab===tab)));

@@ -1,5 +1,6 @@
 import qrcode from "qrcode-generator";
 import {styles, stateLabel, short, stamp} from "./ui.js";
+import {settlementRows,paymentStatus} from "./payment-status.js";
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -60,13 +61,18 @@ class BsvSessionReviewCard extends HTMLElement {
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
     const automatic = wallet?.attributes?.automatic_credit;
     const ongoing = wallet?.attributes?.ongoing_credit;
+    const collectionIssues=(wallet?.attributes?.session_payments||[]).filter(p=>
+      p.source==="driver" && !p.txid && (p.diagnostic || ["wallet_attempt_reserved","recovery_ready"].includes(p.state)));
     const ready = proxy && wallet && !["unknown", "unavailable"].includes(proxy.state) &&
       !["unknown", "unavailable"].includes(wallet.state);
     const admin = h.user?.is_admin === true;
     const sessions = [proxy?.attributes?.latest_session, proxy?.attributes?.previous_session]
       .filter(s => s && s.ended_at);
+    const observedSessions=[proxy?.attributes?.latest_session,proxy?.attributes?.previous_session].filter(Boolean);
+    const health=wallet?.attributes||{},paymentRows=settlementRows(health);
+    const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message, automatic, ongoing]);
+      this._busy, this._message, automatic, ongoing,health.session_payments,observedSessions,presentations,collectionIssues]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -99,14 +105,24 @@ class BsvSessionReviewCard extends HTMLElement {
       <ha-card>
         <div class="head"><div><p class="eyebrow">Settlement</p><h2>Payments & credits</h2></div><span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span></div>
         <p class="note">Follow each session from review to confirmation. A submitted transaction must be reconciled, never paid again.</p>
+        ${collectionIssues.map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
+          <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
+          <p>${esc(p.diagnostic?.message||"No signing permit or payment is implied by a reserved attempt. Inspect the wallet and recipient history before releasing it.")}</p>
+          <code>${esc(p.session_id)}</code>
+          <p class="note">${p.diagnostic?"Driver-reported diagnostic, not independent payment evidence. ":""}${p.state==="recovery_ready"?"The driver must select Review and resume collection.":"Use the guarded recovery review service. Never clear the ledger or create a replacement payment."}</p></div>`).join("")}
         ${ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
         <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
         <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
-        ${(ongoing.sessions||[]).slice().reverse().filter(s=>!s.txid).slice(0,5).map(s=>`<div class="notice" style="margin-top:12px"><strong>Session ${esc(short(s.transaction_id))} · ${esc(stateLabel(s.state))}</strong><code>${esc(s.recipient_address)}</code><span>${esc(s.satoshis_per_aud)} sat/AUD · ${esc(s.error||"Final account and funding checks still apply.")}</span></div>`).join("")}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
+        ${paymentRows.length?`<section class="section" aria-label="Session settlement"><h3>Session settlement</h3>
+        ${paymentRows.map((row,index)=>{const p=presentations[index];return `<article class="notice session-payment" style="margin-top:12px" data-session="${esc(row.session_id)}">
+          <p class="note">Session ${esc(short(p.reference))}</p><strong>${esc(p.title)}</strong><p>${esc(p.detail)}</p>
+          ${row.max_fee_sats!==undefined?`<p class="note">Maximum wallet fee: ${esc(row.max_fee_sats)} sat. This is a limit, not a fee already charged.</p>`:""}
+          ${row.txid?`<details><summary>Transaction reference</summary><code>${esc(row.txid)}</code></details>`:""}
+        </article>`}).join("")}</section>`:""}
         ${(automatic?.payments || []).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
         <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p><code>${esc(p.txid || "Not submitted")}</code></details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}

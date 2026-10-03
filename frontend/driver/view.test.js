@@ -17,3 +17,9 @@ test("unknown broadcast never offers another payment",()=>{
 test("blocked settlement does not imply payment readiness",()=>{
  assert.equal(driverView({hasInvitation:true,accepted:true,registered:true,state:"collection_blocked"}).title,"Settlement needs attention");
 });
+test("held attempts and reviewed recovery are not normal automatic collection",()=>{
+ const base={hasInvitation:true,accepted:true,registered:true,connected:true};
+ assert.equal(driverView({...base,state:"wallet_attempt_reserved"}).title,"Collection needs review");
+ assert.equal(driverView({...base,state:"wallet_attempt_reserved"}).reconnect,undefined);
+ assert.equal(driverView({...base,state:"recovery_ready"}).reconnect,"Review and resume collection");
+});

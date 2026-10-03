@@ -111,3 +111,35 @@ test("unsigned and signed transaction shapes are identical for the Python prefli
   assert.equal(canonical(shape(before.tx)),canonical(shape(after.tx)));
   assert.equal(after.fee,5);
 });
+test("fetch failures identify the precise step without retrying payment",async()=>{
+  for(const stage of ["claim_collection","create_draft","authorise_draft","submit_payment"]){
+    const f=await fixture();
+    if(stage==="create_draft")f.wallet.createAction=async()=>{throw TypeError("Failed to fetch");};
+    let report, error;
+    const failing=async(a,b)=>{
+      if(a==="report_collection_failure"){report=b;return {diagnostic_saved:true};}
+      if(a===({claim_collection:"claim_collection",authorise_draft:"authorise_collection",
+        submit_payment:"report_collection"}[stage]))throw TypeError("Failed to fetch");
+      return f.api(a,b);
+    };
+    try{await collectOnce(f.wallet,f.checked,null,f.quote,failing);}catch(e){error=e;}
+    assert.equal(error.diagnostic.stage,stage);
+    assert.equal(error.diagnostic.code,"network_request_failed");
+    assert.equal(report.diagnostic.event_id,error.diagnostic.event_id);
+    assert.deepEqual(Object.keys(report.diagnostic).sort(),["code","event_id","stage"]);
+    if(stage==="submit_payment")assert.equal(error.pendingReport.raw_tx,f.tx.toHex());
+    assert.ok(f.calls.filter(x=>x[0]==="createAction").length<=1);
+  }
+});
+test("offline failure report is retained, not confused with payment retry",async()=>{
+  const f=await fixture();let error;
+  try{await collectOnce(f.wallet,f.checked,null,f.quote,async()=>{throw TypeError("Failed to fetch");});}
+  catch(e){error=e;}
+  assert.equal(error.pendingDiagnostic.diagnostic.stage,"claim_collection");
+  assert.equal(f.calls.filter(x=>x[0]==="createAction").length,0);
+});
+test("recovered collection requires caller's explicit confirmation flag",async()=>{
+  const f=await fixture();
+  await collectOnce(f.wallet,f.checked,null,f.quote,f.api,()=>{},true);
+  assert.equal(f.calls.find(x=>x[0]==="claim_collection")[1].confirm_recovered_attempt,true);
+});
