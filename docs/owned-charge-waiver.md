@@ -19,7 +19,7 @@ This is a terminal charge close-out, not a payment, refund or recovery release. 
 
 An optional `received_txid` and `received_output_index` identify an existing incoming output. The service checks the raw transaction hash, exact output amount and operator destination, requires provider confirmations, and rejects an output already allocated elsewhere or dated before the request.
 
-The charge can then be waived while the receipt remains `received_unallocated`. The output is reserved against reuse, and the separate receipt records `refund_authorised: false`. This does not mark the charge paid, erase the receipt, return funds, or determine how the unallocated funds should ultimately be treated.
+The charge can then be waived while the receipt remains `received_unallocated`. The output is reserved against duplicate accounting allocation, and the separate receipt records `refund_authorised: false`. This does not mark the charge paid, erase the receipt, return funds, segregate spendable coins, or determine how the unallocated funds should ultimately be treated.
 
 Provider confirmation is not independent SPV verification. Absence of a server signing permit does not prove a driver cancelled an external draft or that a late external payment cannot arrive.
 

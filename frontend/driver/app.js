@@ -159,7 +159,7 @@ function controls() {
   $("approve").hidden=accepted||waived;
   $("approval-action").hidden=accepted||waived;
   $("approval-terms").hidden=accepted||waived;$("action-note").hidden=accepted||waived;
-  $("approval-heading").textContent=accepted?"Your approved limit":"Your spending limit";
+  $("approval-heading").textContent=waived?"Historical approved limit":accepted?"Your approved limit":"Your spending limit";
   $("resume-collection").textContent=view.reconnect||"Reconnect wallet";
   $("resume-collection").hidden=view.stage==="settled"||(!view.reconnect&&!!connectedWallet)||
     (!creditDirection && collectionState==="wallet_attempt_reserved");
