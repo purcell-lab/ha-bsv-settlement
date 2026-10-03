@@ -39,14 +39,14 @@ broadcast_operator_credit_recovery:
       selector:
         number:
           min: 1
-          max: 990
+          max: 999
           mode: box
     fee_sats:
+      description: Exact quoted fee from the review. No separate fee ceiling; credit plus fee must stay within the 1000 sat total.
       required: true
       selector:
         number:
-          min: 10
-          max: 10
+          min: 1
           mode: box
     confirm_mainnet_payment:
       required: true
@@ -54,7 +54,7 @@ broadcast_operator_credit_recovery:
         boolean:
 configure_automatic_credit:
   name: Set automatic operator credit policy
-  description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fixed 10 sat fee. Disable stops new signatures, not transactions already submitted.
+  description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fresh provider-quoted, size-based fee. Missing or stale fee evidence blocks signing. Disable stops new signatures, not transactions already submitted.
   fields:
     config_entry_id:
       required: true
@@ -488,7 +488,7 @@ revoke_session_budget:
         text:
 configure_ongoing_credit:
   name: Configure ongoing operator credits
-  description: Administrator-authorised mainnet credits to the latest verified receiving registration. Fixed recipient and conversion per session, 1000 sat total cap including 10 sat fee. This never grants driver debit authority.
+  description: Administrator-authorised mainnet credits to the latest verified receiving registration. Fixed recipient and conversion per session, 1000 sat total cap including the fresh provider-quoted fee. This never grants driver debit authority.
   fields:
     config_entry_id:
       required: true

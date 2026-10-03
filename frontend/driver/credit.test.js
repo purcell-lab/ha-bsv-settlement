@@ -11,19 +11,25 @@ const wallet=new ProtoWallet(driver);
 wallet.getNetwork=async()=>({network:"mainnet"});
 const terms={budget_id:"fictional-budget",operator_identity:operator.toPublicKey().toString(),credit_receiving:remittance};
 const checked={terms,invitation:{payload:canonical(terms)}};
-async function fixture(){
+async function fixture(amount=189,fee=10){
   const {publicKey}=await wallet.getPublicKey({protocolID:remittance.protocolID,keyID:"YWJj ZGVm",
     counterparty:terms.operator_identity,forSelf:true});
   const address=PublicKey.fromString(publicKey).toAddress();
   const tx=new Transaction();
-  tx.addOutput({lockingScript:new P2PKH().lock(address),satoshis:189});
+  tx.addOutput({lockingScript:new P2PKH().lock(address),satoshis:amount});
   // A fictional single-leaf block is sufficient for an offline import test.
   const id=tx.id("hex");
-  return {address,receipt:{raw_tx:tx.toHex(),txid:id,recipient_address:address,amount_sats:189,
+  return {address,receipt:{raw_tx:tx.toHex(),txid:id,recipient_address:address,amount_sats:amount,fee_sats:fee,
     budget_id:terms.budget_id,remittance,sender_identity:terms.operator_identity,
     proof:{txOrId:id,index:0,nodes:[],target:"11".repeat(32)},
     block:{hash:"11".repeat(32),height:800000,merkleroot:id}}};
 }
+test("credit receipts enforce actual amount plus variable fee within the total cap",async()=>{
+  const {address,receipt}=await fixture(999,1);
+  assert.equal(creditTransaction(receipt,address).id("hex"),receipt.txid);
+  for(const fee of [undefined,null,0,2,-1,1.5,NaN,Infinity])
+    assert.throws(()=>creditTransaction({...receipt,fee_sats:fee},address));
+});
 test("registers a BRC-29 own key, not the operator counterparty key",async()=>{
   let saved;
   await registerCredit(wallet,checked,driver.toPublicKey().toString(),async(action,data)=>{saved={action,...data};});

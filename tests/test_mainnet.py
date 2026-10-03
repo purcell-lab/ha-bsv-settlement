@@ -45,6 +45,11 @@ class FictionalChain:
     async def details(self, txid):
         return {"txid": txid, "confirmations": 1}
 
+    async def fee_policy(self):
+        # Fictional 40 sat/KB rounds to 10 sat at the conservative 227-byte bound.
+        # Separate fee-aware tests cover current-style 100 sat/KB and quote changes.
+        return {"fee_unit": "sat/KB", "fee": 40, "mempool_min_fee": 40}
+
     async def broadcast(self, raw):
         self.posts.append(raw)
         if self.fail:

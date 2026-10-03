@@ -34,7 +34,7 @@ def redesign(config):
                     (kind and not any(c.get("type") == kind for c in cards(views[0])))):
                 raise ValueError("Partially redesigned dashboard; review its backup before migration")
         # Keep native controls, user cards, private config, metadata and extra
-        # views exactly as supplied. The only repair is the derived wallet link.
+        # views intact, except managed settlement labels, sizing and wallet link.
         return split_settlement_views(old)
     qr = next(c for c in flat if c.get("type") == "custom:bsv-receive-qr-card")
     balance = next(c["entity"] for c in flat if str(c.get("entity", "")).endswith("_confirmed_wallet_balance"))
@@ -87,7 +87,7 @@ def redesign(config):
                 "2. Ask them to approve in BSV Browser.\n"
                 "3. Match the approval to the correct session.\n"
                 "4. Check that the receiving wallet is registered.\n\n"
-                "Driver charges need the open browser. Operator credits can run with it closed."},
+                "Driver charges need the open browser. Driver credits can run with it closed."},
                 manual, {"type": "markdown", "content":
                 "Manual receiving details are **not** the session-specific BRC-29 wallet key. "
                 "Independently confirm the address before a manual credit. Never enter a seed or private key."})]),
@@ -118,10 +118,7 @@ def split_settlement_views(config):
     if len(review_cards) != 1:
         raise ValueError("Ambiguous settlement cards; review before migration")
     review = review_cards[0]
-    driver["title"] = "Driver collections"
     review["direction"] = "driver_to_operator"
-    driver["header"] = {"layout": "responsive", "card": {"type": "markdown", "text_only": True,
-        "content": "## Driver collections\nMoney received from drivers. Review consent, amounts, fees and collection status."}}
     if operator_views:
         existing = [c for c in cards(operator_views[0]) if c.get("type") == "custom:bsv-session-review-card"]
         if len(existing) != 1 or existing[0].get("direction") != "operator_to_driver":
@@ -138,4 +135,30 @@ def split_settlement_views(config):
     for view in views:
         if view.get("path") == "overview":
             view["title"] = "Status"
+        managed = {
+            "payments": ("Owner credits", "Driver → Owner. Money received by the owner. Review consent, amounts, fees and collection status."),
+            "operator-credits": ("Driver credits", "Owner → Driver. Money received by the driver. Check receiving registrations, funding and confirmation."),
+        }.get(view.get("path"))
+        if managed:
+            view["title"] = managed[0]
+            header = view.setdefault("header", {})
+            header.setdefault("layout", "responsive")
+            header.setdefault("card", {}).update({
+                "type": "markdown", "text_only": True,
+                "content": f"## {managed[0]}\n{managed[1]}",
+            })
+            for section in view.get("sections", []):
+                managed_cards = [c for c in cards(section)
+                                 if c.get("type") == "custom:bsv-session-review-card"]
+                if managed_cards:
+                    section["column_span"] = 2
+                    for card in managed_cards:
+                        card.setdefault("grid_options", {}).update(
+                            {"columns": "full", "rows": "auto"})
+        if view.get("path") == "drivers":
+            for card in cards(view):
+                if card.get("type") == "markdown" and isinstance(card.get("content"), str):
+                    card["content"] = card["content"].replace(
+                        "policy in Operator credits", "policy in Driver credits"
+                    ).replace("Operator credits can run", "Driver credits can run")
     return result

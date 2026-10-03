@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP
 
 from .api import WalletError
-from .auto_credit import AutomaticCredits, FEE, MAX_TOTAL, PENDING
+from .auto_credit import AutomaticCredits, MAX_TOTAL, PENDING
+from .fees import quote, validate
 from .mainnet import build_transaction
 from .session_review import account_snapshot, decimal, digest, now
 
@@ -53,7 +54,7 @@ class OperatorCreditRecovery:
             raise WalletError("Original conversion rate is invalid")
         amount = int((-decimal(account["net_amount_aud"]) * rate).quantize(
             decimal("1"), rounding=ROUND_HALF_UP))
-        if amount < 1 or amount + FEE > MAX_TOTAL:
+        if amount < 1 or amount >= MAX_TOTAL:
             raise WalletError("Recovery must be a credit within the 1000 sat total cap")
         self.registration(route)
         return account, amount
@@ -98,22 +99,26 @@ class OperatorCreditRecovery:
         if worker.pending() or any(p["state"] in ("prepared", *PENDING)
                                    for p in self.api.saved["payments"].values()):
             raise WalletError("Another operator payment is unresolved")
-        source, raw = await AutomaticCredits.funding(worker, wrapper, amount)
+        quotation = await AutomaticCredits.quote_fee(worker, wrapper, amount)
+        fee = quotation["fee_sats"]
+        source, raw = await AutomaticCredits.funding(worker, wrapper, amount, fee)
         checked = await self.api.hass.async_add_executor_job(
             build_transaction, self.api.identity["secret_hex"], raw, source["tx_pos"],
-            route["recipient"]["address"], amount, FEE, False)
+            route["recipient"]["address"], amount, fee, False)
         if (checked["source_txid"] != source["tx_hash"]
                 or checked["source_value"] != source["value"]):
             raise WalletError("Funding evidence does not match the raw transaction")
         current, current_amount = await self.snapshot(route)
         if digest(current) != digest(account) or current_amount != amount or before != self.route_hash(route):
             raise WalletError("Original account or recipient changed during preparation")
+        validate(quotation, fee)
         terms = {
             "credit_id": route["route_id"], "session_id": route["session_id"],
             "transaction_id": route["transaction_id"],
             "receiving_budget_id": route["recipient"]["budget_id"],
             "recipient_address": route["recipient"]["address"],
-            "amount_sats": amount, "fee_sats": FEE, "total_sats": amount + FEE,
+            "amount_sats": amount, "fee_sats": fee, "total_sats": amount + fee,
+            "fee_quote": quotation,
             "satoshis_per_aud": route["satoshis_per_aud"], "account": account,
             "route_hash": before, "source_txid": source["tx_hash"],
             "source_index": source["tx_pos"], "source_value": source["value"],
@@ -132,12 +137,12 @@ class OperatorCreditRecovery:
                 "budget_id": route["route_id"], "session_id": route["session_id"],
                 "transaction_id": route["transaction_id"],
                 "recipient_address": terms["recipient_address"], "amount_sats": amount,
-                "fee_sats": FEE, "net_amount_aud": account["net_amount_aud"],
+                "fee_sats": fee, "net_amount_aud": account["net_amount_aud"],
                 "account": copy.deepcopy(account), "source_hash": digest(account),
                 "created_at": terms["created_at"],
                 "policy_enabled_at": worker.policy.get("enabled_at"),
             }
-        item.update(state="credit_review_required", error=None)
+        item.update(state="credit_review_required", error=None, fee_sats=fee, fee_quote=quotation)
         if route.get("manual_recovery"):
             route.setdefault("manual_recovery_history", []).append(copy.deepcopy(route["manual_recovery"]))
         route.update(manual_recovery=recovery, state="credit_review_required")
@@ -181,10 +186,22 @@ class OperatorCreditRecovery:
                     "recipient_address", "amount_sats", "fee_sats", "session_id", "transaction_id"))):
             raise WalletError("Frozen recovery payment changed")
 
-    async def funding(self, wrapper, amount):
+    async def quote_fee(self, wrapper, amount):
+        self.guard(wrapper)
+        route = self.route(wrapper["standing_route_id"])
+        fee = route["manual_recovery"]["terms"]["fee_sats"]
+        quotation = await quote(self.api.chain)
+        validate(quotation, fee)
+        if amount + fee > MAX_TOTAL:
+            raise WalletError("Reviewed credit exceeds the total cap")
+        return quotation | {"minimum_fee_sats": quotation["fee_sats"], "fee_sats": fee}
+
+    async def funding(self, wrapper, amount, fee):
         self.guard(wrapper)
         route = self.route(wrapper["standing_route_id"])
         terms = route["manual_recovery"]["terms"]
+        if fee != terms["fee_sats"]:
+            raise WalletError("Reviewed credit fee changed")
         worker = self.api.ongoing_credits
         used = worker.used() | {(p["source_txid"], p["source_index"])
                                for p in self.api.saved["payments"].values() if p.get("txid")}
@@ -197,7 +214,7 @@ class OperatorCreditRecovery:
         raw = await self.api.chain.source(source["tx_hash"])
         checked = await self.api.hass.async_add_executor_job(
             build_transaction, self.api.identity["secret_hex"], raw, source["tx_pos"],
-            terms["recipient_address"], amount, FEE, False)
+            terms["recipient_address"], amount, fee, False)
         if checked["raw"] != route["manual_recovery"]["unsigned_raw"]:
             raise WalletError("Reviewed unsigned transaction changed")
         return source, raw

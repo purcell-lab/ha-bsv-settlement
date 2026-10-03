@@ -71,3 +71,34 @@ def test_repeat_repairs_only_budget_wallet_reference():
         "wallet_entity"] = "sensor.fictional_wallet"
     assert redesign(current) == expected
     assert "wallet_entity" not in budget
+
+
+def test_recipient_tabs_keep_routes_directions_and_match_full_width():
+    initial = redesign(legacy())
+    expected = {
+        "payments": ("Owner credits", "driver_to_operator", "Driver → Owner"),
+        "operator-credits": ("Driver credits", "operator_to_driver", "Owner → Driver"),
+    }
+    for view in initial["views"]:
+        if view["path"] not in expected:
+            continue
+        title, direction, arrow = expected[view["path"]]
+        view["title"] = "Old title"
+        view["sections"][0].pop("column_span")
+        review = next(c for c in cards(view) if c.get("type") == "custom:bsv-session-review-card")
+        review["grid_options"] = {"columns": 12, "rows": 5, "custom": "preserved"}
+    original = deepcopy(initial)
+    migrated = redesign(initial)
+    assert initial == original
+    assert [v["path"] for v in migrated["views"]] == [v["path"] for v in initial["views"]]
+    for view in migrated["views"]:
+        if view["path"] not in expected:
+            continue
+        title, direction, arrow = expected[view["path"]]
+        assert view["title"] == title
+        assert arrow in view["header"]["card"]["content"]
+        assert view["sections"][0]["column_span"] == 2
+        review = next(c for c in cards(view) if c.get("type") == "custom:bsv-session-review-card")
+        assert review["direction"] == direction
+        assert review["grid_options"] == {"columns": "full", "rows": "auto", "custom": "preserved"}
+    assert redesign(migrated) == migrated

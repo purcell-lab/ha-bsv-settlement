@@ -29,7 +29,8 @@ changing this operating arrangement.
 
 - Pay only a negative, fully priced final net account after session closure.
 - Freeze the configured `sat/AUD` sensor value when assigning a recipient.
-- Cap operator spend at 1,000 sat per session, including a fixed 10 sat fee.
+- Cap operator spend at 1,000 sat per session, including the live size-based fee.
+  There is no separate fee ceiling; see the [fee policy](operator-fee-policy.md).
 - There is no cumulative or daily cap. The policy continues until disabled.
 - Preserve fixed account hashes, exact outputs, confirmed funding checks and
   exclusions shared with manual credits and driver collection.

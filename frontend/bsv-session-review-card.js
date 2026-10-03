@@ -118,8 +118,8 @@ class BsvSessionReviewCard extends HTMLElement {
         th details{border:0;margin:0;padding:0}th summary{padding:0;min-height:32px}td{font-variant-numeric:tabular-nums}
       </style><style>${styles}</style>
       <ha-card>
-        <div class="head"><div><p class="eyebrow">${mode==="driver_to_operator"?"Driver → Operator":mode==="operator_to_driver"?"Operator → Driver":"Settlement"}</p><h2>${mode==="driver_to_operator"?"Driver collections":mode==="operator_to_driver"?"Operator credits":"Payments & credits"}</h2></div>${creditMode?`<span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span>`:""}</div>
-        <p class="note">${mode==="driver_to_operator"?"Money collected from drivers. Consent, held collections and charge closure are shown here.":mode==="operator_to_driver"?"Money paid to drivers. Receiving registrations, funding and credit confirmation are shown here.":"Follow each session from review to confirmation."} A submitted transaction must be reconciled, never paid again.</p>
+        <div class="head"><div><p class="eyebrow">${mode==="driver_to_operator"?"Driver → Owner":mode==="operator_to_driver"?"Owner → Driver":"Settlement"}</p><h2>${mode==="driver_to_operator"?"Owner credits":mode==="operator_to_driver"?"Driver credits":"Payments & credits"}</h2></div>${creditMode?`<span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span>`:""}</div>
+        <p class="note">${mode==="driver_to_operator"?"Money received by the owner from drivers. Consent, held collections and charge closure are shown here.":mode==="operator_to_driver"?"Money received by the driver from the owner. Receiving registrations, funding and credit confirmation are shown here.":"Follow each session from review to confirmation."} A submitted transaction must be reconciled, never paid again.</p>
         ${collectionIssues.map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
           <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
           <p>${esc(p.diagnostic?.message||"No signing permit or payment is implied by a reserved attempt. Inspect the wallet and recipient history before releasing it.")}</p>
@@ -128,16 +128,16 @@ class BsvSessionReviewCard extends HTMLElement {
         ${creditMode&&ongoing?.enabled?`<div class="section"><div class="row"><h3>Ongoing driver credits</h3><span class="badge ${ongoing.effective?"good":"warn"}">${ongoing.effective?"Enabled":"Paused by master policy"}</span></div>
         <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
-        <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
+        <p class="note">Maximum 1,000 sat per session including the size-based network fee. No separate fee ceiling. The fee uses a fresh provider quote; missing quotes or a credit plus fee above the total limit pause payment. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
         <p class="note">A seven-day driver registration ends at its signed expiry or a newer driver registration. This does not extend existing single-session spending approvals.</p>
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
         ${sessionTable(health,observedSessions,mode)}
         ${(creditMode?automatic?.payments || []:[]).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
-        <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl><p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p>${chainRecordLink(p.txid)}</details>
+        <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl>${p.fee_quote?`<p class="note">Quoted rate: ${esc(p.fee_quote.rate_sat_per_kb)} sat/KB · signed-size allowance: ${esc(p.fee_quote.estimated_signed_bytes)} bytes. Quote checked ${esc(stamp(p.fee_quote.observed_at))}.</p>`:""}<p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p>${chainRecordLink(p.txid)}</details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
-        ${creditMode?`<details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a registered receiving key. Maximum operator spend: 1,000 sat per session including a 10 sat fee. Registration does not guarantee payment; final account, funding and limits are checked.</p>
+        ${creditMode?`<details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a registered receiving key. Maximum operator spend: 1,000 sat per session including the quoted network fee. The higher of the recommended and mempool-minimum rates is applied to a conservative signed-size estimate, rounded up. Quotes are checked again before signing. Registration and a fee quote do not guarantee payment or confirmation.</p>
         ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>`:""}
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
@@ -241,7 +241,7 @@ class BsvSessionReviewCard extends HTMLElement {
     }
     if (r.state === "credit_review_approved" && !r.credit_draft) {
       flow.innerHTML = `<label>Exact operator network fee, satoshis<input id="fee" type="number" min="1" max="1000" step="1" placeholder="Enter reviewed fee"></label>
-        <p class="note">1 to 1000 sat is the demonstration cap, not a network fee estimate. Preparation does not sign or broadcast.</p>
+        <p class="note">1 to 1000 sat is the demonstration cap, not a network fee estimate. Your exact fee must also meet a fresh provider quote; a fee rise requires a new unsigned review, not an automatic increase. Preparation does not sign or broadcast.</p>
         <button id="credit" disabled>Prepare unsigned operator credit</button>
         <button id="cancel-credit" ${disabled ? "disabled" : ""}>Cancel unsigned review</button>`;
       $("#fee").oninput = () => {

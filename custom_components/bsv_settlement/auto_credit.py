@@ -9,9 +9,9 @@ from .api import WalletError
 from .budget import canonical, sha, message_hash
 from .session_review import account_snapshot, decimal, digest, now
 from .mainnet import build_transaction, MIN_CHANGE_SATS, TXID
+from .fees import quote, validate, MODE
 
 MAX_TOTAL = 1000
-FEE = 10
 PROTOCOL = [2, "3241645161d8"]
 PENDING = ("broadcast_unknown", "submitted", "provider_unconfirmed")
 CONFIRMED_RECHECK_SECONDS = 15 * 60
@@ -37,7 +37,7 @@ class AutomaticCredits:
         if enabled and not self.policy.get("enabled"):
             self.api.saved["automatic_credit_policy"] = {
                 "enabled": True, "enabled_at": now().isoformat(), "authorised_by": user_id,
-                "max_total_sats": MAX_TOTAL, "fee_sats": FEE,
+                "max_total_sats": MAX_TOTAL, "fee_mode": MODE,
             }
         elif not enabled:
             self.policy["enabled"] = False
@@ -51,14 +51,14 @@ class AutomaticCredits:
         return {k: copy.deepcopy(item[k]) for k in (
             "state", "budget_id", "session_id", "transaction_id", "recipient_address",
             "amount_sats", "fee_sats", "net_amount_aud", "txid", "confirmations",
-            "created_at", "checked_at", "error", "wallet_imported_at",
+            "created_at", "checked_at", "error", "wallet_imported_at", "fee_quote",
         ) if k in item} | {"quality_flags": copy.deepcopy(
             (item.get("account") or {}).get("quality_flags", []))}
 
     def summary(self):
         return {
             "enabled": self.policy.get("enabled", False),
-            "max_total_sats": MAX_TOTAL, "fee_sats": FEE,
+            "max_total_sats": MAX_TOTAL, "fee_sats": None, "fee_mode": MODE,
             "enabled_at": self.policy.get("enabled_at"),
             "payments": [self.public(i) for i in
                          list(self.api.saved["automatic_credits"].values())[-20:]],
@@ -160,11 +160,17 @@ class AutomaticCredits:
         return {(i["source_txid"], i["source_index"]) for i in
                 self.api.saved["automatic_credits"].values() if i.get("txid")}
 
-    async def funding(self, row, amount):
+    async def quote_fee(self, row, amount):
+        result = await quote(self.api.chain)
+        if amount + result["fee_sats"] > MAX_TOTAL:
+            raise WalletError("Credit plus quoted fee exceeds the 1000 sat total cap")
+        return result
+
+    async def funding(self, row, amount, fee):
         used = self.used() | {(p["source_txid"], p["source_index"])
                               for p in self.api.saved["payments"].values() if p.get("txid")}
         rows = await self.api.chain.unspent(self.api.identity["address"])
-        candidates = [r for r in rows if r["value"] >= amount + FEE + MIN_CHANGE_SATS
+        candidates = [r for r in rows if r["value"] >= amount + fee + MIN_CHANGE_SATS
                       and (r["tx_hash"], r["tx_pos"]) not in used]
         if not candidates:
             raise WalletError("No suitable confirmed operator funding output")
@@ -182,37 +188,46 @@ class AutomaticCredits:
             return
         amount = int((-aud * decimal(row["terms"]["satoshis_per_aud"])).quantize(
             decimal("1"), rounding=ROUND_HALF_UP))
-        if amount < 1 or amount + FEE > MAX_TOTAL:
+        if amount < 1 or amount >= MAX_TOTAL:
             raise WalletError("Credit plus fee exceeds 1000 sat or rounds below one satoshi")
         if item and item["source_hash"] != digest(account):
             raise WalletError("Frozen credit account changed; reconcile, do not replace it")
+        quotation = await self.quote_fee(row, amount)
+        fee = quotation["fee_sats"]
         if item is None:
             item = {
                 "state": "credit_queued", "budget_id": row["terms"]["budget_id"],
                 "session_id": account["session_id"], "transaction_id": account["ocpp_transaction_id"],
                 "recipient_address": row["credit_destination"]["address"],
-                "amount_sats": amount, "fee_sats": FEE, "net_amount_aud": str(aud),
+                "amount_sats": amount, "fee_sats": fee, "net_amount_aud": str(aud),
                 "account": copy.deepcopy(account),
                 "source_hash": digest(account), "created_at": now().isoformat(),
                 "policy_enabled_at": self.policy["enabled_at"],
             }
             self.api.saved["automatic_credits"][row["terms"]["budget_id"]] = item
             self.api.saved["automatic_credit_index"][self.api.collections.key(row)] = row["terms"]["budget_id"]
-            await self.save()
+        # Only unsigned automatic work is repriced. Reviewed recovery overrides
+        # quote_fee and keeps its exact fee; signed outcomes returned above.
+        item.update(fee_sats=fee, fee_quote=quotation)
+        await self.save()
         manual = self.api.saved["payments"]
         if self.pending() or any(p["state"] in ("prepared", *PENDING) for p in manual.values()):
             raise WalletError("Another operator payment is unresolved; credit remains queued")
-        source, raw = await self.funding(row, amount)
+        source, raw = await self.funding(row, amount, fee)
         if digest(await self.account(row)) != item["source_hash"]:
             raise WalletError("Session account changed before signing")
+        fresh = await self.quote_fee(row, amount)
+        validate(fresh, fee)  # A rise fails unsigned; next tick can obtain new terms.
         signed = await self.api.hass.async_add_executor_job(
             build_transaction, self.api.identity["secret_hex"], raw, source["tx_pos"],
-            item["recipient_address"], amount, FEE, True)
+            item["recipient_address"], amount, fee, True)
         if signed["source_txid"] != source["tx_hash"] or signed["source_value"] != source["value"]:
             raise WalletError("Funding evidence does not match the raw transaction")
         self.guard(row)
         if digest(await self.account(row)) != item["source_hash"]:
             raise WalletError("Session account changed after signing; no submission")
+        validate(fresh, fee, len(signed["raw"]) // 2)
+        item["fee_quote"] = fresh
         item.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                     source_txid=source["tx_hash"], source_index=source["tx_pos"], error=None)
         self.api.invalidate_balance("refresh_required_after_submission")
