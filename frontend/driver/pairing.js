@@ -67,11 +67,14 @@ export function normalizeWalletResult(result) {
  */
 export class BrowserPairing {
   constructor({ api, origin, WebSocketClass = WebSocket, onState = () => {},
-    rpcTimeout = 60000, cryptoWallet = new ProtoWallet(PrivateKey.fromRandom()) }) {
+    rpcTimeout = 60000, cryptoWallet = new ProtoWallet(PrivateKey.fromRandom()), receiptOnly = false }) {
     Object.assign(this, { api, origin, WebSocketClass, onState, rpcTimeout, cryptoWallet });
+    this.receiptOnly=receiptOnly;
+    this.requiredMethods=receiptOnly?["getPublicKey","createSignature"]:requiredMethods;
+    this.allowedMethods=receiptOnly?["getPublicKey","createSignature","getNetwork","internalizeAction"]:requiredMethods;
     this.state = "idle"; this.pending = new Map(); this.seq = 0;
     this.lastReply = 0; this.chain = Promise.resolve(); this.generation = 0;
-    this.wallet = Object.fromEntries(requiredMethods.map(method => [method, params => this.request(method, params || {})]));
+    this.wallet = Object.fromEntries(this.allowedMethods.map(method => [method, params => this.request(method, params || {})]));
   }
   stateChanged(state, detail = "") {
     this.state = state; this.onState(state, detail);
@@ -153,12 +156,15 @@ export class BrowserPairing {
       this.socket.send(ack);
       clearTimeout(this.timer);
       this.timer = setTimeout(() => this.fail("Connection expired. Pair again before further wallet actions."), 1800000);
-      const missing = requiredMethods.filter(m => !msg.params.permissions.includes(m));
+      this.supportedMethods=msg.params.permissions.filter(m=>this.allowedMethods.includes(m));
+      const missing = this.requiredMethods.filter(m => !msg.params.permissions.includes(m));
       if (missing.length) {
         this.stateChanged("incompatible",
           `Wallet paired, but this version does not expose ${missing.join(", ")}. Open the driver link inside BSV Browser instead. No spending approval was signed.`);
       } else {
-        this.stateChanged("paired", "Wallet paired. Check mainnet before approving this session.");
+        this.stateChanged("paired", this.receiptOnly?
+          "Wallet paired for portal sign-in and receipts. No spending approval.":
+          "Wallet paired. Check mainnet before approving this session.");
       }
       return;
     }
@@ -174,7 +180,8 @@ export class BrowserPairing {
     else pending.resolve(result);
   }
   async request(method, params = {}) {
-    if (!requiredMethods.includes(method) || this.state !== "paired" || this.pending.size)
+    if (!this.allowedMethods.includes(method) || !this.supportedMethods?.includes(method) ||
+        this.state !== "paired" || this.pending.size)
       throw Error("Wallet is not ready, or another wallet request is still pending.");
     const generation = this.generation, id = crypto.randomUUID(), seq = ++this.seq;
     let resolve, reject;
@@ -213,7 +220,8 @@ export class BrowserPairing {
     this.stateChanged("disconnected", message);
   }
   async disconnect() {
-    this.fail("Disconnected. Saved session approval is unchanged; this does not revoke it.");
+    this.fail(this.receiptOnly?"Portal wallet connection ended. Payments and spending approvals are unchanged.":
+      "Disconnected. Saved session approval is unchanged; this does not revoke it.");
     if (this.session) await this.api("pairing_cancel", { topic: this.session.topic }).catch(() => {});
     this.session = null; this.cryptoWallet = null;
   }

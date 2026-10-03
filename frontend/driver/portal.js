@@ -1,0 +1,188 @@
+import {WalletClient} from "@bsv/sdk";
+import {BrowserPairing} from "./pairing.js";
+import {signPortalLogin,averageNet,averageRate,transactionStatus} from "./portal-model.js";
+import {parseInvitation} from "./model.js";
+import {importAndReportCredit,receiptReported} from "./credit.js";
+import {chainRecordUrl} from "../ui.js";
+import qrcode from "qrcode-generator";
+
+document.title="My charging sessions | BSV Settlement";
+document.querySelector("main").innerHTML=`
+<div class="intro"><p class="eyebrow">DRIVER PORTAL</p><h1>My charging sessions</h1>
+<p>One address for your charging history, payments and credit receipts.</p></div>
+<section id="portal-signin"><h2>Your wallet is your sign-in</h2>
+<p>Prove control of your wallet to see only your recorded sessions. Signing in does not authorise spending, reserve funds or start charging.</p>
+<div class="actions"><button id="portal-login">Sign in with wallet</button><button id="portal-pair" class="secondary">Pair and sign in with BSV Browser</button></div>
+<p class="small">Use wallet sign-in on this device. If your wallet is on a phone, pair it using a fresh QR or connection URI. No private session link is needed.</p></section>
+<p id="portal-status" class="notice" role="status" aria-live="polite">Sign in to load your private history. Wallet permission prompts may appear.</p>
+<section id="portal-pairing" hidden><h2>Connect BSV Browser</h2><p id="portal-pair-status" role="status"></p>
+<div id="portal-qr" class="session-link-qr"></div>
+<label for="portal-uri">Pairing URI for Connect to App → Paste URI</label>
+<textarea id="portal-uri" readonly rows="3" spellcheck="false"></textarea>
+<div class="actions"><button id="portal-copy" class="secondary">Copy pairing URI</button><button id="portal-disconnect" class="secondary">Cancel pairing</button></div>
+<p class="small">The code expires after two minutes. Keep this page open. Saved connections cannot restore an expired code; create a fresh one here.</p></section>
+<section id="portal-account" hidden><div class="section-head"><h2>Wallet verified</h2><button id="portal-logout" class="secondary">Sign out</button></div>
+<p id="portal-identity" class="mono"></p><p id="portal-expiry" class="small"></p>
+<div class="actions"><button id="portal-refresh" class="secondary">Refresh history</button><button id="portal-sync">Sync credits on this page</button></div>
+<p class="small">History does not enable charging payments. Credit sync imports existing confirmed payments and records wallet acceptance; it never sends another payment.</p></section>
+<section id="portal-history" hidden><div class="section-head"><h2>Sessions and transactions</h2><span id="portal-count" class="badge"></span></div>
+<p id="portal-empty" hidden>No sessions are linked to this wallet yet. New charging authority must be registered separately by the operator.</p>
+<div id="portal-sessions"></div><button id="portal-more" class="secondary wide" hidden>Load more sessions</button>
+<p class="small">Only retained charging records with verified wallet ownership are shown. Unattributed legacy payments and unrelated wallet activity are excluded. Average net $/kWh excludes network fees. Chain confirmation is provider-reported; wallet acceptance is a separate signed report.</p></section>
+<details class="portal-recovery"><summary>Existing invitation or private-link recovery</summary>
+<p>New spending approval remains a separate action. If the operator supplied an invitation, open its complete link. Sign-in cannot assign an unclaimed charging session to you.</p>
+<label for="portal-private">Existing private session or registration link</label><textarea id="portal-private" rows="2" spellcheck="false"></textarea>
+<button id="portal-open" class="secondary">Open existing invitation</button></details>`;
+const $=id=>document.getElementById(id),message=text=>{$("portal-status").textContent=text;};
+const framed=window.top!==window;
+let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
+const imports=new Map();
+function controls(){
+  for(const id of ["portal-login","portal-pair","portal-refresh","portal-sync","portal-logout","portal-more","portal-open"])
+    $(id).disabled=busy||framed;
+  $("portal-sync").disabled=busy||framed||!sessions.some(s=>s.transactions.some(t=>t.direction==="operator_to_driver"&&t.state==="provider_confirmed"&&!receiptReported(t)));
+}
+async function api(action,extra={}){
+  const r=await fetch("/api/bsv_settlement/portal",{method:"POST",credentials:"same-origin",cache:"no-store",
+    referrerPolicy:"no-referrer",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra}),
+    signal:AbortSignal.timeout(20000)});
+  const data=await r.json();
+  if(!r.ok){const error=Error(data.error||"Portal request failed");error.status=r.status;throw error;}
+  return data;
+}
+function clearPrivate(){
+  if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
+  generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
+  $("portal-sessions").replaceChildren();$("portal-identity").textContent="";
+  $("portal-account").hidden=true;$("portal-history").hidden=true;$("portal-signin").hidden=false;
+}
+function node(tag,text,cls){const e=document.createElement(tag);e.textContent=text;if(cls)e.className=cls;return e;}
+const number=(v,suffix="")=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))?"Unavailable":`${Number(v).toFixed(3)}${suffix}`;
+function render(){
+  $("portal-signin").hidden=!!identity;$("portal-account").hidden=!identity;$("portal-history").hidden=!identity;
+  $("portal-identity").textContent=identity||"";$("portal-count").textContent=`${sessions.length} of ${total}`;
+  $("portal-empty").hidden=sessions.length>0;$("portal-more").hidden=sessions.length>=total;
+  $("portal-expiry").textContent=`Private access expires at ${new Date(expires).toLocaleTimeString()}. Signing out or restarting the operator service ends access.`;
+  const list=$("portal-sessions");list.replaceChildren();
+  for(const s of sessions){
+    const box=node("article","", "portal-session"),heading=node("h3",s.ended_at?"Completed session":"Recorded session");
+    box.append(heading,node("p",`${s.opened_at?new Date(s.opened_at).toLocaleString():"Date unavailable"} · ${s.transaction_id||s.session_id}`,"small mono"));
+    const grid=node("dl","","portal-energy");
+    const buy=averageRate(s.import_cost_aud,s.import_kwh),sell=averageRate(s.export_credit_aud,s.export_kwh);
+    for(const [label,value] of [
+      ["Energy Imported to EV",number(s.import_kwh," kWh")],["Energy Imported from EV",number(s.export_kwh," kWh")],
+      ["Average buy price",buy===null?"Unavailable":`${buy.toFixed(4)} $/kWh`],
+      ["Average sell price",sell===null?"Unavailable":`${sell.toFixed(4)} $/kWh`],
+      ["Net energy account",number(s.net_amount_aud," AUD")],
+      ["Average net price",averageNet(s)===null?"Unavailable":`${averageNet(s).toFixed(4)} $/kWh`]])
+      grid.append(node("dt",label),node("dd",value));
+    box.append(grid);
+    if(s.quality_flags?.length)box.append(node("p","Metering warning: "+s.quality_flags.join(", "),"notice small"));
+    if(s.closure)box.append(node("p","Account: "+s.closure.state.replaceAll("_"," "),"notice small"));
+    if(!s.transactions.length)box.append(node("p","No recorded payment. Sign-in does not collect this session.","small"));
+    for(const t of s.transactions){
+      const payment=node("div","","portal-payment");
+      payment.append(node("p",`${t.direction==="operator_to_driver"?"Credit to driver":"Payment to operator"}: ${Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded"}`,"strong"),
+        node("p",transactionStatus(t),"small"),
+        node("p",`Network fee: ${Number.isSafeInteger(t.fee_sats)?t.fee_sats+" sat":"Not recorded"}`,"small"));
+      const url=chainRecordUrl(t.txid);
+      if(url){const a=node("a","View chain-provider record");a.href=url;a.target="_blank";a.rel="noopener noreferrer";payment.append(a);}
+      box.append(payment);
+    }
+    const detail=document.createElement("details");detail.append(node("summary","Session references and approval history"),
+      node("p",s.session_id,"mono"),node("p",s.agreements.map(a=>`${a.state.replaceAll("_"," ")} · expires ${new Date(a.expires_at).toLocaleString()}`).join("; ")||"Original operator-credit routing","small"));
+    box.append(detail);list.append(box);
+  }
+  controls();
+}
+async function load(more=false){
+  const before=generation;
+  const result=await api("sessions",{offset:more?sessions.length:0});
+  if(before!==generation)return;
+  if(identity&&result.identity!==identity)throw Error("Wallet sign-in changed. Sign out and sign in again.");
+  identity=result.identity;expires=Date.now()+result.expires_in*1000;
+  sessions=more?[...sessions,...result.sessions]:result.sessions;total=result.total;render();
+}
+async function run(fn){
+  if(framed){message("Open the driver portal directly in your browser to sign in.");return;}
+  if(busy)return;busy=true;controls();
+  try{await fn();}catch(e){
+    if(e.status===401){clearPrivate();message("Private access ended or the request could not be verified. Sign in again.");}
+    else message(e.walletAccepted?e.message:"Action paused: "+e.message);
+  }finally{busy=false;controls();}
+}
+async function signIn(candidate){
+  const before=generation;
+  message("Verify wallet identity. This signature is for sign-in only, not spending.");
+  const proof=await signPortalLogin(candidate,await api("challenge"),location.origin);
+  const result=await api("login",proof);
+  if(before!==generation)throw Error("Sign-in was interrupted. Please try again.");
+  if(result.identity!==proof.identity)throw Error("Sign-in identity mismatch.");
+  wallet=candidate;identity=result.identity;imports.clear();await load();
+  message("Signed in. Your charging history is private to this wallet. No payment was sent.");
+}
+$("portal-login").onclick=()=>run(()=>signIn(new WalletClient(window.CWI?"window.CWI":"auto")));
+$("portal-refresh").onclick=()=>run(()=>load());
+$("portal-more").onclick=()=>run(()=>load(true));
+$("portal-logout").onclick=()=>run(async()=>{
+  try{await api("logout");if(pairing)await pairing.disconnect();pairing=null;message("Signed out. Spending approvals and payments are unchanged.");}
+  finally{clearPrivate();$("portal-pairing").hidden=true;}
+});
+$("portal-sync").onclick=()=>run(async()=>{
+  const before=generation,driver=identity;
+  const candidate=wallet||new WalletClient(window.CWI?"window.CWI":"auto");
+  const actual=(await candidate.getPublicKey({identityKey:true})).publicKey;
+  if(actual!==driver||before!==generation)throw Error("Use the same wallet that signed in.");
+  if(pairing&&(!pairing.supportedMethods?.includes("getNetwork")||!pairing.supportedMethods?.includes("internalizeAction")))
+    throw Error("This paired wallet supports sign-in but not verified receipt import. Use a compatible local wallet; payments remain unchanged.");
+  for(const s of sessions)for(const t of s.transactions){
+    if(t.direction!=="operator_to_driver"||t.state!=="provider_confirmed"||receiptReported(t))continue;
+    if(before!==generation)throw Error("Private access ended. Sign in again to continue.");
+    const response=await api("credit_receipt",{credit_id:t.id});
+    if(response.receipt.txid!==t.txid||response.receipt.session_id!==s.session_id)throw Error("Receipt does not match this session.");
+    const checked=parseInvitation(JSON.stringify(response.invitation),Date.now(),true);
+    const scoped=(action,data)=>api(action,{...data,credit_id:t.id});
+    const report=await importAndReportCredit(candidate,checked,response.receipt,driver,scoped,imports);
+    if(before!==generation)return;
+    Object.assign(t,report);
+    render();
+  }
+  message("Confirmed receipts synced and acceptance recorded. No new payment was sent.");
+});
+$("portal-pair").onclick=()=>run(async()=>{
+  if(pairing)await pairing.disconnect();
+  $("portal-pairing").hidden=false;
+  pairing=new BrowserPairing({api,origin:location.origin,receiptOnly:true,onState:(state,text)=>{
+    $("portal-pair-status").textContent=text;
+    $("portal-qr").replaceChildren();$("portal-uri").value="";
+    if(state==="scanning"&&pairing.uri){
+      const qr=qrcode(0,"M");qr.addData(pairing.uri,"Byte");qr.make();
+      $("portal-qr").innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});
+      $("portal-qr").querySelector("svg").setAttribute("aria-label","Private portal wallet pairing code");
+      $("portal-uri").value=pairing.uri;
+    }
+    if(state==="paired")void run(()=>signIn(pairing.wallet));
+    if(state==="disconnected"){wallet=null;message("Pairing ended. Your private history remains available until sign-out or expiry; create a fresh code for wallet actions.");}
+  }});
+  await pairing.start();
+});
+$("portal-copy").onclick=async()=>{
+  if(!$("portal-uri").value)return;
+  try{await navigator.clipboard.writeText($("portal-uri").value);message("Pairing URI copied. Paste it into BSV Browser → Connect to App → Paste URI now.");}
+  catch{$("portal-uri").focus();$("portal-uri").select();message("Select and copy the pairing URI. Keep it private.");}
+};
+$("portal-disconnect").onclick=()=>run(async()=>{if(pairing)await pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;});
+$("portal-open").onclick=async()=>{
+  const {privateSessionUrl,publicEnrolmentUrl}=await import("./private-link.js");
+  const input=$("portal-private").value.trim(),url=privateSessionUrl(input,location.origin)||publicEnrolmentUrl(input,location.origin);
+  if(url)location.href=url;else message("Use a complete invitation from this operator. Never enter wallet keys.");
+};
+let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
+function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";}
+$("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
+window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
+setInterval(()=>{if(identity&&Date.now()>=expires){clearPrivate();message("Private access expired. Sign in again.");}},1000);
+// Only restore a server-authenticated session; never prompt a wallet on public page load.
+try{if(!framed){await load();message("Private history restored. Wallet connection is needed only for receipt sync.");}}
+catch{clearPrivate();}controls();
+if(framed)message("Open the driver portal directly in your browser to sign in.");
