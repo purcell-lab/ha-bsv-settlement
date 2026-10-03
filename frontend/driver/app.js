@@ -120,6 +120,7 @@ const status = (message,error=false) => {
   $("action-note").textContent = message;
 };
 function pricesValid() {
+  if(checked?.terms.closed_session_review)return true; // Signed historic account, not today's indicative tariff.
   return live?.valid && ["import","export"].every(k => live[k]?.available &&
     Date.parse(live[k].start) <= Date.now() &&
     Date.parse(live[k].end) + 90000 >= Date.now());
@@ -144,9 +145,11 @@ function controls() {
   if (expired && !accepted) status("This invitation has expired. Ask the operator for a new link.",true);
   $("approve").textContent = accepted ? (spending() ? "Spending approval saved" : "Old consent saved, no spending authority") :
     receipt ? "Spending approval signed" : !spending() && checked ? "New invitation required to approve spending" :
+    checked?.terms.closed_session_review ? "Approve completed-session payment" :
     `Approve spending up to ${checked ? checked.terms.max_total_sats.toLocaleString() : "…"} sat`;
   const view=driverView({accepted,registered:creditRegistered,connected:!!connectedWallet,
-    state:collectionState,credit:creditDirection,creditEnabled,imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
+    state:collectionState,credit:creditDirection,creditEnabled,closedSession:!!checked?.terms.closed_session_review,
+    imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
   $("page-title").textContent=view.title;$("page-subtitle").textContent=view.subtitle;
   document.body.dataset.stage=view.stage;
   $("progress-approve").className=accepted?"done":"";
@@ -193,7 +196,7 @@ async function api(action, extra={}) {
   return result;
 }
 function paintPrices() {
-  $("prices").hidden = !capability;
+  $("prices").hidden = !capability || !!checked?.terms.closed_session_review;
   for (const [key,id] of [["import","import-price"],["export","export-price"]]) {
     const p=live?.[key];
     $(id).textContent = p?.available ? `${(Number(p.aud_per_kwh)*100).toFixed(2)} c/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
@@ -221,9 +224,22 @@ function show(invitation) {
   $("expiry").textContent=new Date(t.expires_at).toLocaleString();
   $("pricing").textContent=t.pricing_rule;
   $("scope").textContent=t.account_scope;
+  $("closed-account").hidden=!t.closed_session_review;
+  if(t.closed_session_review){
+    const c=t.closed_session_review,a=c.account,total=Number(a.import_kwh)+Number(a.export_kwh);
+    const warnings=c.accepted_flags.map(f=>({
+      "import:energy_without_matching_state":"Charging energy was recorded while the charger state did not indicate charging",
+      "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging"
+    })[f]||f).join(". ");
+    $("closed-account").textContent=`Completed session ${t.transaction_id}. Charged ${a.import_kwh} kWh; exported ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
+  }
   $("approval-terms").textContent = spending() ?
     `By selecting Approve spending, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
     "This is an old consent-only invitation. It cannot authorise spending. Ask the operator to revoke it and issue a new spending invitation. Existing signatures do not change.";
+  if(t.closed_session_review)$("approval-terms").textContent=
+    `You authorise one payment of ${t.closed_session_review.amount_sats} sat for this completed account, plus the actual fee, up to ${t.max_total_sats} sat total. Review the warnings above. The operator's explanation is not independent validation of the meter. This approval does not authorise another session or change your receiving wallet.`;
+  $("credit-status").hidden=!!t.closed_session_review;
+  $("credit-policy").hidden=!!t.closed_session_review;
   $("terms").hidden=false; $("wallet-section").hidden=false;
   $("invitation").value=JSON.stringify(invitation,null,2);
   controls();
@@ -258,7 +274,9 @@ async function refresh(initial=false) {
       $("wallet-key").textContent=result.driver_identity;
       if(!collectionState)status(spending() ? "Approval saved. Checking your session and settlement…" :
         "Old consent is saved. It grants no spending authority. Ask the operator for a new invitation to approve spending.");
-    } else if(initial) status("Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
+    } else if(initial) status(checked.terms.closed_session_review?
+      "Review the completed account, metering warnings and fee limits before approving payment. Your wallet may ask for permission.":
+      "Review the operator, current prices and budget, then select Approve once. Your wallet may ask for permission.");
   } catch(e) {
     live=null;paintPrices();
     $("connection-status").hidden=false;
@@ -401,7 +419,9 @@ async function submitReceipt() {
       $("credit-status").textContent="Receiving wallet registered for automatic session credits.";
     }catch(e){halted=true;$("credit-status").textContent=`Spending approval saved, but receiving-wallet registration failed: ${e.message}. Reconnect before the session ends.`;}
   }
-  status("Spending approval saved. Keep BSV Browser and this page open for automatic collection when the bound session ends.");
+  status(checked.terms.closed_session_review?
+    "Completed-account approval saved. Keep BSV Browser and this page open while collection is checked now.":
+    "Spending approval saved. Keep BSV Browser and this page open for automatic collection when the bound session ends.");
   $("result-note").textContent="Your spending approval is verified and saved by the operator. Keep a copy if you wish.";
 }
 $("approve").onclick=async()=>{
@@ -415,7 +435,9 @@ $("approve").onclick=async()=>{
       live=result.prices;paintPrices();
       if(!pricesValid())throw Error("Current Amber prices are unavailable. Try again later.");
     }
-    status("Waiting for BSV Browser. This action connects your identity and signs your capped spending approval. No payment is made now.");
+    status(checked.terms.closed_session_review?
+      "Waiting for BSV Browser. Approval permits immediate collection of this completed account within the displayed limits.":
+      "Waiting for BSV Browser. This action connects your identity and signs your capped spending approval. No payment is made now.");
     const {wallet,identity}=await connectWallet();
     $("wallet-key").textContent=identity;
     receipt=await signConsent(wallet,checked,identity);

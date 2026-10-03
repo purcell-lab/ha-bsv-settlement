@@ -19,9 +19,11 @@ export function ongoingCreditMessage(state,imported=false){
   })[state] || "Operator credit status needs review.";
 }
 
-export function driverView({accepted,registered,connected,state,credit,imported,hasInvitation,creditEnabled=true}){
+export function driverView({accepted,registered,connected,state,credit,imported,hasInvitation,creditEnabled=true,closedSession=false}){
   if(!hasInvitation)return {title:"Charge. Export. Settle.",subtitle:"Open your operator's private link inside BSV Browser.",stage:"start"};
-  if(!accepted)return {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};
+  if(!accepted)return closedSession?
+    {title:"Review your completed session",subtitle:"Review the frozen energy account and any metering warnings. Approval can start payment immediately; it does not start another charging session.",stage:"approve"}:
+    {title:"Approve your charging session",subtitle:"Review today's rates and your spending limit. No payment is sent now.",stage:"approve"};
   if(credit&&state==="provider_confirmed")return imported?
     {title:"Credit accepted by your wallet",subtitle:"The confirmed payment receipt is imported. No further payment is needed.",stage:"settled"}:
     {title:"Your credit is confirmed",subtitle:"Reconnect the same wallet to import your receipt. This does not send another payment.",stage:"approved",reconnect:"Receive credit in wallet"};
@@ -35,5 +37,6 @@ export function driverView({accepted,registered,connected,state,credit,imported,
   if(state && /blocked|failed|expired|revoked|rejected/.test(state))return {title:"Settlement needs attention",subtitle:"No new payment should be sent. Contact the operator to review the saved account and transaction status.",stage:"approved"};
   if(creditEnabled&&!registered)return {title:"Finish connecting your wallet",subtitle:"Reconnect before session end to register where credits should be sent.",stage:"approved",reconnect:"Register receiving wallet"};
   if(state==="waiting_for_operator_binding")return {title:"Approval saved",subtitle:"The operator must match this approval to your charging session.",stage:"approved",reconnect:connected?null:"Reconnect wallet"};
+  if(closedSession)return {title:"Completed-account payment approved",subtitle:"Keep BSV Browser and this page open for collection. Wallet permission and final payment checks still apply.",stage:"approved",reconnect:connected?null:"Reconnect wallet"};
   return {title:"Your session is approved",subtitle:"Keep BSV Browser open for driver charges. Eligible operator credits can be sent while it is closed.",stage:"approved",reconnect:connected?null:"Reconnect wallet"};
 }

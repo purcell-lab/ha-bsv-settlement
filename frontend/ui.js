@@ -16,6 +16,7 @@ export function stateLabel(s) {
     awaiting_driver_consent:"Waiting for driver approval",
     spending_authorised_wallet_permission_required:"Driver approved",
     revoked:"Approval revoked",automatic_credit_pending:"Waiting for session end",
+    waived:"Waived",closed_zero:"Closed: no payment due",
   })[s] || (s ? String(s).replaceAll("_"," ") : "Not yet assessed");
 }
 export function sessionStatus(s,health,now=Date.now()) {
@@ -25,6 +26,16 @@ export function sessionStatus(s,health,now=Date.now()) {
   const payment=payments.find(p=>p.txid)||payments[0];
   if(payment)return {label:stateLabel(payment.state),tone:payment.state.includes("confirmed")&&!payment.state.includes("unconfirmed")?"good":payment.error||payment.state==="broadcast_unknown"?"warn":"info",
     detail:payment.txid?"Track the existing transaction. Do not pay again.":"Continue the saved settlement workflow.",target:"payments",payment};
+  const closure=health.closed_sessions?.find(r=>r.session_id===s.session_id);
+  if(closure&&(!finite(s.net_cost_aud)||Number(s.net_cost_aud)!==Number(closure.net_amount_aud)))
+    return {label:"Closed account changed",tone:"warn",detail:"The observed account changed after closure. Review the audit record; no automatic payment is allowed.",target:"payments"};
+  if(closure)return {label:stateLabel(closure.state),tone:"quiet",
+    detail:`Closed without payment. ${closure.reason}`,target:"payments"};
+  const flags=(s.quality_flags||[]).filter(f=>!["interval_energy_allocation_estimated","not_a_final_bill"].includes(f));
+  const reviewed=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.reviewed_closed_account&&
+    ["awaiting_driver_consent","spending_authorised_wallet_permission_required"].includes(a.state)&&Date.parse(a.expires_at)>now);
+  if(s.ended_at&&flags.length&&!reviewed)return {label:"Data review required",tone:"warn",
+    detail:`Review this completed account before consent or waiver: ${flags.join(", ")}.`,target:"payments"};
   const route=health.ongoing_credit?.sessions?.find(r=>r.session_id===s.session_id);
   if(route && Number(s.net_cost_aud)<0)return {
     label:!health.ongoing_credit.effective?"Ongoing credits paused":route.error?"Credit needs attention":"Ongoing credit assigned",
@@ -32,7 +43,10 @@ export function sessionStatus(s,health,now=Date.now()) {
     detail:route.error||`Credit recipient fixed for this session: ${route.recipient_address}. Final pricing, funds and the 1,000 sat total cap still apply.`,
     target:"payments"};
   const a=(health.driver_approvals || []).find(a=>a.session_id===s.session_id && a.approved && a.version===2 && a.state==="spending_authorised_wallet_permission_required" && Date.parse(a.expires_at)>now);
-  if(!a)return {label:s.ended_at?"Review needed":"Driver approval needed",tone:"warn",detail:s.ended_at?"No current session approval is shown. Review this closed account; do not reuse a previous approval.":"Invite this driver and confirm this session before it ends.",target:s.ended_at?"payments":"drivers"};
+  if(!a){
+    const pending=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.state==="awaiting_driver_consent"&&Date.parse(a.expires_at)>now);
+    return {label:pending?"Awaiting consent":s.ended_at?"Review needed":"Driver approval needed",tone:"warn",detail:pending?"The driver must approve this session's private invitation.":s.ended_at?"Review this completed account to request consent, waive your charge or close a zero balance. Do not reuse a previous approval.":"Invite this driver and confirm this session before it ends.",target:s.ended_at?"payments":"drivers"};
+  }
   if(!finite(s.net_cost_aud))return {label:"Pricing unavailable",tone:"warn",detail:"Resolve the session price data before settlement.",target:"payments"};
   if(Number(s.net_cost_aud)<0){
     if(!health.automatic_credit?.enabled || !a.credit_terms || !a.receiving_registered_at ||

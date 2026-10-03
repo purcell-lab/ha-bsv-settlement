@@ -72,3 +72,21 @@ test("expiry during wallet prompt is rejected", async () => {
   }};
   await assert.rejects(signConsent(slow,checked,key),/expired/);
 });
+test("completed-account consent binds the account and supported warning",async()=>{
+ const t={...terms,session_mode:"existing_session",closed_session_review:{
+   account:{session_id:terms.session_id,ocpp_transaction_id:terms.transaction_id,currency:"AUD",
+     ended_at:new Date(Date.now()-10000).toISOString(),import_kwh:"1.94",export_kwh:"0",net_amount_aud:"0.05",
+     quality_flags:["import:energy_without_matching_state"]},
+   accepted_flags:["import:energy_without_matching_state"],amount_sats:5,satoshis_per_aud:"100",
+   reason:"Reviewed charger timing mismatch"
+ }};
+ const checked=parseInvitation(JSON.stringify(invitation(t)));
+ const key=(await driver.getPublicKey({identityKey:true})).publicKey;
+ assert.ok(await signConsent(driver,checked,key));
+ for(const patch of [{amount_sats:0},{satoshis_per_aud:"200"},{reason:""},
+   {accepted_flags:["missing_prices"]},{account:{...t.closed_session_review.account,net_amount_aud:"-1"}}]){
+   assert.throws(()=>parseInvitation(JSON.stringify(invitation({...t,closed_session_review:{...t.closed_session_review,...patch}}))));
+ }
+ const changed=invitation(t);changed.payload=changed.payload.replace("timing mismatch","metering mismatch");
+ assert.throws(()=>parseInvitation(JSON.stringify(changed)),/signature/);
+});

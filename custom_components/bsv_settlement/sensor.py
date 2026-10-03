@@ -88,7 +88,7 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
                 "receive_address", "operator_public_key", "driver_identity_status",
                 "chain_checked_at", "chain_error", "balance_source", "last_payment",
                 "chain_attempted_at", "pending_change_sats", "pending_change_source",
-                "driver_approvals", "session_payments", "ongoing_credit",
+                "driver_approvals", "session_payments", "ongoing_credit", "closed_sessions",
                 "max_payment_sats", "max_fee_sats", "latest_session_review", "automatic_credit")}
         remote = self.session.get("remote", {})
         return {"mode": self.coordinator.mode, "session_id": self.session.get("session_id"),

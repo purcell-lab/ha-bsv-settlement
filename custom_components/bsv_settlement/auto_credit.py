@@ -64,6 +64,8 @@ class AutomaticCredits:
         }
 
     def guard(self, row):
+        if row["terms"].get("closed_session_review"):
+            raise WalletError("Post-session payment consent does not register or authorise operator credits")
         if (not self.policy.get("enabled") or
                 self.api.entry.data.get("enable_broadcast") is not True):
             raise WalletError("Automatic operator credits are disabled")

@@ -108,6 +108,7 @@ class SessionBudgets:
                 "created_at": t["created_at"],
                 "receiving_registered_at": (row.get("credit_destination") or {}).get("registered_at"),
                 "credit_terms": bool(t.get("credit_receiving")),
+                "reviewed_closed_account": bool(t.get("closed_session_review")),
             })
         return rows
 
@@ -196,7 +197,8 @@ class SessionBudgets:
                 "driver_identity": (row.get("receipt") or {}).get("driver_identity"),
                 "binding": copy.deepcopy(row.get("binding")),
                 "credit_destination_registered": bool(row.get("credit_destination")),
-                "automatic_credit_enabled": self.api.auto_credits.policy.get("enabled", False)}
+                "automatic_credit_enabled": self.api.auto_credits.policy.get("enabled", False)
+                    and not row["terms"].get("closed_session_review")}
 
     async def execute(self, action, data, user_id):
         if not user_id:
@@ -221,6 +223,9 @@ class SessionBudgets:
         return await self.accept(row, data["receipt"], user_id)
 
     async def accept(self, row, receipt, accepted_by):
+        from .session_closure import ensure_open
+        if self.api.collections.session_id(row):
+            ensure_open(self.api, self.api.collections.key(row))
         if self.public(row)["state"] in ("revoked", "expired"):
             raise WalletError("Budget invitation is expired or revoked")
         try:
@@ -283,7 +288,11 @@ class SessionBudgets:
         await self.api.store.async_save(self.api.saved)
         return self.public(row)
 
-    async def create(self, data, user_id):
+    async def create(self, data, user_id, *, closed_review=None):
+        from .session_closure import ensure_open, reviewed_snapshot
+        from .session_review import digest
+        if data.get("session_id"):
+            ensure_open(self.api, data["proxy_config_entry_id"] + "|" + data["session_id"])
         proxy = self.api.hass.data.get(DOMAIN, {}).get(data["proxy_config_entry_id"])
         if proxy is None or proxy.mode != "sensor_proxy":
             raise WalletError("Select the loaded session recorder")
@@ -294,8 +303,12 @@ class SessionBudgets:
         record = next((r for r in candidates if r and r["session_id"] == data.get("session_id")), None)
         if record is None and not pre_session:
             raise WalletError("Session is not in retained recorder history")
-        if record and record.get("ended_at"):
+        if record and record.get("ended_at") and closed_review is None:
             raise WalletError("Choose an open session; do not backdate budget consent")
+        if closed_review is not None and (
+                record is None or digest(reviewed_snapshot(record, closed_review["accepted_flags"]))
+                != digest(closed_review["account"])):
+            raise WalletError("The reviewed closed account changed")
         if observations.get("issues"):
             raise WalletError("Resolve recorder issues before inviting the driver")
         reservation = str(uuid4())
@@ -304,6 +317,8 @@ class SessionBudgets:
         if state is None or state.attributes.get("unit_of_measurement") != "sat/AUD":
             raise WalletError("Select a positive conversion-rate sensor in sat/AUD")
         rate = decimal(state.state)
+        if closed_review is not None and rate != decimal(closed_review["satoshis_per_aud"]):
+            raise WalletError("The reviewed conversion rate changed")
         if not 0 < rate <= 100000000:
             raise WalletError("Invalid conversion rate")
         maximum, fee = data.get("max_total_sats", 1000), data.get("max_fee_sats", 1000)
@@ -363,11 +378,21 @@ class SessionBudgets:
             "scope": SPENDING_SCOPE,
         }
         terms["payment_authority"] = payment_authority(terms)
-        terms["credit_receiving"] = {
-            "protocolID": [2, "3241645161d8"],
-            "derivationPrefix": base64.b64encode(secrets.token_bytes(16)).decode(),
-            "derivationSuffix": base64.b64encode(secrets.token_bytes(16)).decode(),
-        }
+        if closed_review is not None:
+            terms["closed_session_review"] = copy.deepcopy(closed_review)
+            terms["account_scope"] = (
+                f"Payment for the completed session only: {closed_review['amount_sats']} sat energy charge. "
+                f"Frozen account AUD {closed_review['account']['net_amount_aud']}; "
+                "network fee is additional within the total spending limit. "
+                "No approval to start another session. "
+                f"Metering warnings: {', '.join(closed_review['accepted_flags']) or 'none beyond standard provisional allocation'}. "
+                f"Operator review reason: {closed_review['reason']}")
+        if closed_review is None:
+            terms["credit_receiving"] = {
+                "protocolID": [2, "3241645161d8"],
+                "derivationPrefix": base64.b64encode(secrets.token_bytes(16)).decode(),
+                "derivationSuffix": base64.b64encode(secrets.token_bytes(16)).decode(),
+            }
         payload = canonical(terms)
         operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
         invitation = {"version": 1, "payload": payload,

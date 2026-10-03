@@ -1,4 +1,5 @@
 import qrcode from "qrcode-generator";
+import "./completed-session-card.js";
 import {styles, stateLabel, short, stamp} from "./ui.js";
 import {settlementRows,paymentStatus} from "./payment-status.js";
 
@@ -72,7 +73,7 @@ class BsvSessionReviewCard extends HTMLElement {
     const health=wallet?.attributes||{},paymentRows=settlementRows(health);
     const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
     const signature = JSON.stringify([r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
-      this._busy, this._message, automatic, ongoing,health.session_payments,observedSessions,presentations,collectionIssues]);
+      this._busy, this._message, automatic, ongoing,health.session_payments,health.driver_approvals,health.closed_sessions,observedSessions,presentations,collectionIssues]);
     if (signature === this._signature) return;
     this._signature = signature;
     const disabled = this._busy || !ready || !admin;
@@ -81,6 +82,9 @@ class BsvSessionReviewCard extends HTMLElement {
     const sameReview=this._formReview===JSON.stringify([r?.terms_hash,r?.state,r?.credit_draft?.draft_id]);
     const savedForms=sameReview?[...this.shadowRoot.querySelectorAll("input,select,textarea")].map(e=>({id:e.id,value:e.value,checked:e.checked})):[];
     const focused=sameReview?this.shadowRoot.activeElement?.id:null;
+    const closureFocus=this._closureCard?.shadowRoot?.activeElement;
+    const closureSelection=closureFocus&&["TEXTAREA","INPUT"].includes(closureFocus.tagName)&&
+      ["text","textarea"].includes(closureFocus.type)?[closureFocus.selectionStart,closureFocus.selectionEnd]:null;
     const opened=[...this.shadowRoot.querySelectorAll("details[open]")].map(e=>e.querySelector("summary")?.textContent);
     this._formReview=JSON.stringify([r?.terms_hash,r?.state,r?.credit_draft?.draft_id]);
     this.shadowRoot.innerHTML = `
@@ -130,7 +134,8 @@ class BsvSessionReviewCard extends HTMLElement {
         ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
-        <details id="new-review" ${!r?"open":""}><summary>Review a completed session manually</summary>
+        <div id="completed-resolution"></div>
+        <details id="new-review"><summary>Manual payment reconciliation and operator credits</summary>
         <p class="note">Use only when automatic settlement is not available. Review the account and receiving address before preparing a payment. Preparing a review sends no money.</p>
         <label>Closed session<select id="session">${sessions.map(s =>
           `<option value="${esc(s.session_id)}">${esc(stamp(s.ended_at))} · ${esc(short(s.ocpp_transaction_id))} · AUD ${esc(s.net_cost_aud ?? "unavailable")}</option>`
@@ -162,6 +167,9 @@ class BsvSessionReviewCard extends HTMLElement {
       proxy_config_entry_id: c.proxy_config_entry_id, session_id: $("#session").value,
       conversion_rate_entity: c.rate_entity,
     });
+    if(!this._closureCard){this._closureCard=document.createElement("bsv-completed-session-card");this._closureCard.setConfig(c);}
+    this._closureCard.hass=h;$("#completed-resolution").append(this._closureCard);
+    if(closureFocus){closureFocus.focus({preventScroll:true});if(closureSelection)closureFocus.setSelectionRange(...closureSelection);}
     $("#refresh").onclick = () => this.action("session_review_status");
     if (!r) return;
     const flow = $("#flow");
