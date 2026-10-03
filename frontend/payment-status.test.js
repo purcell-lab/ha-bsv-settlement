@@ -47,7 +47,7 @@ test("open session never implies a final debit or credit",()=>{
 test("submitted confirmed and uncertain payments are not outstanding new requests",()=>{
  for(const direction of ["driver_to_operator","operator_to_driver"]){
   assert.match(paymentStatus({...p,direction,state:"provider_confirmed",txid:"txid"}).title,/confirmed/);
-  assert.match(paymentStatus({...p,direction,state:"provider_unconfirmed",txid:"txid"}).detail,/Awaiting provider confirmation/);
+  assert.match(paymentStatus({...p,direction,state:"provider_unconfirmed",txid:"txid"}).detail,/Awaiting block confirmation/);
   assert.match(paymentStatus({...p,direction,state:"broadcast_unknown",txid:"txid"}).detail,/do not pay again/);
  }
 });
@@ -57,6 +57,14 @@ test("expired ready quote is not presented as awaiting wallet collection",()=>{
 test("errors and missing backend status are visible",()=>{
  assert.match(paymentStatus({...p,error:"Permission refused"},[s]).detail,/Permission refused/);
  assert.match(paymentStatus({...p,state:"future_state"},[s]).detail,/future state/);
+});
+test("unconfirmed payment has a clear waiting state but genuine errors remain visible",()=>{
+ const row={...p,state:"provider_unconfirmed",txid:"fictional"};
+ assert.equal(paymentStatus(row).detail,"Awaiting block confirmation. Do not pay again.");
+ assert.equal(paymentStatus(row).tone,"info");
+ const failed=paymentStatus({...row,error:"Chain evidence differs from the authorised payment"});
+ assert.match(failed.detail,/Chain evidence differs/);
+ assert.equal(failed.tone,"warn");
 });
 test("newer unsigned state never hides an existing transaction",()=>{
  const rows=settlementRows({session_payments:[{...p,state:"broadcast_unknown",txid:"existing"},p]});

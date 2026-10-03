@@ -12,6 +12,27 @@ function decimalParts(value) {
   return scale<0 ? [n*10n**BigInt(-scale),1n] : [n,10n**BigInt(scale)];
 }
 const roundPositive=(n,d)=>(n+d/2n)/d;
+export function paymentDescription(q) {
+  const base="EV charging session settlement", a=q?.account;
+  // Called only after checkQuote verifies the signed, session-bound account.
+  // Missing legacy metadata must not fabricate energy or block a valid payment.
+  const numeric=v=>(typeof v==="number" || (typeof v==="string" && v.trim()!=="")) &&
+    Number.isFinite(Number(v));
+  if(!a || a.currency!=="AUD" ||
+      ![a.import_kwh,a.export_kwh,a.net_amount_aud].every(numeric))return base;
+  const imported=Number(a.import_kwh),exported=Number(a.export_kwh);
+  const total=imported+exported,net=Number(a.net_amount_aud);
+  if(imported<0 || exported<0 || total<=0 || total>1e9 || net<=0 ||
+      !Number.isFinite(net/total) || Number(total.toFixed(2))===0)return base;
+  const energy=imported>0 && exported>0
+    ? `${total.toFixed(2)} kWh total (${imported.toFixed(2)} in, ${exported.toFixed(2)} out)`
+    : `${total.toFixed(2)} kWh ${exported>0?"exported":"charged"}`;
+  // Net session AUD / gross energy throughput. Never include network fees
+  // or substitute wallet satoshis / the demonstration FX conversion.
+  const average=net/total;
+  const price=average<0.00005?"<A$0.0001":`A$${average.toFixed(4)}`;
+  return `EV session payment | ${energy} | avg net cost ${price}/kWh`;
+}
 export async function checkQuote(envelope,checked,binding) {
   parseInvitation(JSON.stringify(checked.invitation));
   const t=checked.terms;
@@ -108,10 +129,11 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
   notify("Preparing the session payment. Keep this page open.");
   // Never let the wallet sign or broadcast before the fee/recipient checks.
   stage="create_draft";
+  const description=paymentDescription(q);
   const created=await wallet.createAction({
-    description:"EV charging session settlement",
+    description,
     outputs:[{lockingScript:new P2PKH().lock(q.recipient_address).toHex(),
-      satoshis:q.amount_sats,outputDescription:"Final EV charging session account"}],
+      satoshis:q.amount_sats,outputDescription:description}],
     labels:["ev-session:"+q.budget_id],version:1,lockTime:0,
     options:{signAndProcess:false,noSend:true,acceptDelayedBroadcast:false,
       returnTXIDOnly:false,randomizeOutputs:false}

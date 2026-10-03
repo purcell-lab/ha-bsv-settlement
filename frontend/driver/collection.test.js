@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PrivateKey, ProtoWallet, Transaction, P2PKH, UnlockingScript } from "@bsv/sdk";
 import { canonical, bytes, hash, parseInvitation, paymentAuthority, spendingScope } from "./model.js";
-import { checkQuote, collectOnce, shape, inspectDraft } from "./collection.js";
+import { checkQuote, collectOnce, shape, inspectDraft, paymentDescription } from "./collection.js";
 
 async function fixture({fee=5,amount=189,feeCap=10,total=1000}={}) {
   const operator=PrivateKey.fromRandom(), key=PrivateKey.fromRandom(), proto=new ProtoWallet(key);
@@ -22,7 +22,8 @@ async function fixture({fee=5,amount=189,feeCap=10,total=1000}={}) {
     recipient_address:t.operator_address,operator_identity:t.operator_identity,
     amount_sats:189,max_fee_sats:Math.min(feeCap,total-189),max_total_sats:total,satoshis_per_aud:"100",expires_at:t.expires_at,
     account:{session_id:t.session_id,ocpp_transaction_id:"proxy-test",ended_at:new Date().toISOString(),
-      net_amount_aud:"1.89",net_cost_aud_unrounded:"1.89000"}};
+      net_amount_aud:"1.89",net_cost_aud_unrounded:"1.89000",
+      currency:"AUD",import_kwh:10,export_kwh:0}};
   const qp=canonical(q);
   const quote={payload:qp,hash:await hash(qp),signature:operator.sign(bytes(qp)).toDER("hex")};
   const source=new Transaction(1,[],[{lockingScript:new P2PKH().lock(key.toPublicKey().toAddress()),satoshis:50000}],0);
@@ -62,6 +63,33 @@ test("automatic collection checks draft before signing and never asks wallet to 
   assert.equal(result.state,"provider_confirmed");
   assert.deepEqual(f.calls.map(c=>c[0]),["claim_collection","createAction","authorise_collection","signAction","report_collection"]);
   assert.equal(f.calls.at(-1)[1].raw_tx,f.tx.toHex());
+  const created=f.calls.find(c=>c[0]==="createAction")[1];
+  assert.equal(created.description,"EV session payment | 10.00 kWh charged | avg net cost A$0.1890/kWh");
+  assert.equal(created.outputs[0].outputDescription,created.description);
+  assert.equal(created.outputs[0].satoshis,189);
+});
+test("payment descriptions show energy and net AUD per kWh, excluding the wallet fee",()=>{
+  const q={amount_sats:64,max_fee_sats:936,account:{currency:"AUD",
+    import_kwh:20,export_kwh:0,net_amount_aud:"0.64"}};
+  assert.equal(paymentDescription(q),
+    "EV session payment | 20.00 kWh charged | avg net cost A$0.0320/kWh");
+  assert.equal(paymentDescription({...q,fee_sats:38,satoshis_per_aud:"9999"}),paymentDescription(q));
+  assert.equal(paymentDescription({account:{currency:"AUD",import_kwh:2,export_kwh:8,net_amount_aud:"1.89"}}),
+    "EV session payment | 10.00 kWh total (2.00 in, 8.00 out) | avg net cost A$0.1890/kWh");
+  assert.equal(paymentDescription({account:{currency:"AUD",import_kwh:0,export_kwh:10,net_amount_aud:"1.89"}}),
+    "EV session payment | 10.00 kWh exported | avg net cost A$0.1890/kWh");
+  assert.equal(paymentDescription({account:{currency:"AUD",import_kwh:1000,export_kwh:0,net_amount_aud:"0.01"}}),
+    "EV session payment | 1000.00 kWh charged | avg net cost <A$0.0001/kWh");
+});
+test("incomplete or invalid payment metadata uses the legacy title without a fabricated average",()=>{
+  const good={currency:"AUD",import_kwh:10,export_kwh:0,net_amount_aud:"1.89"};
+  for(const patch of [{currency:"USD"},{import_kwh:null},{import_kwh:undefined},{import_kwh:""},
+    {import_kwh:true},{import_kwh:-1},{import_kwh:Infinity},{import_kwh:1e10},
+    {export_kwh:-1},{net_amount_aud:0},{net_amount_aud:-1},{net_amount_aud:"garbage"},
+    {import_kwh:0},{import_kwh:0.00001}]){
+    assert.equal(paymentDescription({account:{...good,...patch}}),"EV charging session settlement");
+  }
+  assert.equal(paymentDescription({}),"EV charging session settlement");
 });
 test("completed account cannot change even in another operator-signed quote",async()=>{
  const f=await fixture();
