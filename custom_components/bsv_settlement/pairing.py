@@ -71,12 +71,22 @@ class PairingHub:
         coord = item["coord"]
         if coord not in self.hass.data.get(DOMAIN, {}).values():
             raise WalletError("Wallet integration is not loaded")
+        if item.get("portal_owner"):
+            from .portal import KEY as PORTAL_KEY
+            self.hass.data[PORTAL_KEY].valid(item["portal_owner"])
+            return item
         row = coord.api.saved.get("session_budgets", {}).get(item["budget_id"])
         if not row or coord.api.budgets.public(row)["state"] in ("expired", "revoked"):
             raise WalletError("Driver invitation is expired or revoked")
         return item
 
-    async def create(self, coord, row, key, request_origin):
+    async def create_portal(self, coord, owner, key, request_origin):
+        """Anonymous browser-bound relay, not a charging invitation or wallet login."""
+        from .portal import KEY as PORTAL_KEY
+        self.hass.data[PORTAL_KEY].valid(owner)
+        return await self.create(coord, None, key, request_origin, portal_owner=owner)
+
+    async def create(self, coord, row, key, request_origin, portal_owner=None):
         origin = external_origin(self.hass)
         if request_origin != origin:
             raise WalletError("Open this driver link at the configured public HTTPS address")
@@ -89,7 +99,8 @@ class PairingHub:
             raise WalletError("Too many pairing requests; try again shortly")
         # Retire only this capability's previous connection. Never touch consent.
         for topic, item in list(self.sessions.items()):
-            if item["budget_id"] == row["terms"]["budget_id"]:
+            if ((portal_owner and item.get("portal_owner") == portal_owner) or
+                    (not portal_owner and item.get("budget_id") == row["terms"]["budget_id"])):
                 await self.close(topic)
         if len(self.sessions) >= 8:
             raise WalletError("Pairing capacity reached; try again shortly")
@@ -97,7 +108,8 @@ class PairingHub:
         topic, desktop_token = secrets.token_urlsafe(24), secrets.token_urlsafe(32)
         expiry = int(time.time()) + 120
         item = {
-            "coord": coord, "budget_id": row["terms"]["budget_id"],
+            "coord": coord, "budget_id": row["terms"]["budget_id"] if row else None,
+            "portal_owner": portal_owner,
             "origin": origin, "key": key, "desktop_token": desktop_token,
             "expiry": expiry, "deadline": now + 120, "sockets": {},
             "connected": False, "messages": deque(),

@@ -48,6 +48,21 @@ async function fixture(options={}) {
   return {pairing,mobile,desktop,envelope,approve,read,identity,apiCalls};
 }
 const tick=()=>new Promise(r=>setTimeout(r,0));
+test("portal pairing can sign in without payment methods or a network assertion",async()=>{
+  const f=await fixture({receiptOnly:true});
+  try{
+    await f.approve(["getPublicKey","createSignature","internalizeAction"]);
+    assert.equal(f.pairing.state,"paired");
+    assert.equal(f.pairing.wallet.createAction,undefined);
+    assert.equal(f.pairing.wallet.signAction,undefined);
+    await assert.rejects(f.pairing.request("createAction",{}),/not ready/);
+    await assert.rejects(f.pairing.wallet.getNetwork(),/not ready/);
+    const response=f.pairing.wallet.getPublicKey({identityKey:true});await tick();
+    const req=await f.read();
+    await f.pairing.receive(await f.envelope({id:req.id,seq:req.seq,result:{publicKey:f.identity}}));
+    assert.equal((await response).publicKey,f.identity);
+  }finally{await f.pairing.disconnect();}
+});
 
 test("QR matches upstream signature transcript and anyone verification",async()=>{
   const f=await fixture();
