@@ -4,13 +4,13 @@ import { PrivateKey, ProtoWallet, Transaction, P2PKH, UnlockingScript } from "@b
 import { canonical, bytes, hash, parseInvitation, paymentAuthority, spendingScope } from "./model.js";
 import { checkQuote, collectOnce, shape, inspectDraft } from "./collection.js";
 
-async function fixture({fee=5,amount=189}={}) {
+async function fixture({fee=5,amount=189,feeCap=10,total=1000}={}) {
   const operator=PrivateKey.fromRandom(), key=PrivateKey.fromRandom(), proto=new ProtoWallet(key);
   const identity=(await proto.getPublicKey({identityKey:true})).publicKey;
   const t={version:2,budget_id:"11111111-2222-4333-8444-555555555555",session_id:"fictional-session",
     session_mode:"existing_session",transaction_id:"proxy-test",network:"BSV mainnet",
     operator_identity:operator.toPublicKey().toString(),operator_address:operator.toPublicKey().toAddress(),
-    max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",pricing_rule:"Test",
+    max_total_sats:total,max_fee_sats:feeCap,satoshis_per_aud:"100",pricing_rule:"Test",
     account_scope:"Entire named session",import_price_entity:"sensor.test",export_price_entity:"sensor.test",
     created_at:new Date(Date.now()-60000).toISOString(),expires_at:new Date(Date.now()+3600000).toISOString(),
     scope:spendingScope};
@@ -20,7 +20,7 @@ async function fixture({fee=5,amount=189}={}) {
   const q={version:1,budget_id:t.budget_id,network:t.network,
     invitation_hash:await hash(payload),driver_identity:identity,
     recipient_address:t.operator_address,operator_identity:t.operator_identity,
-    amount_sats:189,max_fee_sats:10,max_total_sats:1000,satoshis_per_aud:"100",expires_at:t.expires_at,
+    amount_sats:189,max_fee_sats:Math.min(feeCap,total-189),max_total_sats:total,satoshis_per_aud:"100",expires_at:t.expires_at,
     account:{session_id:t.session_id,ocpp_transaction_id:"proxy-test",ended_at:new Date().toISOString(),
       net_amount_aud:"1.89",net_cost_aud_unrounded:"1.89000"}};
   const qp=canonical(q);
@@ -70,6 +70,28 @@ test("high wallet fee and altered recipient amount stop before signing",async()=
     assert.equal(f.calls.filter(c=>c[0]==="signAction").length,0);
     assert.equal(f.calls.filter(c=>c[0]==="report_collection").length,0);
   }
+});
+test("higher configured fee cap uses only the remaining total budget",async()=>{
+ const f=await fixture({fee:38,feeCap:1000});
+ assert.equal(f.q.max_fee_sats,811);
+ assert.equal((await collectOnce(f.wallet,f.checked,null,f.quote,f.api)).state,"provider_confirmed");
+ const rejected=await fixture({fee:812,feeCap:1000});
+ await assert.rejects(collectOnce(rejected.wallet,rejected.checked,null,rejected.quote,rejected.api),e=>{
+   assert.equal(e.diagnostic.reason,"fee_limit_exceeded");
+   assert.equal(e.diagnostic.details.fee_sats,812);
+   assert.equal(e.diagnostic.details.fee_cap_sats,811);
+   return true;
+ });
+ assert.equal(rejected.calls.filter(c=>c[0]==="signAction").length,0);
+});
+test("a legacy 10 sat mandate retains its fee ceiling and precise failure",async()=>{
+ const f=await fixture({fee:38});
+ await assert.rejects(collectOnce(f.wallet,f.checked,null,f.quote,f.api),e=>{
+   assert.equal(e.diagnostic.reason,"fee_limit_exceeded");
+   assert.equal(e.diagnostic.details.fee_sats,38);
+   assert.equal(e.diagnostic.details.fee_cap_sats,10);
+   return true;
+ });
 });
 test("wrong network, refused permit and lost claim response never sign or submit",async()=>{
   for(const mode of ["network","permit","claim"]) {

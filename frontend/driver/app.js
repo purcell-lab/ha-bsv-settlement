@@ -209,7 +209,7 @@ function show(invitation) {
   const t=checked.terms;
   $("budget").textContent=`${t.max_total_sats.toLocaleString()} sat`;
   $("aud").textContent=`AUD ${(t.max_total_sats/Number(t.satoshis_per_aud)).toFixed(2)} at the displayed conversion rate`;
-  $("fee").textContent=`${t.max_fee_sats} sat maximum, included in total`;
+  $("fee").textContent=`Up to ${t.max_fee_sats} sat, within the total limit. Not a fixed charge.`;
   $("mobile-fee").textContent=`Total cap ${t.max_total_sats.toLocaleString()} sat, including up to ${t.max_fee_sats} sat fee`;
   $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this approval`;
   $("session").textContent=t.session_mode==="next_session_reservation" ? "One future charging session" : t.session_id;
@@ -302,7 +302,7 @@ function paintCollection(result) {
     (result.error ? " "+result.error : "");
   if(result.quote) {
     const q=JSON.parse(result.quote.payload);
-    $("collection-amount").textContent=`Session payment: ${q.amount_sats} sat${result.fee_sats!==undefined ? " + "+result.fee_sats+" sat fee" : ", fee cap "+q.max_fee_sats+" sat"}. Transaction: ${q.account.ocpp_transaction_id}.`;
+    $("collection-amount").textContent=`Session payment: ${q.amount_sats} sat${result.fee_sats!==undefined ? " + "+result.fee_sats+" sat fee" : ", effective fee cap "+q.max_fee_sats+" sat"}. Total debit limit: ${q.max_total_sats} sat. Transaction: ${q.account.ocpp_transaction_id}.`;
   }
   $("collection-txid").textContent=result.txid ? `BSV transaction ID: ${result.txid}` : "";
   if(creditDirection){

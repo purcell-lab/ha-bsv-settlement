@@ -53,14 +53,14 @@ def access(row):
 async def test_pre_session_defaults_token_redaction_and_no_backdating(tmp_path):
     _,api,proxy,data,row=await reservation(tmp_path)
     assert row["terms"]["session_mode"]=="next_session_reservation"
-    assert row["terms"]["max_total_sats"]==1000 and row["terms"]["max_fee_sats"]==10
+    assert row["terms"]["max_total_sats"]==1000 and row["terms"]["max_fee_sats"]==1000
     assert "driver_token_hash" not in row
     saved=api.saved["session_budgets"][row["terms"]["budget_id"]]
     assert access(row)["token"] not in json.dumps(saved)
     again=await api.budgets.execute("create_session_budget",data,"admin")
-    assert again=={k:v for k,v in row.items() if k!="driver_link_fragment"}
+    assert again==row|{"invitation_reused":True}
     status=await api.budgets.execute("session_budget_status",{},"admin")
-    assert status==again|{"driver_link_fragment":row["driver_link_fragment"]}
+    assert status==row
     await api.budgets.execute("accept_session_budget",
         {"budget_id":row["terms"]["budget_id"],"receipt":consent(row)},"admin")
     with pytest.raises(WalletError,match="after consent"):

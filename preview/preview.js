@@ -9,10 +9,36 @@ const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictiona
 const session={session_id:"fictional-session",ocpp_transaction_id:"demo-8427-transaction",opened_at:new Date().toISOString(),ended_at:new Date().toISOString(),import_kwh:1.06,export_kwh:14.33,net_cost_aud:-1.24};
 const payment={session_id:session.session_id,state:"provider_confirmed",amount_sats:124,fee_sats:10,txid:"fictional-transaction-reference",recipient_address:"Fictional driver address",updated_at:new Date().toISOString()};
 let budget=null,tab="overview";
+window.previewCalls=[];
 const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d})=>{
+  window.previewCalls.push({service,data:structuredClone(d)});
   $("#notice").textContent=`Preview only: ${service.replaceAll("_"," ")}. No live call was made.`;
   if(service==="session_budget_status"&&!budget)throw Error("No fictional approval yet.");
-  if(service==="create_session_budget")budget={state:"awaiting_driver_consent",terms:{budget_id:"11111111-1111-4111-8111-111111111111",session_id:d.session_id||"reservation:fictional",expires_at:new Date(Date.now()+7200000).toISOString(),session_mode:d.session_id?"existing_session":"next_session_reservation"},driver_link_fragment:"#budget=11111111-1111-4111-8111-111111111111&token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",invitation:{notice:"Fictional preview, not a valid signed invitation"}};
+  if(service==="create_session_budget"){
+    const mode=d.session_id?"existing_session":"next_session_reservation";
+    const same=budget&&!budget.binding&&!["revoked","expired"].includes(budget.state)&&budget.terms.session_mode===mode&&(!d.session_id||budget.terms.session_id===d.session_id);
+    let reuse=false;
+    if(same){
+      if(budget.state!=="awaiting_driver_consent")throw Error("This session already has a signed approval.");
+      if(d.confirm_replace_pending){
+        const hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(budget.invitation.payload))),b=>b.toString(16).padStart(2,"0")).join("");
+        if(d.replace_pending_budget_id!==budget.terms.budget_id||d.expected_invitation_hash!==hash)throw Error("The displayed invitation changed. Refresh and review it again.");
+      }else{
+        if(["max_total_sats","max_fee_sats","valid_minutes","operator_name","operator_contact"].some(k=>budget.terms[k]!==d[k]))throw Error("Confirm replacement of the unapproved invitation to change its settings.");
+        reuse=true;
+      }
+    }
+    if(reuse){budget.invitation_reused=true;}
+    else{
+      const id=crypto.randomUUID(),terms={budget_id:id,session_id:d.session_id||"reservation:fictional",
+        expires_at:new Date(Date.now()+d.valid_minutes*60000).toISOString(),session_mode:mode,
+        max_total_sats:d.max_total_sats,max_fee_sats:d.max_fee_sats,valid_minutes:d.valid_minutes,
+        operator_name:d.operator_name,operator_contact:d.operator_contact};
+      budget={state:"awaiting_driver_consent",terms,
+        driver_link_fragment:`#budget=${id}&token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+        invitation:{payload:JSON.stringify(terms),notice:"Fictional preview, not a valid signed invitation"}};
+    }
+  }
   if(service==="bind_session_budget")budget.binding={session_id:session.session_id};
   if(service==="revoke_session_budget")budget.state="revoked";
   if(service==="configure_automatic_credit")hass.states["sensor.wallet"].attributes.automatic_credit.enabled=d.enabled;

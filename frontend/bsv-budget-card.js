@@ -1,5 +1,6 @@
 import {awaitingApproval,approvalUrl,drawApprovalQR} from "./approval-qr.js";
 import {styles,esc,stamp,short,stateLabel} from "./ui.js";
+import {invitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
 class BSVBudgetCard extends HTMLElement {
   setConfig(config) {
     for(const key of ["config_entry_id","proxy_config_entry_id","proxy_entity","rate_entity"])if(!config[key])throw Error(`${key} is required`);
@@ -23,17 +24,24 @@ class BSVBudgetCard extends HTMLElement {
       <div class="actions"><button id="bind" class="primary" hidden>Confirm driver and match session</button><button id="refresh" hidden>Check approval</button></div>
       <p id="session" class="note" style="margin-top:12px"></p>
       <details id="create-panel" open><summary>Create a driver invitation</summary>
+        <form id="create-form">
         <label>Use this approval for<select id="scope"><option value="next">The next session</option><option id="current-option" value="current" disabled>The current open session</option></select></label>
-        <div class="notice"><strong id="defaults">1,000 sat total limit · 10 sat maximum fee · 12 hours</strong><span id="rate"></span></div>
-        <details><summary>Change limits or operator contact</summary><div class="form-grid">
-          <label>Total spending limit (sat)<input id="total" type="number" min="1" max="100000" value="1000"></label>
-          <label>Maximum fee (sat)<input id="fee" type="number" min="0" max="1000" value="10"></label>
-          <label>Approval duration (minutes)<input id="minutes" type="number" min="1" max="1440" value="720"></label>
+        <div class="notice"><strong id="defaults">1,000 sat total limit · up to 1,000 sat fee within total · 12 hours</strong><span id="rate"></span></div>
+        <p class="note">The fee is a ceiling, not a fixed charge. Payment plus actual fee must fit within the total limit. New invitations only: existing signed approvals do not change.</p>
+        <details id="limits-panel" open><summary>Change limits or operator contact</summary><div class="form-grid">
+          <label>Total spending limit including fee (sat)<input id="total" type="number" required min="1" max="100000" value="${invitationDefaults.total}"></label>
+          <label>Maximum fee within total (sat)<input id="fee" type="number" required min="0" max="1000" value="${invitationDefaults.fee}"></label>
+          <label>Approval duration (minutes)<input id="minutes" type="number" required min="1" max="1440" value="${invitationDefaults.minutes}"></label>
           <label>Operator name<input id="name" maxlength="100"></label>
           <label class="full">Operator contact<input id="contact" maxlength="200"></label>
-        </div></details>
-        <button id="create" class="primary" style="margin-top:16px">Create private driver link</button>
+        </div>
+        <p id="existing-warning" class="notice" hidden></p>
+        <label id="replace-choice" hidden><input id="replace-pending" type="checkbox"> Replace the displayed unapproved invitation with these settings</label>
+        <p id="form-error" class="note" role="status" aria-live="polite"></p>
+        <button id="create" type="submit" class="primary" style="margin-top:16px">Create private driver link</button>
+        </details>
         <p class="note" style="margin-top:12px">Creating a link does not authorise payment or start charging. The driver must approve in their wallet.</p>
+        </form>
       </details>
       <details><summary>Approval details and recovery</summary>
         <p id="collection" class="note"></p>
@@ -49,13 +57,16 @@ class BSVBudgetCard extends HTMLElement {
     </ha-card>`;
     this.$("name").value=config.operator_name||"Charging operator";this.$("contact").value=config.operator_contact||"";
     for(const id of ["total","fee","minutes"])this.$(id).oninput=()=>{
-      this.$("defaults").textContent=`${this.$("total").value || "?"} sat total limit · ${this.$("fee").value || "?"} sat maximum fee · ${this.$("minutes").value || "?"} minutes`;
+      this.$("defaults").textContent=`${this.$("total").value || "?"} sat total limit · up to ${this.$("fee").value || "?"} sat fee within total · ${this.$("minutes").value || "?"} minutes`;
+      this.$("form-error").textContent=validateInvitationLimits(Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])));
     };
-    this.$("create").onclick=()=>{
+    this.$("scope").onchange=()=>{this.$("replace-pending").checked=false;this.paint();};
+    this.$("create-form").onsubmit=async event=>{
+      event.preventDefault();
+      if(this.busy||!this._hass?.user?.is_admin)return;
       const n=id=>Number(this.$(id).value);
-      if(![["total",1,100000],["fee",0,1000],["minutes",1,1440]].every(([id,min,max])=>this.$(id).value!==""&&Number.isInteger(n(id))&&n(id)>=min&&n(id)<=max)){
-        this.$("status").textContent="Enter whole-number limits within the displayed ranges.";return;
-      }
+      const error=validateInvitationLimits(Object.fromEntries(["total","fee","minutes"].map(id=>[id,this.$(id).value])));
+      this.$("form-error").textContent=error;if(error)return;
       const data={proxy_config_entry_id:config.proxy_config_entry_id,conversion_rate_entity:config.rate_entity,
         max_total_sats:n("total"),max_fee_sats:n("fee"),valid_minutes:n("minutes"),
         operator_name:this.$("name").value,operator_contact:this.$("contact").value};
@@ -63,7 +74,12 @@ class BSVBudgetCard extends HTMLElement {
         if(!this.session||this.session.ended_at){this.$("status").textContent="That session has ended. Create a next-session invitation instead.";return;}
         data.session_id=this.session.session_id;
       }
-      this.perform("create_session_budget",data);
+      if(sameInvitationScope(this.budget,this.$("scope").value,this.session)&&this.$("replace-pending").checked){
+        if(!confirm(`Revoke the displayed unapproved invitation and replace it with ${n("total")} sat total, including up to ${n("fee")} sat fee, for ${n("minutes")} minutes? The driver must approve the new terms. No payment is sent.`))return;
+        try{Object.assign(data,await pendingReplacement(this.budget));}
+        catch(e){this.$("form-error").textContent=e.message;return;}
+      }
+      await this.perform("create_session_budget",data);
     };
     this.$("refresh").onclick=()=>this.perform("session_budget_status",this.budget?{budget_id:this.budget.terms.budget_id}:{});
     this.$("bind").onclick=()=>{
@@ -116,7 +132,14 @@ class BSVBudgetCard extends HTMLElement {
       this.$("next-step").textContent=!accepted?(b.state==="awaiting_driver_consent"?"Ask the driver to open their private link in BSV Browser and approve.":"This approval is not active. Create a fresh invitation for a future session."):!bound?"Driver approved. Confirm the correct open session below.":b.credit_destination?"Session matched and receiving wallet registered. Final account and payment checks still apply.":"Session matched. Ask the driver to reconnect before session end to register their receiving wallet.";
       this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your pending private link is shown above.":awaitingApproval(b)?"This older invitation's link cannot be recovered automatically. Use the original saved link, or explicitly revoke it before creating a replacement.":"No approval QR is needed. Do not pay or reapprove an already-settled session.";
     }
-    this.$("create").disabled=this.busy||!admin||!usable;
+    const same=sameInvitationScope(b,this.$("scope").value,this.session);
+    const immutable=same&&b.state!=="awaiting_driver_consent";
+    this.$("existing-warning").hidden=!same;
+    this.$("existing-warning").textContent=immutable?
+      "This session already has a signed approval. These settings cannot change it. Use its existing collection or select a different future session.":
+      "An unapproved invitation already exists. The same settings retrieve its original link. To change settings, explicitly replace it below.";
+    this.$("replace-choice").hidden=!same||immutable;
+    this.$("create").disabled=this.busy||!admin||!usable||immutable;
     this.$("accept").disabled=this.busy||!admin;
     this.$("refresh").hidden=false;this.$("refresh").disabled=this.busy||!admin;
     this.$("revoke").disabled=this.busy||!admin||!b||["revoked","expired"].includes(b.state)||!!b.automatic_credit?.txid||!!b.collection?.txid;
@@ -136,12 +159,15 @@ class BSVBudgetCard extends HTMLElement {
       if(url&&awaitingApproval(b)){
         this.linkBudget=b.terms.budget_id;this.$("driver-link").value=url;this.$("open-link").href=url;
         drawApprovalQR(this.$("qr"),url);
-        this.$("create-panel").open=false;
+        if(!silent&&service==="create_session_budget")this.$("create-panel").open=false;
       }
       this.$("invitation").value=JSON.stringify(b.invitation,null,2);
       const p=b.automatic_credit?.txid?b.automatic_credit:b.collection;
       this.$("collection").textContent=p?`${stateLabel(p.state)}${p.txid?": "+p.txid:""}`:"No payment submitted under this approval.";
-      if(!silent)this.$("status").textContent=service==="create_session_budget"?"Invitation ready. Ask the driver to scan and review the terms.":"Approval record updated.";
+      if(!silent)this.$("status").textContent=service==="create_session_budget"?
+        b.invitation_reused?"Existing invitation retrieved. Its original limits and expiry are unchanged.":
+        "Invitation ready. Ask the driver to scan and review the terms.":"Approval record updated.";
+      if(!silent&&service==="create_session_budget")this.$("replace-pending").checked=false;
     }catch(e){
       this.linkFresh=false;
       this.$("status").textContent=silent&&!this.budget?"No approval loaded. Create an invitation, or use Check approval to retry.":e.message||"Could not update the approval. Try again.";

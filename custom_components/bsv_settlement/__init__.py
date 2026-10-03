@@ -105,7 +105,10 @@ async def async_setup(hass, config):
             vol.Optional("operator_name",default="Charging operator"): vol.All(str,vol.Length(max=100)),
             vol.Optional("operator_contact",default=""): vol.All(str,vol.Length(max=200)),
             vol.Optional("max_total_sats",default=1000): vol.All(int, vol.Range(min=1, max=100000)),
-            vol.Optional("max_fee_sats",default=10): vol.All(int, vol.Range(min=0, max=1000)),
+            vol.Optional("max_fee_sats",default=1000): vol.All(int, vol.Range(min=0, max=1000)),
+            vol.Optional("replace_pending_budget_id"): str,
+            vol.Optional("expected_invitation_hash"): str,
+            vol.Optional("confirm_replace_pending"): vol.In([True]),
             vol.Optional("valid_minutes",default=720): vol.All(int, vol.Range(min=1, max=1440))},
         "bind_session_budget": {
             **common, vol.Required("budget_id"): str, vol.Required("session_id"): str,

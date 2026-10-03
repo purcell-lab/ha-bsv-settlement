@@ -43,7 +43,7 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
       !/^(02|03)[0-9a-f]{64}$/.test(t.operator_identity) ||
       !Number.isSafeInteger(t.max_total_sats) || t.max_total_sats < 1 || t.max_total_sats > 100000 ||
       !Number.isSafeInteger(t.max_fee_sats) || t.max_fee_sats < 0 ||
-      t.max_fee_sats > 1000 || t.max_fee_sats >= t.max_total_sats ||
+      t.max_fee_sats > 1000 || t.max_fee_sats > t.max_total_sats ||
       !Number.isFinite(Number(t.satoshis_per_aud)) || Number(t.satoshis_per_aud) <= 0 ||
       Number(t.satoshis_per_aud) > 100000000 ||
       !Number.isFinite(Date.parse(t.created_at)) || Date.parse(t.created_at) > clock + 60000 ||

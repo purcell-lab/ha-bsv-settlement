@@ -346,18 +346,29 @@ create_session_budget:
           domain: sensor
     max_total_sats:
       default: 1000
+      description: Maximum total wallet debit, including the actual network fee. New invitations only.
       selector:
         number:
           min: 1
           max: 100000
           mode: box
     max_fee_sats:
-      default: 10
+      default: 1000
+      description: Fee ceiling, not a quoted or fixed fee. The actual fee must also fit within the remaining total spending limit.
       selector:
         number:
           min: 0
           max: 1000
           mode: box
+    replace_pending_budget_id:
+      description: Optional exact ID of an unapproved invitation to replace. Signed approvals cannot be replaced.
+      selector: {text: {}}
+    expected_invitation_hash:
+      description: SHA-256 of the original signed invitation payload, required for replacement.
+      selector: {text: {}}
+    confirm_replace_pending:
+      description: Explicitly revoke the specified unapproved invitation and create a new one atomically.
+      selector: {boolean: {}}
     valid_minutes:
       default: 720
       selector:
