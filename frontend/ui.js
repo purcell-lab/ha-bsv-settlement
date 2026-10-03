@@ -5,8 +5,9 @@ export const stamp = v => v && Number.isFinite(Date.parse(v)) ? new Date(v).toLo
 export const short = v => v ? String(v).slice(0,8) : "No reference";
 export function provisionalSats(session,health={},rateState) {
   const id=session?.session_id;
-  const fixed=health.ongoing_credit?.sessions?.find(r=>r.session_id===id) ??
+  const candidate=health.ongoing_credit?.sessions?.find(r=>r.session_id===id) ??
     health.driver_approvals?.find(r=>r.session_id===id&&r.approved);
+  const fixed=candidate?.satoshis_per_aud!==undefined?candidate:null;
   const rate=fixed ? fixed.satoshis_per_aud : rateState?.state;
   // Decimal arithmetic mirrors the settlement's positive ROUND_HALF_UP value.
   const parts=v=>{
