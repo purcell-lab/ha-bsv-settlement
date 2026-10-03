@@ -179,7 +179,8 @@ async def test_failed_diagnostic_save_is_not_later_acknowledged_as_saved(tmp_pat
         assert "diagnostic" not in api.collections.get(row)
 
 
-@pytest.mark.parametrize("action",["prepare_collection_recovery","recover_driver_collection"])
+@pytest.mark.parametrize("action",["prepare_collection_recovery","recover_driver_collection",
+                                  "get_reviewed_collection_link"])
 async def test_recovery_services_enforce_real_ha_admin_context(tmp_path,action):
     from types import SimpleNamespace
     from homeassistant.core import Context
@@ -192,6 +193,10 @@ async def test_recovery_services_enforce_real_ha_admin_context(tmp_path,action):
     hass.data["bsv_settlement"][api.entry.entry_id]=coord
     data=(await recovery_data(api,row) if action=="recover_driver_collection"
           else {"budget_id":row["terms"]["budget_id"]})
+    if action == "get_reviewed_collection_link":
+        await execute(api.collections,"recover_driver_collection",await recovery_data(api,row),"admin")
+        data.update(expected_quote_hash=api.collections.get(row)["quote"]["hash"],
+                    confirm_private_link_disclosure=True)
     data["config_entry_id"]=api.entry.entry_id
     before=copy.deepcopy(api.saved)
     try:

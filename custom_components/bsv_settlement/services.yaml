@@ -432,6 +432,23 @@ configure_ongoing_credit:
     confirm_ongoing_mainnet_credits:
       selector:
         boolean:
+get_reviewed_collection_link:
+  name: Retrieve the private link for a reviewed collection
+  description: Administrator only. Returns the original private link only for an unclaimed recovery-ready collection. Does not rotate the link, extend approval, release a hold, or initiate payment. Treat the response as private.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {text: {}}
+    budget_id:
+      required: true
+      selector: {text: {}}
+    expected_quote_hash:
+      required: true
+      selector: {text: {}}
+    confirm_private_link_disclosure:
+      required: true
+      description: Reveal the existing private session capability in this administrator response. Share only with the approved driver.
+      selector: {boolean: {}}
 prepare_collection_recovery:
   name: Review a held driver collection
   description: Read-only review. Does not prove absence of a wallet payment or release the attempt.
