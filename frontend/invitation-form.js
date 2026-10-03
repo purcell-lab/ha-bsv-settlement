@@ -1,6 +1,6 @@
 export const invitationDefaults={total:1000,fee:1000,minutes:720};
-export function validateInvitationLimits({total,fee,minutes}){
-  for(const [value,min,max] of [[total,1,100000],[fee,0,1000],[minutes,1,1440]]){
+export function validateInvitationLimits({total,fee,minutes,multi=false}){
+  for(const [value,min,max] of [[total,1,100000],[fee,0,1000],[minutes,1,multi?10080:1440]]){
     if(value===""||!Number.isInteger(Number(value))||Number(value)<min||Number(value)>max)
       return "Enter whole-number limits within the displayed ranges.";
   }
@@ -9,7 +9,8 @@ export function validateInvitationLimits({total,fee,minutes}){
 }
 export function sameInvitationScope(budget,scope,session){
   if(!budget||budget.binding||["revoked","expired"].includes(budget.state))return false;
-  return scope==="current" ? budget.terms.session_mode==="existing_session"&&
+  return scope==="multi" ? budget.terms.version===3&&budget.terms.session_mode==="multi_session" :
+    scope==="current" ? budget.terms.session_mode==="existing_session"&&
     budget.terms.session_id===session?.session_id : budget.terms.session_mode==="next_session_reservation";
 }
 export async function pendingReplacement(budget){

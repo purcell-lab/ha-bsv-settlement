@@ -42,7 +42,9 @@ export async function registerCredit(wallet, checked, identity, api) {
   });
   const {signature}=await wallet.createSignature({
     protocolID:spendingProtocol,keyID:t.budget_id,counterparty:"anyone",
-    data:bytes(payload),description:"Register this wallet to receive the session credit",
+    data:bytes(payload),description:t.version===3?
+      `Register to receive EV session credits until ${t.expires_at} or a newer driver registration`:
+      "Register this wallet to receive the session credit",
   });
   return api("register_credit_destination",{proof:{payload,signature:hex(signature)}});
 }

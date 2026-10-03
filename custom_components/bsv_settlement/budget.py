@@ -42,7 +42,7 @@ def message_hash(value):
 
 def payment_authority(terms):
     """Explicit signed mandate, limited to a single final net driver debit."""
-    return {
+    result = {
         "trigger": "after_bound_session_ends",
         "collection_mode": "automatic_once_when_wallet_available",
         "direction": "driver_to_operator_if_net_account_positive",
@@ -60,24 +60,31 @@ def payment_authority(terms):
         "funds_reserved": False,
         "charger_control": False,
     }
+    if terms.get("version") == 3:
+        result.update(trigger="each_closed_session_opened_after_receiving_registration",
+            max_payments=None, aggregate_limit=True,
+            terminates_on_new_driver_registration=True, credits_replenish_budget=False,
+            receiving_expires_at=terms["expires_at"])
+    return result
 
 
 def signature_protocol(terms):
-    return SPENDING_PROTOCOL if terms.get("version") == 2 else PROTOCOL
+    return SPENDING_PROTOCOL if terms.get("version") in (2, 3) else PROTOCOL
 
 
 def approval_payload(invitation, identity):
     terms = json.loads(invitation["payload"])
-    if terms.get("version") == 2:
-        if terms.get("scope") != SPENDING_SCOPE or terms.get("payment_authority") != payment_authority(terms):
+    if terms.get("version") in (2, 3):
+        from .weekly import SCOPE
+        if terms.get("scope") != (SCOPE if terms["version"] == 3 else SPENDING_SCOPE) or terms.get("payment_authority") != payment_authority(terms):
             raise WalletError("Invalid spending mandate terms")
         return canonical({
-            "action": "authorise_one_session_spending",
+            "action": "authorise_multi_session_aggregate_spending" if terms["version"] == 3 else "authorise_one_session_spending",
             "budget_id": terms["budget_id"],
             "driver_identity": identity,
             "invitation_hash": sha(invitation["payload"]),
             "payment_authority": terms["payment_authority"],
-            "version": 2,
+            "version": terms["version"],
         })
     if terms.get("version") != 1 or terms.get("scope") != "one_session_consent_only_no_payment_or_charger_authority":
         raise WalletError("Unsupported approval version")
@@ -99,17 +106,22 @@ class SessionBudgets:
     def summary(self):
         """Non-capability summaries for authenticated operator dashboards."""
         rows = []
-        for row in list(self.api.saved["session_budgets"].values())[-20:]:
+        for row in [r for r in self.api.saved["session_budgets"].values()
+                    if not r.get("weekly_parent_id")][-20:]:
             t = row["terms"]
             rows.append({
                 "budget_id": t["budget_id"], "session_id": self.api.collections.session_id(row),
                 "state": self.public(row)["state"], "version": t["version"],
                 "approved": bool(row.get("receipt")), "expires_at": t["expires_at"],
                 "created_at": t["created_at"],
+                "satoshis_per_aud": t["satoshis_per_aud"],
                 "receiving_registered_at": (row.get("credit_destination") or {}).get("registered_at"),
                 "credit_terms": bool(t.get("credit_receiving")),
                 "reviewed_closed_account": bool(t.get("closed_session_review")),
             })
+            if t.get("version") == 3:
+                from .weekly import summary
+                rows[-1]["multi_session"] = summary(self.api, row)
         return rows
 
     def public(self, row):
@@ -136,6 +148,9 @@ class SessionBudgets:
     def admin_status(self, row):
         """Only the administrator service may redisplay a pending capability."""
         result = self.public(row)
+        if row["terms"].get("version") == 3:
+            from .weekly import summary
+            result["multi_session"] = summary(self.api, row)
         if (result["state"] == "awaiting_driver_consent" and not row.get("receipt") and
                 row.get("driver_link_scheme") == "hmac-sha256-v1"):
             token = self.link_token(row["terms"]["budget_id"])
@@ -190,7 +205,9 @@ class SessionBudgets:
             if record and not data.get("issues") else None)
         closure = self.api.saved.get("closed_sessions", {}).get(
             row["proxy_config_entry_id"] + "|" + session_id) if session_id else None
+        from .weekly import weekly_terms, summary
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
+                "multi_session": summary(self.api,row) if weekly_terms(row["terms"]) else None,
                 "closure": ({k: copy.deepcopy(closure.get(k)) for k in (
                     "state", "amount_sats", "reason", "received_funds")} if closure else None),
                 "prices": self.prices(row),
@@ -228,6 +245,8 @@ class SessionBudgets:
         return await self.accept(row, data["receipt"], user_id)
 
     async def accept(self, row, receipt, accepted_by):
+        if row.get("weekly_parent_id"):
+            raise WalletError("Derived session tickets cannot receive standalone consent")
         from .session_closure import ensure_open
         if self.api.collections.session_id(row):
             ensure_open(self.api, self.api.collections.key(row))
@@ -259,7 +278,7 @@ class SessionBudgets:
                 raise WalletError("This invitation is already bound to a different driver")
             await self.api.store.async_save(self.api.saved)
             return self.public(row)
-        row.update(state=SPENDING_STATE if row["terms"]["version"] == 2 else LEGACY_STATE,
+        row.update(state=SPENDING_STATE if row["terms"]["version"] in (2,3) else LEGACY_STATE,
                    receipt=copy.deepcopy(receipt), accepted_at=now().isoformat(), accepted_by=accepted_by)
         await self.api.store.async_save(self.api.saved)
         return self.public(row)
@@ -294,6 +313,11 @@ class SessionBudgets:
         return self.public(row)
 
     async def create(self, data, user_id, *, closed_review=None):
+        multi=data.get("multi_session",False)
+        if type(multi) is not bool or multi and (data.get("session_id") or closed_review):
+            raise WalletError("Multi-session consent applies only to future sessions")
+        if multi and not self.api.auto_credits.policy.get("enabled"):
+            raise WalletError("Enable automatic credits before creating multi-session receiving and spending consent")
         from .session_closure import ensure_open, reviewed_snapshot
         from .session_review import digest
         if data.get("session_id"):
@@ -317,7 +341,7 @@ class SessionBudgets:
         if observations.get("issues"):
             raise WalletError("Resolve recorder issues before inviting the driver")
         reservation = str(uuid4())
-        key = f"{data['proxy_config_entry_id']}:{data.get('session_id') or 'next_session'}"
+        key = f"{data['proxy_config_entry_id']}:{'multi_session' if multi else data.get('session_id') or 'next_session'}"
         state = self.api.hass.states.get(data["conversion_rate_entity"])
         if state is None or state.attributes.get("unit_of_measurement") != "sat/AUD":
             raise WalletError("Select a positive conversion-rate sensor in sat/AUD")
@@ -329,9 +353,9 @@ class SessionBudgets:
         maximum, fee = data.get("max_total_sats", 1000), data.get("max_fee_sats", 1000)
         if type(maximum) is not int or not 1 <= maximum <= 100000 or type(fee) is not int or not 0 <= fee <= maximum or fee > 1000:
             raise WalletError("Fee cap must not exceed the total budget or 1,000 sat")
-        minutes = data.get("valid_minutes", 720)
-        if type(minutes) is not int or not 1 <= minutes <= 1440:
-            raise WalletError("Expiry must be between one minute and 24 hours")
+        minutes = data.get("valid_minutes", 10080 if multi else 720)
+        if type(minutes) is not int or not 1 <= minutes <= (10080 if multi else 1440):
+            raise WalletError("Expiry must be within seven days for multi-session or 24 hours for single-session consent")
         old = next((r for r in self.api.saved["session_budgets"].values()
                     if r["session_key"] == key and not r.get("binding")
                     and self.public(r)["state"] not in ("revoked", "expired")), None)
@@ -382,6 +406,13 @@ class SessionBudgets:
             "expires_at": (now() + timedelta(minutes=minutes)).isoformat(),
             "scope": SPENDING_SCOPE,
         }
+        if multi:
+            from .weekly import SCOPE
+            terms.update(version=3,scope=SCOPE,session_mode="multi_session",
+                session_id="multi:"+budget_id,transaction_id="Multiple future sessions",
+                account_scope="Future sessions opened after receiving registration on this charger. "
+                "One aggregate spending limit includes all driver payments and fees. "
+                "Ends at expiry or a newer driver registration. Operator credits do not replenish the allowance.")
         terms["payment_authority"] = payment_authority(terms)
         if closed_review is not None:
             terms["closed_session_review"] = copy.deepcopy(closed_review)

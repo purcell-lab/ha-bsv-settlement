@@ -33,7 +33,7 @@ class OngoingCredits(AutomaticCredits):
         """Expiry of spending consent does not extend or limit operator consent."""
         try:
             terms, receipt, destination = row["terms"], row["receipt"], row["credit_destination"]
-            if row["state"] == "revoked" or terms["version"] != 2:
+            if row["state"] == "revoked" or terms["version"] not in (2,3):
                 raise ValueError()
             if (json.loads(row["invitation"]["payload"]) != terms or
                     terms["operator_identity"] != self.api.identity["public_key"] or
@@ -65,8 +65,12 @@ class OngoingCredits(AutomaticCredits):
         if not rows:
             raise WalletError("No registered driver wallet is available for this session")
         # Never silently fall back to an earlier driver when the latest is invalid.
-        return self.verified_registration(max(rows, key=lambda r:
-            datetime.fromisoformat(r["credit_destination"]["registered_at"])))
+        selected=max(rows, key=lambda r:datetime.fromisoformat(r["credit_destination"]["registered_at"]))
+        if selected["terms"].get("version")==3:
+            expiry=datetime.fromisoformat(selected["terms"]["expires_at"])
+            if (before or now())>=expiry:
+                raise WalletError("Multi-session receiving approval expired; register a new driver invitation")
+        return self.verified_registration(selected)
 
     async def configure(self, data, user_id):
         if not user_id or type(data.get("enabled")) is not bool:
@@ -159,6 +163,9 @@ class OngoingCredits(AutomaticCredits):
         if route["policy_enabled_at"] != self.policy["enabled_at"]:
             raise WalletError("Route belongs to an earlier policy activation; review it separately")
         registered = self.api.saved["session_budgets"][route["recipient"]["budget_id"]]
+        if registered["terms"].get("version")==3:
+            from .weekly import verify_parent
+            verify_parent(self.api,registered)
         if self.verified_registration(registered) != route["recipient"]:
             raise WalletError("Frozen receiving registration changed")
 

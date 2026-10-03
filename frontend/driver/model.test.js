@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PrivateKey, ProtoWallet, Signature } from "@bsv/sdk";
-import { canonical, bytes, parseInvitation, signConsent, paymentAuthority, spendingScope } from "./model.js";
+import { canonical, bytes, parseInvitation, signConsent, paymentAuthority, spendingScope, multiScope, derivedInvitation,hash } from "./model.js";
 
 const operator = PrivateKey.fromRandom();
 const driver = new ProtoWallet(PrivateKey.fromRandom());
@@ -16,9 +16,31 @@ const terms = {
   scope:spendingScope
 };
 function invitation(t = terms) {
-  const payload = canonical(t.version === 2 ? {...t,payment_authority:t.payment_authority || paymentAuthority(t)} : t);
+  const payload = canonical([2,3].includes(t.version) ? {...t,payment_authority:t.payment_authority || paymentAuthority(t)} : t);
   return {version:1,payload,signature:operator.sign(bytes(payload)).toDER("hex")};
 }
+test("weekly root signature grants aggregate authority, not an individual reset",async()=>{
+ const t={...terms,version:3,scope:multiScope,session_mode:"multi_session",
+  expires_at:new Date(Date.now()+7*86400000).toISOString()};
+ const parent=parseInvitation(JSON.stringify(invitation(t)));
+ const identity=(await driver.getPublicKey({identityKey:true})).publicKey;
+ const receipt=await signConsent(driver,parent,identity);
+ assert.equal(receipt.version,3);
+ const authority=JSON.parse(receipt.payload).payment_authority;
+ assert.equal(authority.aggregate_limit,true);
+ assert.equal(authority.credits_replenish_budget,false);
+ assert.equal(authority.max_total_sats_including_fees,1000);
+ assert.equal(authority.terminates_on_new_driver_registration,true);
+ const childTerms={...terms,created_at:new Date().toISOString(),expires_at:t.expires_at,
+  session_mode:"existing_session",weekly_parent_hash:await hash(parent.invitation.payload)};
+ const child=await derivedInvitation(invitation(childTerms),parent,terms.session_id);
+ await assert.rejects(signConsent(driver,child,identity),/standalone/);
+ for(const patch of [{weekly_parent_hash:"ab".repeat(32)},{max_total_sats:1001},
+   {satoshis_per_aud:"101"},{pricing_rule:"other"},{session_id:"wrong"}]){
+  await assert.rejects(derivedInvitation(invitation({...childTerms,...patch}),parent,terms.session_id));
+ }
+ assert.throws(()=>parseInvitation(JSON.stringify(invitation({...t,expires_at:new Date(Date.now()+8*86400000).toISOString()}))));
+});
 test("operator signature and driver receipt verify with official SDK", async () => {
   const checked = parseInvitation(JSON.stringify(invitation()));
   const {publicKey} = await driver.getPublicKey({identityKey:true});

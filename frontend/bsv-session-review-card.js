@@ -129,6 +129,7 @@ class BsvSessionReviewCard extends HTMLElement {
         <p class="note">Credits go to the last verified driver registered before each new session opens. The initial session uses the recipient explicitly selected at activation. Each assigned recipient and conversion is fixed; later registrations affect only later sessions.</p>
         <p class="note">Latest registered receiving address</p><code>${esc(ongoing.recipient?.address||"Unavailable: no valid registered recipient")}</code>
         <p class="note">Maximum 1,000 sat per session including a 10 sat fee. No cumulative cap. Credits only; driver charges still need a separate valid spending approval.</p>
+        <p class="note">A seven-day driver registration ends at its signed expiry or a newer driver registration. This does not extend existing single-session spending approvals.</p>
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}

@@ -1,4 +1,12 @@
 import test from "node:test";
+test("weekly limit is explicit and single-session duration stays unchanged",()=>{
+ assert.equal(validateInvitationLimits({total:1000,fee:1000,minutes:10080,multi:true}),"");
+ assert.notEqual(validateInvitationLimits({total:1000,fee:1000,minutes:10080}),"");
+ assert.notEqual(validateInvitationLimits({total:1000,fee:1000,minutes:10081,multi:true}),"");
+ const row={state:"awaiting_driver_consent",terms:{version:3,session_mode:"multi_session"}};
+ assert.equal(sameInvitationScope(row,"multi"),true);
+ assert.equal(sameInvitationScope(row,"next"),false);
+});
 import assert from "node:assert/strict";
 import {invitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
 test("default fee cap is 1000 within an unchanged 1000 total",()=>{
