@@ -137,3 +137,39 @@ async def test_superseded_weekly_can_renew_without_changing_any_old_record(tmp_p
     assert all(api.saved["session_budgets"][key]==value for key,value in before.items())
     assert summary(api,parent)["active"] is False
     assert not api.chain.posts
+
+
+async def test_explicit_previous_completed_account_survives_session_rollover(tmp_path):
+    api,proxy,args=await current_setup(tmp_path)
+    previous=copy.deepcopy(proxy.data["latest_session"])
+    current=copy.deepcopy(previous)
+    current.update(session_id="new-current",ocpp_transaction_id="new-current-tx",ended_at=None)
+    proxy.data.update(latest_session=current,previous_session=previous)
+    result=await api.budgets.create(args,"admin")
+    row=api.saved["session_budgets"][result["terms"]["budget_id"]]
+    assert row["terms"]["included_session"]["session_id"]=="session-1"
+    assert row["terms"]["included_session"]["amount_sats"]==189
+    await sign(api,row)
+    child=await ticket(api,row,"session-1")
+    assert (await api.collections.status(child))["state"]=="ready"
+    assert not any(r.get("weekly_parent_id") and r["terms"]["session_id"]=="new-current"
+                   for r in api.saved["session_budgets"].values())
+    assert not api.chain.posts
+
+
+@pytest.mark.parametrize("problem",["archived","previous_open","previous_paid","previous_missing_baseline"])
+async def test_rollover_does_not_admit_arbitrary_or_owned_history(tmp_path,problem):
+    api,proxy,args=await current_setup(tmp_path)
+    previous=copy.deepcopy(proxy.data["latest_session"])
+    current=copy.deepcopy(previous)
+    current.update(session_id="new-current",ocpp_transaction_id="new-current-tx",ended_at=None)
+    proxy.data.update(latest_session=current,previous_session=previous)
+    if problem=="archived":
+        proxy.archive.append(previous)
+        proxy.data["previous_session"]=None
+    elif problem=="previous_open":previous["ended_at"]=None
+    elif problem=="previous_paid":api.saved.setdefault("session_review_index",{})["proxy-entry|session-1"]="paid"
+    else:previous["quality_flags"]=["import:missing_counter_baseline"]
+    with pytest.raises(WalletError):
+        await api.budgets.create(args,"admin")
+    assert not api.chain.posts
