@@ -17,6 +17,7 @@ from homeassistant.util.unit_conversion import EnergyConverter
 from .const import DOMAIN
 from .ocpp_export_shadow_ledger import ExportShadowLedger, grading_rules
 from .ocpp_shadow_ledger import ImportShadowLedger, energy, provenance_flags
+from .recorder import RecorderMonitor
 
 _LOGGER = logging.getLogger(__name__)
 METRICS = {"import": "energy_active_import_register",
@@ -230,6 +231,8 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
         self.binding_error = False
         self.metadata_error = False
         self.export_error = False
+        # Read-only readiness and legacy reconciliation; separate store.
+        self.recorder = RecorderMonitor(hass, entry)
 
     async def load(self):
         binding = source_binding(self.hass, self.sources)
@@ -243,6 +246,7 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
                 ledger.data["export"], self.export_binding or None, self.reference, self.grading)
             ledger.data["export"] = export.data
         self.ledger, self.export = ledger, export
+        await self.recorder.load(dt_util.utcnow().isoformat())
         watched = [*self.sources.values(), *self.export_sources.values()]
         if self.reference:
             watched.append(self.reference["entity_id"])
@@ -253,6 +257,7 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
     @callback
     def _state_changed(self, event):
         self.observe()
+        self.recorder.reconcile(self, dt_util.utcnow().isoformat())
         self.async_set_updated_data(self.summary())
 
     @callback
@@ -351,11 +356,13 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
                   else ExportShadowLedger(grading=self.grading).summary())
         if self.export_error:
             export["flags"] = sorted({*export["flags"], "export_binding_changed"})
+        now = dt_util.utcnow().isoformat()
         return {**result, "export_shadow": export, "mode": self.mode,
-                "updated_at": dt_util.utcnow().isoformat()}
+                "recorder": self.recorder.summary(self, now), "updated_at": now}
 
     async def _async_update_data(self):
         self.observe()
+        self.recorder.reconcile(self, dt_util.utcnow().isoformat())
         return self.summary()
 
     async def execute(self, action, data, approving_user_id=None):
@@ -370,3 +377,4 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
             self.cancel_listener = None
         if self.ledger is not None:
             await self.store.async_save(deepcopy(self.ledger.data))
+            await self.recorder.close()

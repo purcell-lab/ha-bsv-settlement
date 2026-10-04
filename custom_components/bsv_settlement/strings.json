@@ -89,13 +89,27 @@
           "export_tolerance_pct": "Within-tolerance bound spread (%)",
           "export_wide_pct": "Wide bound spread limit (%)"
         }
+      },
+      "reconcile": {
+        "title": "Legacy recorder reconciliation",
+        "description": "Choose the legacy Sigenergy charging-session recorder to compare closed OCPP import and export spans against, over the same Home Assistant time window. The only recorder is preselected. A difference within the larger of the percentage and the absolute floor is aligned; export may also be reconciled by the derived bounds. Results are diagnostic only: the legacy recorder remains the settlement source, there is no source switch, and readiness never becomes validated automatically.",
+        "data": {
+          "legacy_proxy_entry_id": "Legacy recorder to reconcile against",
+          "reconcile_import_tolerance_pct": "Import tolerance (%)",
+          "reconcile_import_floor_kwh": "Import absolute floor (kWh)",
+          "reconcile_export_tolerance_pct": "Export tolerance (%)",
+          "reconcile_export_floor_kwh": "Export absolute floor (kWh)",
+          "reconcile_min_energy_kwh": "Minimum energy to compare (kWh)"
+        }
       }
     },
     "error": {
       "invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank.",
       "invalid_ocpp_export_sources": "Choose enabled export-register and flow-direction sensors (and optionally the session export sensor) of the same OCPP entry and connector as the observed sources, or leave all three blank.",
       "invalid_ocpp_export_reference": "The reference must be an enabled, registered non-OCPP sensor with an energy unit, chosen only when the export register is bound.",
-      "invalid_ocpp_export_grading": "Use a minimum energy of 0.001-100 kWh and spreads with 0 < within-tolerance < wide <= 100 %."
+      "invalid_ocpp_export_grading": "Use a minimum energy of 0.001-100 kWh and spreads with 0 < within-tolerance < wide <= 100 %.",
+      "invalid_recorder_link": "Choose a configured legacy charging-session recorder, or do not reconcile.",
+      "invalid_reconciliation_tolerances": "Use tolerances of 0.01-100 %, absolute floors of 0-10 kWh and a minimum energy of 0.001-100 kWh."
     }
   },
   "services": {

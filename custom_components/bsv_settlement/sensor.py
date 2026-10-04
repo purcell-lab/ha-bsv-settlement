@@ -24,6 +24,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
                            for key, name, unit in (
                                ("export_last_span", "OCPP export shadow last span", "kWh"),
                                ("export_quality", "OCPP export shadow quality", None)))
+        async_add_entities(RecorderReadinessSensor(coordinator, entry, key, name, None)
+                           for key, name in (
+                               ("session_recorder", "Session recorder"),
+                               ("recorder_readiness", "OCPP recorder readiness"),
+                               ("last_reconciliation", "Last OCPP reconciliation")))
         return
     if coordinator.mode == "sensor_proxy":
         async_add_entities(ProxySensor(coordinator, entry, key, name, unit) for key, name, unit in (
@@ -118,6 +123,70 @@ class OCPPExportShadowSensor(OCPPShadowSensor):
             "reference_delta_kwh", "reference_divergence_kwh", "reference_divergence_ratio",
             "session_export_delta_kwh")},
             "current_span": export.get("current_span")}
+
+
+class RecorderReadinessSensor(OCPPShadowSensor):
+    """Diagnostic recorder contract state; no selector, switch or settlement input."""
+    _attr_icon = "mdi:clipboard-check-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def recorder(self):
+        return (self.coordinator.data or {}).get("recorder") or {}
+
+    @property
+    def native_value(self):
+        recorder = self.recorder
+        if self.key == "session_recorder":
+            return recorder.get("settlement_recorder")
+        if self.key == "recorder_readiness":
+            return (recorder.get("ocpp") or {}).get("overall_level")
+        reconciliation = recorder.get("reconciliation") or {}
+        if reconciliation.get("state") != "ready":
+            return reconciliation.get("state")
+        last = reconciliation.get("last_result")
+        return last["explanation"] if last else "none"
+
+    @property
+    def extra_state_attributes(self):
+        recorder = self.recorder
+        common = {"billing_eligible": False, "settlement_owner": recorder.get("settlement_owner"),
+                  "selector_implemented": False, "payment_control": False,
+                  "charger_control": False}
+        if self.key == "session_recorder":
+            return {**common, "legacy_entry_id": recorder.get("legacy_entry_id"),
+                    "link_state": recorder.get("link_state"),
+                    "ocpp_role": (recorder.get("ocpp") or {}).get("role"),
+                    "legacy_health": (recorder.get("legacy") or {}).get("health"),
+                    "legacy_readiness": (recorder.get("legacy") or {}).get("directions")}
+        if self.key == "recorder_readiness":
+            ocpp = recorder.get("ocpp") or {}
+            directions = ocpp.get("directions") or {}
+            return {**common, "health": ocpp.get("health"),
+                    "limitations": ocpp.get("limitations"),
+                    **{f"{d}_level": (directions.get(d) or {}).get("level") for d in ("import", "export")},
+                    **{f"{d}_limitations": (directions.get(d) or {}).get("limitations")
+                       for d in ("import", "export")},
+                    **{f"{d}_sample_age_s": (directions.get(d) or {}).get("sample_age_s")
+                       for d in ("import", "export")},
+                    "directions": directions,
+                    "operator_validation_available": recorder.get("operator_validation_available")}
+        reconciliation = recorder.get("reconciliation") or {}
+        last = reconciliation.get("last_result") or {}
+        return {**common, "legacy_entry_id": recorder.get("legacy_entry_id"),
+                "state": reconciliation.get("state"), "flags": reconciliation.get("flags"),
+                **{k: last.get(k) for k in (
+                    "outcome", "within_tolerance", "direction", "span_id",
+                    "window_start", "window_end", "window_s", "ocpp_kwh", "ocpp_lower_kwh",
+                    "ocpp_upper_kwh", "ocpp_grade", "legacy_kwh", "legacy_lower_kwh",
+                    "legacy_upper_kwh", "difference_kwh", "difference_pct", "allowance_kwh",
+                    "reconciled_at")},
+                "tolerance": reconciliation.get("tolerance"),
+                **{f"last_{d}_explanation": (reconciliation.get("last_" + d) or {}).get(
+                    "explanation") for d in ("import", "export")},
+                **{k: reconciliation.get(k) for k in (
+                    "aligned_count", "unresolved_count", "outcome_counts", "explanation_counts",
+                    "retained_count", "results_trimmed", "pending_count", "lifetime_totals")}}
 
 
 class SettlementSensor(CoordinatorEntity, SensorEntity):

@@ -187,6 +187,14 @@ no settleable `latest_session` schema and no `sensor_proxy` mode. Existing
 payment-source checks and public-tariff selection therefore exclude this observer.
 Existing historical payment and consent bindings are not migrated.
 
+## Readiness and reconciliation
+
+[Recorder readiness](recorder-readiness.md) reads this observer's spans and the
+legacy recorder. It places OCPP import and export on a readiness ladder and
+compares each closed span with the legacy Sigen counter delta over the same HA
+time window. Results are diagnostic, are stored separately and never change the
+settlement source.
+
 ## Validation and next steps
 
 Synthetic fixtures cover activation mid-session, unit changes, invalid readings,
