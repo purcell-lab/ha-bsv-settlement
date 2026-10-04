@@ -37,8 +37,13 @@ spending mandates or broadcast permissions. It cannot retract a receipt already
 imported by a wallet. Confirmation loss after import needs an operator incident
 and dispute procedure, not an automatic compensating transfer.
 
-Independent header-chain/finality policy, manual-payment and driver-collection
-reassessment parity, bounded large-ledger scheduling, full receipt provenance
+Driver collections now apply the same explicit uncertainty rule when reconciled:
+invalid or missing current evidence clears confirmation and retains the original
+attempt. See [driver assurance](driver-collection-assurance.md). This does not
+add background driver reassessment or change the credit scheduling policy.
+
+Independent header-chain/finality policy, manual-payment parity,
+bounded driver and large-ledger scheduling, full receipt provenance
 and stale-backup recovery remain tracked by #19, #7 and #22. Normal restarts
 must not be confused with a protected backup restore.
 
