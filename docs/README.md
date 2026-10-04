@@ -13,6 +13,8 @@ an implemented control. The original no-budget mock documentation remains below.
   history; portal authentication is not spending authority.
 - **[Driver collection assurance](driver-collection-assurance.md):** restart
   boundaries, retained attempts and honest confirmation-loss reporting.
+- **[Background driver confirmation checks](driver-confirmation-scheduling.md):**
+  bounded, fair reassessment of existing collections and manual receipts.
 - **[Credit confirmation policy](credit-confirmation-policy.md):** provider
   reassessment separate from wallet receipt acceptance.
 - **[Connect BSV Browser](browser-pairing.md):** encrypted mobile pairing,
