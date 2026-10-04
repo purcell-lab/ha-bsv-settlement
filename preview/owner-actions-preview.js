@@ -13,11 +13,36 @@ const health={session_payments:[pay(6,"provider_confirmed",{txid:"f".repeat(64)}
   driver_approvals:[{budget_id:budget(4),session_id:sid(4),state:"awaiting_driver_consent",expires_at:future}],
   automatic_credit:{enabled:true,payments:[]}};
 window.previewCalls=[];
+let adjustment;
 const h={user:{is_admin:true},states:{"sensor.wallet":{state:"ready",attributes:health},
   "sensor.proxy":{state:"ready",attributes:{latest_session:s}},"sensor.rate":{state:"100"}},
   callWS:async({service,service_data:d})=>{
     window.previewCalls.push({service,data:structuredClone(d)});
     document.getElementById("preview-log").textContent=`Preview only: ${service}. Target ${d.session_id||d.budget_id||d.review_id||"provider refresh"}. No live call.`;
+    if(service==="prepare_energy_adjustment"){
+      adjustment={review_id:"fictional-adjustment",terms_hash:"fictional-hash",account_kind:"manual_energy_adjustment",
+        direction:d.energy_direction==="export"?"operator_to_driver":"driver_to_operator",
+        state:"awaiting_account_approval",account:{session_id:"adjustment:fictional",ocpp_transaction_id:"adjustment:fictional",
+          net_amount_aud:d.energy_direction==="export"?"-1.25":"1.25",adjustment_direction:d.energy_direction},
+        amount_sats:125,satoshis_per_aud:"100",price_aud_per_kwh:"0.25",price_estimated:false,
+        recipient_address:"Fictional preview address only",expires_at:future,created_at:new Date().toISOString()};
+      return {response:structuredClone(adjustment)};
+    }
+    if(service==="approve_session_review"){
+      adjustment.state=adjustment.direction==="operator_to_driver"?"credit_review_approved":"awaiting_driver_payment";
+      if(adjustment.direction==="driver_to_operator")adjustment.payment_request={amount_sats:125,format:"manual_bsv_payment_request_v1"};
+      return {response:structuredClone(adjustment)};
+    }
+    if(service==="prepare_adjustment_credit"){
+      adjustment.credit_draft={draft_id:"fictional-draft",state:"prepared",amount_sats:125,fee_sats:23,
+        recipient_address:adjustment.recipient_address,expires_at:future};
+      return {response:structuredClone(adjustment)};
+    }
+    if(service==="broadcast_session_credit"){
+      adjustment.credit_draft.state="submitted";adjustment.credit_draft.txid="f".repeat(64);
+      return {response:structuredClone(adjustment)};
+    }
+    if(service==="cancel_session_review"){adjustment.state="cancelled";return {response:structuredClone(adjustment)};}
     const number=Number(d.budget_id?.slice(0,8)),id=d.session_id||sid(number);
     if(service==="wallet_refresh_chain")return {response:{}};
     if(service==="prepare_session_closure")return {response:{account:{...s,session_id:id,net_amount_aud:"0.24"},amount_sats:24,

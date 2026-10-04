@@ -57,3 +57,34 @@ test("known estimated tariffs do not generate extra review blockers",()=>{
  const v=ownerActionRows({},[s],now)[0];
  assert.notEqual(v.title,"Data review required");assert.deepEqual(ids(v),["closure"]);
 });
+test("missing collection ID cannot borrow a newer same-session approval",()=>{
+ for(const state of ["ready","broadcast_unknown","wallet_attempt_reserved","recovery_ready"]){
+  const v=view(collection(state,{budget_id:undefined}),[],{driver_approvals:[{
+   session_id:session.session_id,budget_id:"newer-budget",expires_at:"2026-10-12T00:00:00Z"
+  }]});
+  assert.equal(v.budgetId,undefined);assert.equal(v.approval,undefined);
+  assert.equal(v.title,"Collection reference unavailable");
+  assert.deepEqual(ids(v),state==="ready"?[]:["check"]);
+ }
+});
+test("exact saved ID does not inherit metadata from a newer same-session approval",()=>{
+ const v=view(collection("ready",{expires_at:"2026-10-03T00:00:00Z"}),[],{
+  driver_approvals:[{session_id:session.session_id,budget_id:"newer-budget",
+   state:"awaiting_driver_consent",expires_at:"2026-10-12T00:00:00Z"}]
+ });
+ assert.equal(v.budgetId,"original-budget");assert.equal(v.approval,undefined);
+ assert.equal(v.title,"Approval expired");assert.deepEqual(ids(v),["approval","waiver"]);
+});
+test("exact expired approval remains available without a current approval summary",()=>{
+ const v=view(collection("ready"),[],{driver_approvals:[{
+  session_id:session.session_id,budget_id:"original-budget",
+  state:"expired",expires_at:"2026-10-03T00:00:00Z"
+ }]});
+ assert.equal(v.budgetId,"original-budget");assert.equal(v.title,"Approval expired");
+});
+test("ambiguous approvals without a collection do not select an arbitrary budget",()=>{
+ const v=ownerActionRows({driver_approvals:["first","second"].map(budget_id=>({
+  budget_id,session_id:session.session_id,state:"awaiting_driver_consent",
+  expires_at:"2026-10-12T00:00:00Z"}))},[session],now)[0];
+ assert.equal(v.budgetId,undefined);assert.deepEqual(ids(v),["closure"]);
+});

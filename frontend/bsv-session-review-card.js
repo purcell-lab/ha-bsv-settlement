@@ -62,7 +62,7 @@ class BsvSessionReviewCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const c = this._config, h = this._hass, mode=c.direction||"all";
     const driverMode=mode!=="operator_to_driver",creditMode=mode!=="driver_to_operator";
-    const r = this._review && (mode==="all" || this._review.direction===mode ||
+    const r = this._review && (this._review.account_kind==="manual_energy_adjustment" || mode==="all" || this._review.direction===mode ||
       driverMode&&this._review.direction==="none") ? this._review : null;
     const proxy = h.states[c.proxy_entity], wallet = h.states[c.wallet_entity];
     const automatic = wallet?.attributes?.automatic_credit;
@@ -125,6 +125,15 @@ class BsvSessionReviewCard extends HTMLElement {
       <ha-card>
         <div class="head"><div><p class="eyebrow">${mode==="driver_to_operator"?"Driver → Owner":mode==="operator_to_driver"?"Owner → Driver":"Settlement"}</p><h2>${mode==="driver_to_operator"?"Owner credits":mode==="operator_to_driver"?"Driver credits":"Payments & credits"}</h2></div>${creditMode?`<span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span>`:""}</div>
         <p class="note">${mode==="driver_to_operator"?"Money received by the owner from drivers. Consent, held collections and charge closure are shown here.":mode==="operator_to_driver"?"Money received by the driver from the owner. Receiving registrations, funding and credit confirmation are shown here.":"Follow each session from review to confirmation."} A submitted transaction must be reconciled, never paid again.</p>
+        <section class="section" aria-label="Separate energy adjustments">
+          <h3>Separate 5 kWh adjustments</h3>
+          <p class="note">Prepare a real-value adjustment for the current registered driver, separate from metered sessions. Review first; no money is sent by these buttons. Negative prices reverse the payment direction.</p>
+          <div class="actions">
+            <button id="adjust-export" ${disabled?"disabled":""}>Credit 5 kWh export at current export price</button>
+            <button id="adjust-import" ${disabled?"disabled":""}>Debit 5 kWh import at current import price</button>
+          </div>
+          <p class="note">Driver debits require a separate manual wallet payment. Charging-session and weekly approvals are not used. Operator credits use a fresh network-fee quote and explicit final approval.</p>
+        </section>
         ${mode==="driver_to_operator"?'<div id="owner-actions"></div>':""}
         ${(mode==="driver_to_operator"?[]:collectionIssues).map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
           <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
@@ -163,13 +172,24 @@ class BsvSessionReviewCard extends HTMLElement {
           <dl><dt>Frozen account</dt><dd>AUD ${esc(r.account.net_amount_aud)}</dd>
           <dt>Frozen conversion</dt><dd>${esc(r.satoshis_per_aud)} sat/AUD</dd>
           <dt>Recipient amount</dt><dd>${esc(r.amount_sats)} sat</dd></dl>
-          <p class="note">Proxy transaction ID</p><code>${esc(r.account.ocpp_transaction_id)}</code>
+          ${r.account_kind==="manual_energy_adjustment"?`<p class="notice"><strong>Separate real-value adjustment, not measured energy</strong><br>5 kWh ${esc(r.account.adjustment_direction)} × AUD ${esc(r.price_aud_per_kwh)}/kWh. ${r.price_estimated?"Estimated live tariff. ":""}${Number(r.price_aud_per_kwh)<0?"Negative rate: payment direction is reversed.":""}<br>Tariff frozen at preparation; current prices may now differ.</p>`:""}
+          <p class="note">${r.account_kind==="manual_energy_adjustment"?"Adjustment reference (not an OCPP transaction)":"Proxy transaction ID"}</p><code>${esc(r.account.ocpp_transaction_id)}</code>
           <p class="note">Recipient</p><code>${esc(r.recipient_address || "No payment required")}</code>
-          <p class="note">Review expires: ${esc(stamp(r.expires_at))}<br>Receiving address: ${r.identity_verification==="administrator_attested_not_cryptographic"?"confirmed by the operator":"not independently verified"}. Manual addresses are separate from session-specific wallet keys.</p>
+          <p class="note">Review expires: ${esc(stamp(r.expires_at))}<br>${r.account_kind==="manual_energy_adjustment"?"Current driver identity and receiving address are bound to the verified wallet registration. This does not authorise a driver debit.":`Receiving address: ${r.identity_verification==="administrator_attested_not_cryptographic"?"confirmed by the operator":"not independently verified"}. Manual addresses are separate from session-specific wallet keys.`}</p>
           <details><summary>Frozen terms fingerprint</summary><code>${esc(r.terms_hash)}</code></details>
           <div id="flow"></div>` : ""}
       </ha-card>`;
     const $ = selector => this.shadowRoot.querySelector(selector);
+    for(const direction of ["import","export"])$("#adjust-"+direction).onclick=()=>{
+      this._adjustmentRequests ||= {};
+      if(["cancelled","no_payment_due","credit_provider_confirmed","driver_payment_provider_confirmed"].includes(this._review?.state))
+        delete this._adjustmentRequests[direction];
+      this._adjustmentRequests[direction] ||= crypto.randomUUID();
+      this.action("prepare_energy_adjustment",{
+        proxy_config_entry_id:c.proxy_config_entry_id,conversion_rate_entity:c.rate_entity,
+        energy_direction:direction,request_id:this._adjustmentRequests[direction],
+      }).then(()=>this.shadowRoot.querySelector("#flow")?.scrollIntoView({behavior:"smooth",block:"center"}));
+    };
     if($("#owner-actions")){
       if(!this._ownerActions){
         this._ownerActions=document.createElement("bsv-owner-actions-card");this._ownerActions.setConfig(c);
@@ -201,7 +221,7 @@ class BsvSessionReviewCard extends HTMLElement {
     const flow = $("#flow");
     if (r.state === "awaiting_account_approval") {
       flow.innerHTML = `
-        <label><input id="account" type="checkbox">I reviewed the closed account and its provisional meter allocation.</label>
+        <label><input id="account" type="checkbox">${r.account_kind==="manual_energy_adjustment"?"I approve this separate 5 kWh-equivalent adjustment, frozen price and payment direction. It is not measured session energy.":"I reviewed the closed account and its provisional meter allocation."}</label>
         <label><input id="driver" type="checkbox">I independently confirmed the driver's public identity and receiving address. This is not cryptographic proof.</label>
         <button id="approve" disabled>Approve account for ${r.direction === "operator_to_driver" ? "credit preparation" : "payment request"}</button>
         <button id="cancel" ${disabled ? "disabled" : ""}>Cancel unsigned review</button>`;
@@ -224,6 +244,7 @@ class BsvSessionReviewCard extends HTMLElement {
         <p>Enter exactly <strong>${esc(r.amount_sats)} satoshis</strong> to the address above.
         Approve the network fee in the driver wallet.</p>
         <div class="qr"></div>
+        <code>${esc(r.recipient_address)}</code><button id="copy-request-address">Copy receiving address</button>
         <p class="note">The QR contains only the address, not the amount, session reference or spending authority.
         Do not pay an expired request. This is a manual request, not an integrated BRC wallet approval.</p>` :
         '<p class="notice">No new payment is requested. QR withheld: reconcile the existing or expired request instead of paying again.</p>'}
@@ -243,6 +264,11 @@ class BsvSessionReviewCard extends HTMLElement {
         box.querySelector(".qr").innerHTML = qr.createSvgTag({cellSize:4,margin:16,scalable:true});
         box.querySelector("svg").setAttribute("role","img");
         box.querySelector("svg").setAttribute("aria-label","BSV address only: " + r.recipient_address);
+        box.querySelector("#copy-request-address").onclick=async()=>{
+          try{await navigator.clipboard.writeText(r.recipient_address);this._message="Receiving address copied. Enter the reviewed amount separately.";}
+          catch{this._message="Copy unavailable. Select the receiving address shown below the QR.";}
+          this.render();
+        };
       }
       flow.append(box);
       const enable = () => {
@@ -257,6 +283,14 @@ class BsvSessionReviewCard extends HTMLElement {
       });
     }
     if (r.state === "credit_review_approved" && !r.credit_draft) {
+      if(r.account_kind==="manual_energy_adjustment"){
+        flow.innerHTML=`<p class="note">Get a fresh fee quote and prepare an unsigned credit. Maximum total operator spend is 1,000 sat including the fee. Review the exact recipient and fee before sending.</p>
+          <button id="adjustment-credit" ${disabled?"disabled":""}>Quote fee and prepare unsigned credit</button>
+          <button id="cancel-credit" ${disabled?"disabled":""}>Cancel unsigned adjustment</button>`;
+        $("#adjustment-credit").onclick=()=>this.action("prepare_adjustment_credit",{
+          review_id:r.review_id,terms_hash:r.terms_hash});
+        $("#cancel-credit").onclick=()=>this.action("cancel_session_review",{review_id:r.review_id});
+      }else{
       flow.innerHTML = `<label>Exact operator network fee, satoshis<input id="fee" type="number" min="1" max="1000" step="1" placeholder="Enter reviewed fee"></label>
         <p class="note">1 to 1000 sat is the demonstration cap, not a network fee estimate. Your exact fee must also meet a fresh provider quote; a fee rise requires a new unsigned review, not an automatic increase. Preparation does not sign or broadcast.</p>
         <button id="credit" disabled>Prepare unsigned operator credit</button>
@@ -269,6 +303,7 @@ class BsvSessionReviewCard extends HTMLElement {
         review_id:r.review_id, terms_hash:r.terms_hash, fee_sats:Number($("#fee").value),
       });
       $("#cancel-credit").onclick = () => this.action("cancel_session_review", {review_id:r.review_id});
+      }
     }
     if (r.credit_draft) {
       const p = r.credit_draft;

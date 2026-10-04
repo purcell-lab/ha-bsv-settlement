@@ -19,14 +19,22 @@ export function ownerActionRows(health,sessions,now=Date.now()){
   }
   return rows.map(({row,session})=>{
     const approvals=(health.driver_approvals||[]).filter(a=>a.session_id===row.session_id);
-    const approval=approvals.find(a=>a.budget_id===row.budget_id)||
-      approvals.find(a=>!["revoked","charge_waived","expired"].includes(a.state)&&Date.parse(a.expires_at)>now);
-    const budgetId=row.budget_id||approval?.budget_id;
+    // An existing collection belongs to its saved budget, never a newer
+    // approval for the same session. Older backend payloads fail closed.
+    const exactBudgetId=typeof row.budget_id==="string"&&row.budget_id.trim()?row.budget_id:undefined;
+    const approval=exactBudgetId?approvals.find(a=>a.budget_id===exactBudgetId):
+      row.source!=="driver"&&approvals.length===1?approvals[0]:undefined;
+    const budgetId=exactBudgetId||approval?.budget_id;
     const complete=terminal.has(row.state)&&(!row.state.includes("confirmed")||!!row.txid);
     const actions=[],add=(id,label,primary=false)=>actions.push({id,label,primary});
     let title=stateLabel(row.state),note="";
     if(complete){
       note=row.state==="waived"?"Closed without payment. This is not a refund.":"No further collection is required.";
+    }else if(row.source==="driver"&&!budgetId){
+      title="Collection reference unavailable";
+      note="The saved collection ID is missing. Update the integration before reviewing this request. Do not create another approval or payment.";
+      if(row.txid||held.has(row.state)||String(row.state).includes("confirmed"))
+        add("check","Check provider status",true);
     }else if(row.txid||held.has(row.state)||String(row.state).includes("confirmed")){
       title=row.state==="broadcast_unknown"?"Payment outcome uncertain":stateLabel(row.state);
       note="Reconcile the original attempt. Do not create another payment or invitation.";

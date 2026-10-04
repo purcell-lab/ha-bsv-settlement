@@ -1,3 +1,48 @@
+prepare_energy_adjustment:
+  name: Prepare separate 5 kWh adjustment
+  description: Administrator only. Freeze the current registered driver and current live tariff for a separate real-value 5 kWh adjustment. Does not change metered sessions, consume charging consent, sign or send money. Negative prices reverse direction.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    proxy_config_entry_id:
+      required: true
+      selector:
+        text:
+    conversion_rate_entity:
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    energy_direction:
+      required: true
+      selector:
+        select:
+          options:
+            - import
+            - export
+    request_id:
+      description: Stable UUID for retry protection. Reuse the same UUID after a lost response.
+      required: true
+      selector:
+        text:
+prepare_adjustment_credit:
+  name: Prepare fee-aware adjustment credit
+  description: Prepare the approved adjustment using a fresh provider fee quote. Does not sign or broadcast. Recipient amount plus fee must fit 1000 sat.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    review_id:
+      required: true
+      selector:
+        text:
+    terms_hash:
+      required: true
+      selector:
+        text:
 prepare_operator_credit_recovery:
   name: Prepare original-recipient credit recovery
   description: Administrator only. Freeze an unsigned historical credit using its original signed receiving registration. Hold it for separate approval even if automatic credits resume. No signature or broadcast; funding is checked but not reserved.

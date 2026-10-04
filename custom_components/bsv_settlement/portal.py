@@ -89,6 +89,10 @@ def credit_owner(api, identity, credit_id):
     if not isinstance(credit_id, str):
         raise WalletError("Credit unavailable")
     route = api.ongoing_credits.routes.get(credit_id)
+    if credit_id.startswith("adjustment:"):
+        from .energy_adjustment import credit_item
+        review, _ = credit_item(api, credit_id)
+        route = {"recipient": review["adjustment_recipient"], "adjustment": True}
     bid = route["recipient"]["budget_id"] if route else credit_id
     row = api.saved["session_budgets"].get(bid)
     if not row or not owned(api, row, identity):
@@ -164,6 +168,23 @@ def history(api, identity):
         credit = api.ongoing_credits.get(api.ongoing_credits.wrapper(route))
         transaction(target, api.auto_credits.public(credit) if credit else {"state": route["state"]},
                     "operator_to_driver", cid, bid, (credit or {}).get("account"))
+    for review in api.saved["session_reviews"].values():
+        if review.get("account_kind") != "manual_energy_adjustment":
+            continue
+        recipient = review["adjustment_recipient"]
+        if recipient["budget_id"] not in rows or recipient["driver_identity"] != identity:
+            continue
+        account = review["account"]
+        target = session(review["proxy_config_entry_id"], account["session_id"])
+        target["account_kind"] = "manual_energy_adjustment"
+        target["quality_flags"] = ["manual_energy_adjustment"]
+        target["adjustment_kwh"] = account["adjustment_kwh"]
+        public = api.reviews.public(review)
+        payment = api.saved["payments"].get(review.get("credit_draft_id"))
+        item = api.auto_credits.public(payment) if payment else (
+            public | (public.get("receipt") or {}))
+        transaction(target, item, review["direction"], "adjustment:" + review["review_id"],
+                    recipient["budget_id"], account)
     return sorted(result.values(), key=lambda s: (s["opened_at"] or s["ended_at"] or "", s["session_key"]), reverse=True)
 
 
@@ -318,8 +339,11 @@ class DriverPortalView(HomeAssistantView):
                     else:
                         row, payment, route = credit_owner(api, item["identity"], data.get("credit_id"))
                         if action == "credit_receipt":
-                            receipt = await (api.ongoing_credits.driver_receipt(row, data["credit_id"]) if route
-                                             else api.auto_credits.receipt(row))
+                            if route and route.get("adjustment"):
+                                receipt = await api.auto_credits.receipt_for_item(row, payment)
+                            else:
+                                receipt = await (api.ongoing_credits.driver_receipt(row, data["credit_id"]) if route
+                                                 else api.auto_credits.receipt(row))
                             result = {"invitation": copy.deepcopy(row["invitation"]), "receipt": receipt}
                         else:
                             from .receipt_ack import acknowledge

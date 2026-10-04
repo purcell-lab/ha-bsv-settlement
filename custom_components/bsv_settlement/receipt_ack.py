@@ -15,6 +15,11 @@ def payment_for(api, row, credit_id=None):
     """Resolve only a payment owned by this private receiving registration."""
     if credit_id is None:
         item = api.auto_credits.get(row)
+    elif isinstance(credit_id, str) and credit_id.startswith("adjustment:"):
+        from .energy_adjustment import credit_item
+        review, item = credit_item(api, credit_id)
+        if review["adjustment_recipient"]["budget_id"] != row["terms"]["budget_id"]:
+            raise WalletError("Adjustment does not belong to this receiving registration")
     else:
         route = api.ongoing_credits.routes.get(credit_id) if isinstance(credit_id, str) else None
         if not route or route["recipient"]["budget_id"] != row["terms"]["budget_id"]:

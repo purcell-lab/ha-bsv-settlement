@@ -47,7 +47,7 @@ class OwnerActionsCard extends HTMLElement{
     const rowHTML=v=>{
       const e=energyMetrics(v.session||{}),id=v.row.session_id;
       return `<article data-session="${esc(id)}" class="account ${this.selected?.row.session_id===id?"selected":""}">
-        <div class="row"><h3>Session ${esc(short(v.row.transaction_id||id.replace(/^sigen-proxy-/,"")))}</h3>
+        <div class="row"><h3>${v.row.account_kind==="manual_energy_adjustment"?"Adjustment":"Session"} ${esc(short(v.row.transaction_id||id.replace(/^sigen-proxy-/,"")))}</h3>
         <span class="badge ${v.complete?"good":"info"}">${esc(v.title)}</span></div>
         <p class="note">${Number.isSafeInteger(v.row.amount_sats)?`${num(v.row.amount_sats)} sat to owner`:"Amount not yet quoted"} · ${v.session?.ended_at?esc(stamp(v.session.ended_at)):"Historical time unavailable"}
         ${v.row.fee_sats!=null?` · ${num(v.row.fee_sats)} sat fee`:""}</p>
