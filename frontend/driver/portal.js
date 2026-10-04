@@ -6,6 +6,7 @@ import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
 import qrcode from "qrcode-generator";
 import {priceCard} from "./portal-prices.js";
+import {mountDriverToolbar} from "./navigation.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span>Buy (Import/ EV Charging) rate</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -47,6 +48,7 @@ ${priceCards("account")}
 <label for="portal-private">Existing private session or registration link</label><textarea id="portal-private" rows="2" spellcheck="false"></textarea>
 <button id="portal-open" class="secondary">Open existing invitation</button></details>`;
 const $=id=>document.getElementById(id),message=text=>{$("portal-status").textContent=text;};
+const toolbar=mountDriverToolbar("portal");
 const framed=window.top!==window;
 let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
 let prices=null,pricesBusy=false;
@@ -56,6 +58,15 @@ function controls(){
   for(const id of ["portal-login","portal-pair","portal-refresh","portal-sync","portal-logout","portal-more","portal-open"])
     $(id).disabled=busy||framed;
   $("portal-sync").disabled=busy||framed||!sessions.some(s=>s.transactions.some(t=>t.direction==="operator_to_driver"&&t.state==="provider_confirmed"&&!receiptReported(t)));
+  toolbar.update({
+    connect:{target:"portal-login",enabled:!busy&&!framed&&!identity,primary:!identity,reason:identity?"Already signed in to this wallet.":"Wait for the current action to finish."},
+    pair:{target:"portal-pair",enabled:!busy&&!framed&&!pairing,reason:"A pairing is active, or another action is in progress."},
+    approve:{enabled:false,reason:"History sign-in does not authorise spending. Open an operator invitation."},
+    refresh:{target:"portal-refresh",enabled:!busy&&!framed&&!!identity,reason:"Sign in to load private session history."},
+    sync:{target:"portal-sync",primary:!!identity,reason:"Sign in and load a confirmed credit whose receipt is not yet accepted."},
+    signout:{target:"portal-logout",enabled:!busy&&!framed&&!!identity,reason:"No wallet is signed in."},
+  });
+  $("portal-copy").disabled=!$("portal-uri").value;
 }
 async function api(action,extra={}){
   const r=await fetch("/api/bsv_settlement/portal",{method:"POST",credentials:"same-origin",cache:"no-store",
@@ -220,13 +231,19 @@ $("portal-pair").onclick=()=>run(async()=>{
     }
     if(state==="paired")void run(()=>signIn(pairing.wallet));
     if(state==="disconnected"){wallet=null;message("Pairing ended. Your private history remains available until sign-out or expiry; create a fresh code for wallet actions.");}
+    controls();
   }});
   await pairing.start();
+  $("portal-pairing").scrollIntoView({behavior:"smooth",block:"start"});
 });
 $("portal-copy").onclick=async()=>{
   if(!$("portal-uri").value)return;
-  try{await navigator.clipboard.writeText($("portal-uri").value);message("Pairing URI copied. Paste it into BSV Browser → Connect to App → Paste URI now.");}
+  let timer;
+  try{await Promise.race([navigator.clipboard.writeText($("portal-uri").value),
+    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Clipboard unavailable")),2000);})]);
+    message("Pairing URI copied. Paste it into BSV Browser → Connect to App → Paste URI now.");}
   catch{$("portal-uri").focus();$("portal-uri").select();message("Select and copy the pairing URI. Keep it private.");}
+  finally{clearTimeout(timer);}
 };
 $("portal-disconnect").onclick=()=>run(async()=>{if(pairing)await pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;});
 $("portal-open").onclick=async()=>{

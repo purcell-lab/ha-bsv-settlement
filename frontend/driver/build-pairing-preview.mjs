@@ -5,7 +5,8 @@ await mkdir(output,{recursive:true});
 await build({entryPoints:["pairing-preview.js"],bundle:true,format:"esm",minify:true,
   outfile:`${output}/app.bundle.js`,define:{
     "location.origin":JSON.stringify("https://charging.example.com"),
-    "location.hash":JSON.stringify("#budget=11111111-2222-4333-8444-555555555555&token=fictional"),
+    "location.hash":JSON.stringify("#budget=11111111-2222-4333-8444-555555555555&token="+"x".repeat(43)),
+    "location.href":JSON.stringify("https://charging.example.com/bsv_settlement/driver/index.html#budget=11111111-2222-4333-8444-555555555555&token="+"x".repeat(43)),
     "window.top":"window",
   }});
 await copyFile("index.html",`${output}/index.html`);

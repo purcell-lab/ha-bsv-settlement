@@ -303,6 +303,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             r = self.reviews.public(review)
             p = r.get("credit_draft") or r.get("receipt") or {}
             rows.append({
+                "review_id": review["review_id"],
                 "session_id": r["account"]["session_id"],
                 "transaction_id": r["account"]["ocpp_transaction_id"],
                 "state": p.get("state", r["state"]),

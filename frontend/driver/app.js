@@ -11,6 +11,7 @@ import { describeFailure } from "./diagnostics.js";
 import {chainRecordUrl} from "../ui.js";
 import {warningMessage} from "../quality.js";
 import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
+import {mountDriverToolbar,qrText} from "./navigation.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
 function drawApprovalQR(holder,url){
@@ -20,6 +21,7 @@ function drawApprovalQR(holder,url){
 }
 
 const $ = id => document.getElementById(id);
+const toolbar=mountDriverToolbar("session");
 const fragment = new URLSearchParams(location.hash.slice(1));
 // A new fragment identifies a different private invitation. Reset every wallet
 // and session variable rather than displaying the old session in the same tab.
@@ -32,7 +34,7 @@ const framed = !!capability && window.top !== window;
 $("open-private-link").onclick=()=>{
   const url=privateSessionUrl($("private-link-input").value.trim(),location.origin);
   if(!url){$("private-link-feedback").textContent="Paste a complete private session link from this charging operator, including its #budget and token.";return;}
-  location.href=url;
+  location.assign(url);
 };
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
@@ -109,6 +111,7 @@ function pairingState(state, detail) {
   }[state] || state);
   $("pairing-qr").replaceChildren();
   $("pairing-qr").hidden=state!=="scanning";
+  qrText($("pairing-qr"),state==="scanning"?pairing?.uri:null,"Pairing URI",text=>{$("pairing-status").textContent=text;});
   if(state==="scanning" && pairing?.uri) {
     const qr=qrcode(0,"M");qr.addData(pairing.uri);qr.make();
     const img=document.createElement("img");img.src=qr.createDataURL(4,16);
@@ -128,6 +131,7 @@ $("pairing-connect").onclick=async()=>{
     if(pairing)await pairing.disconnect();
     pairing=new BrowserPairing({api,origin:location.origin,onState:pairingState});
     await pairing.start();
+    $("pairing-section").scrollIntoView({behavior:"smooth",block:"start"});
   }catch(e){$("pairing-status").textContent=e.message;}
   finally{pairingBusy=false;controls();}
 };
@@ -137,6 +141,7 @@ $("pairing-disconnect").onclick=async()=>{
   if(pairing)await pairing.disconnect();
   pairing=null;pairingBusy=false;
   $("pairing-qr").hidden=true;$("pairing-disconnect").hidden=true;
+  qrText($("pairing-qr"),null);
   $("pairing-status").textContent="Using the local wallet fallback. Open this same private link inside BSV Browser. Disconnecting does not revoke a saved approval.";
   controls();
 };
@@ -150,9 +155,13 @@ $("driver-link-copy").onclick=async()=>{
 };
 window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
 function paintOngoing(){
-  $("ongoing-section").hidden=!ongoingRows.length;
+  const currentId=latestCollection?.session_id||binding?.session_id||
+    (checked?.terms.session_mode==="existing_session"?checked.terms.session_id:null);
+  const visibleRows=ongoingRows.filter(row=>row.session_id!==currentId);
+  $("ongoing-section").hidden=!visibleRows.length;
   $("ongoing-list").replaceChildren();
-  for(const row of ongoingRows.slice().reverse()){
+  for(const row of ongoingRows)if(receiptReported(row))importedCredits.add(row.txid);
+  for(const row of visibleRows.slice().reverse()){
     if(receiptReported(row))importedCredits.add(row.txid);
     const box=document.createElement("div");box.className="notice small";
     const p=document.createElement("p");p.className="strong";
@@ -202,6 +211,7 @@ function controls() {
     "Already inside BSV Browser? Credits sync here without a pairing QR. On another screen, pair your phone if needed. Receipt sync does not approve spending.":
     "On another screen? Pair your phone here, then approve the session spending limit separately.";
   $("driver-link-copy").disabled=!capability;
+  $("driver-link-copy").classList.add("toolbar-managed");
   $("load").disabled = busy || receivingOngoing; $("invitation").disabled = busy || receivingOngoing;
   $("reset").disabled = busy || collectionBusy || receivingOngoing; $("download").disabled = !receipt || busy;
   $("retry").disabled = busy || !receipt || !capability || accepted;
@@ -261,6 +271,18 @@ function controls() {
     $("progress-settle").className=imported||last.state==="no_operator_credit"?"done":"";
     document.body.dataset.stage=imported?"settled":"approved";
   }
+  const locked=busy||collectionBusy||receivingOngoing||pairingBusy||framed;
+  const pendingCredit=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid))||
+    latestCollection?.direction==="operator_to_driver"&&latestCollection.state==="provider_confirmed"&&!importedCredits.has(latestCollection.txid);
+  $("receive-ongoing").classList.add("toolbar-managed");
+  toolbar.update({
+    connect:{target:"resume-collection",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
+    pair:{target:"pairing-connect",enabled:!$("pairing-section").hidden&&!$("pairing-connect").disabled,reason:"Load a valid private invitation, or finish the active wallet action."},
+    approve:{target:"approve",primary:true,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
+    refresh:{enabled:!!capability&&!locked,run:()=>refresh(),reason:"Load an invitation and wait for the current action to finish."},
+    sync:{enabled:!!pendingCredit&&!locked&&!!capability&&!enrolment,run:()=>syncConfirmedReceipts(true),primary:!!pendingCredit,reason:"No confirmed credit receipt is awaiting acceptance, or the wallet is busy."},
+    signout:{enabled:false,reason:"This is a private-link session, not a portal login. Closing it does not revoke spending approval."},
+  });
 }
 async function api(action, extra={}) {
   if(enrolment && !["read","approve"].includes(action))throw Error("Open this new-driver invitation inside BSV Browser to authorise your budget first.");
@@ -339,6 +361,7 @@ function show(invitation) {
   const privateUrl=!framed&&capability?privateSessionUrl(location.href,location.origin):null;
   $("private-link-section").hidden=!privateUrl;
   $("private-link-qr").replaceChildren();
+  qrText($("private-link-qr"),privateUrl,"Private session URL",text=>status(text));
   if(privateUrl){
     drawApprovalQR($("private-link-qr"),privateUrl);
     $("private-link-qr").querySelector("svg").setAttribute("aria-label","Private link to this driver session; not wallet pairing or spending approval");
@@ -413,6 +436,7 @@ const collectionMessages={
 };
 function paintCollection(result) {
   latestCollection=result;
+  paintOngoing();
   if(["recovery_ready","waived"].includes(result.state)){
     collectionFailure=null;pendingDiagnostic=null;
   } else if(result.diagnostic)collectionFailure=result.diagnostic;
@@ -537,6 +561,7 @@ function clear() {
   $("receipt").value="";$("wallet-key").textContent="Not connected";
   $("collection-section").hidden=true;$("collection-amount").textContent="";$("collection-txid").textContent="";
   $("private-link-section").hidden=true;$("private-link-qr").replaceChildren();
+  qrText($("private-link-qr"),null);
 }
 $("load").onclick=()=>{
   clear();
@@ -671,6 +696,7 @@ async function refreshPublicInvitation(){
       location.origin+"/bsv_settlement/driver/index.html"+data.public_link_fragment,location.origin):null;
     publicQRReady=!!url;
     box.hidden=!url;link.hidden=!url;
+    qrText(box,url,"Registration URL",text=>{$("public-enrolment-status").textContent=text;});
     if(url){
       drawApprovalQR(box,url);
       box.querySelector("svg").setAttribute("aria-label","Unassigned new-driver invitation, not a private session link");
@@ -683,6 +709,7 @@ async function refreshPublicInvitation(){
   }catch{
     publicQRReady=false;
     box.hidden=true;box.replaceChildren();link.hidden=true;link.removeAttribute("href");
+    qrText(box,null);
     $("public-enrolment-status").textContent="Invitation check unavailable. No QR is shown; try again shortly.";
     $("status").textContent="Cannot check driver registration. Ask the operator for a private link.";
   }finally{publicBusy=false;controls();}
