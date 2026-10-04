@@ -3,6 +3,12 @@
   "baseline": "487d677742288c1089ce67ac4d6633703e723158",
   "baseline_ci": "https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/37066045552",
   "baseline_test_counts": {"python_ha": 181, "driver_js": 24, "operator_js": 5},
+  "current_validation": {
+    "commit": "309e8a8cacdb3e120ded0dd1b4da29a674c76579",
+    "ci": "https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/37160686208",
+    "test_counts": {"python_ha": 729, "driver_js": 86, "operator_js": 56},
+    "scope": "Deployed PR #58 baseline. Subsequent branch tests are additional offline evidence, not live-payment or independent acceptance."
+  },
   "evidence_boundary": "Test references are evidence of specific fictional/offline behaviours, not completion of the full outcome or proof of live wallet/charger compatibility.",
   "outcomes": [
     {
@@ -88,11 +94,15 @@
       "issues": [4, 7, 17, 19],
       "test_refs": [
         {"path": "tests/test_collection.py", "test": "test_uncertain_broadcast_only_reconciles_never_resubmits"},
+        {"path": "tests/test_collection_interruption_matrix.py", "test": "test_driver_interruption_reload_never_repeats_external_effect"},
+        {"path": "tests/test_collection_reassessment.py", "test": "test_driver_confirmation_loss_retains_attempt_and_recovers_without_resend"},
+        {"path": "tests/test_collection_reassessment.py", "test": "test_driver_confirmation_zero_and_return_are_read_only"},
+        {"path": "tests/test_credit_interruption_matrix.py", "test": "test_interrupted_credit_reloads_without_duplicate_external_effect"},
         {"path": "tests/test_collection.py", "test": "test_save_failure_before_network_never_broadcasts"},
         {"path": "tests/test_auto_credit.py", "test": "test_unknown_submission_and_restart_never_rebroadcast"},
         {"path": "tests/test_ongoing_credit.py", "test": "test_changed_frozen_account_and_storage_failure_block_broadcast"}
       ],
-      "remaining": ["Exercise every transition, protected restore and stale-backup mismatch", "Add confirmation-loss and real-device suspension/refusal cases"]
+      "remaining": ["Extend interruption coverage to manual payments, protected restore and coherent stale-backup mismatch", "Add real-device suspension/refusal evidence and bounded driver confirmation scheduling"]
     },
     {
       "id": "D09",
@@ -103,7 +113,7 @@
         {"path": "tests/test_ux_summary.py", "test": "test_driver_snapshot_is_only_the_approved_session"},
         {"path": "frontend/ui.test.js", "test": "submitted and confirmed payments override metering not_requested"}
       ],
-      "remaining": ["Clear stale recovered-source state safely", "Complete native HA and BSV Browser mobile/keyboard/dark-theme evidence"]
+      "remaining": ["Complete native HA and BSV Browser mobile/keyboard/dark-theme evidence", "Distinguish saved portal sign-in from a live wallet connection and payment authority"]
     },
     {
       "id": "D10",

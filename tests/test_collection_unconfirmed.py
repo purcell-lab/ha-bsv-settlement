@@ -44,7 +44,7 @@ async def test_malformed_evidence_remains_an_error(tmp_path,patch):
     _,api,_,row,_,args,tx=await authorised(tmp_path)
     api.chain.details=AsyncMock(return_value=unmined(tx)|patch)
     result=await api.collections.report(row,args|{"raw_tx":tx.hex()})
-    assert result["state"]=="submitted" and result.get("error")
+    assert result["state"]=="broadcast_unknown" and result.get("error")
     assert result.get("confirmations") is None
     assert len(api.chain.posts)==1
 
@@ -53,11 +53,11 @@ async def test_incomplete_or_wrong_raw_evidence_does_not_become_pending(tmp_path
     _,api,_,row,_,args,tx=await authorised(tmp_path)
     api.chain.details=AsyncMock(return_value={"txid":tx.txid()})
     result=await api.collections.report(row,args|{"raw_tx":tx.hex()})
-    assert result.get("error") and result["state"]=="submitted"
+    assert result.get("error") and result["state"]=="broadcast_unknown"
     api.chain.details=AsyncMock(return_value=unmined(tx))
     api.chain.request=AsyncMock(return_value=api.chain.raw)
     result=await api.collections.reconcile(row)
-    assert result["error"]=="Chain evidence differs from the authorised payment"
+    assert result["error"]=="Chain evidence differs from the recorded signed payment"
     assert len(api.chain.posts)==1
 
 
