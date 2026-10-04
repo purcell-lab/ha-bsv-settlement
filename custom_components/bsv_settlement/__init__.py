@@ -149,6 +149,12 @@ async def async_setup(hass, config):
         "prepare_session_review": {
             **per_session, vol.Required("proxy_config_entry_id"): str,
             vol.Required("conversion_rate_entity"): str},
+        "prepare_energy_adjustment": {
+            **common, vol.Required("proxy_config_entry_id"): str,
+            vol.Required("conversion_rate_entity"): str,
+            vol.Required("energy_direction"): vol.In(["import", "export"]),
+            vol.Required("request_id"): str},
+        "prepare_adjustment_credit": hashed,
         "approve_session_review": {
             **exact, vol.Required("confirm_account_review"): vol.In([True]),
             vol.Required("confirm_driver_details"): vol.In([True])},

@@ -126,7 +126,7 @@ function render(){
     summary.setAttribute("aria-label",`${shortDate}, ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}. Session ${s.transaction_id||s.session_id}. Expand details.`);
     summary.title=`${s.transaction_id||s.session_id}: ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}`;
     box.append(summary);
-    const table=node("table","","portal-detail-table"),caption=node("caption","Session details");
+    const table=node("table","","portal-detail-table"),caption=node("caption",s.account_kind==="manual_energy_adjustment"?"Separate adjustment details":"Session details");
     table.append(caption);
     const body=document.createElement("tbody");table.append(body);
     const addRow=(label,value,cls="")=>{
@@ -146,7 +146,8 @@ function render(){
       ["Net energy account",number(s.net_amount_aud," AUD")],
       ["Average net price",averageNet(s)===null?"Unavailable":`${averageNet(s).toFixed(4)} $/kWh`]])
       addRow(label,value);
-    if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
+    if(s.account_kind==="manual_energy_adjustment")addRow("Separate adjustment","5 kWh-equivalent monetary adjustment. Not measured session energy.","portal-warning");
+    else if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
     if(s.closure)addRow("Account",s.closure.state.replaceAll("_"," "));
     if(!s.transactions.length)addRow("Payment","No recorded payment. Sign-in does not collect this session.");
     for(const t of s.transactions){

@@ -151,6 +151,12 @@ class SessionReviews:
         return account_snapshot(record)
 
     async def unchanged_source(self, review):
+        if review.get("account_kind") == "manual_energy_adjustment":
+            from .energy_adjustment import check_recipient
+            check_recipient(self.api, review)
+            if digest(review["account"]) != review["source_hash"]:
+                raise WalletError("Frozen adjustment account changed")
+            return
         account = await self.source(review["proxy_config_entry_id"], review["account"]["session_id"])
         if digest(account) != review["source_hash"]:
             raise WalletError("The session account changed; do not use this frozen review")
@@ -235,10 +241,12 @@ class SessionReviews:
         self.unexpired(review)
         await self.unchanged_source(review)
         self.unexpired(review)
-        if self.api.saved["driver"] != review["driver"]:
+        if review.get("account_kind") != "manual_energy_adjustment" and self.api.saved["driver"] != review["driver"]:
             raise WalletError("Driver details changed; cancel the unsigned review and prepare another")
         review.update(approved_at=now().isoformat(), approved_by=user_id,
-                      identity_verification="administrator_attested_not_cryptographic")
+                      identity_verification=("registered_wallet_verified_and_operator_approved"
+                          if review.get("account_kind") == "manual_energy_adjustment"
+                          else "administrator_attested_not_cryptographic"))
         if review["direction"] == "driver_to_operator":
             review["state"] = "awaiting_driver_payment"
             review["payment_request"] = {
@@ -269,7 +277,7 @@ class SessionReviews:
             return self.public(review)
         self.unexpired(review)
         await self.unchanged_source(review)
-        if self.api.saved["driver"] != review["driver"]:
+        if review.get("account_kind") != "manual_energy_adjustment" and self.api.saved["driver"] != review["driver"]:
             raise WalletError("Driver details changed; the credit recipient is frozen")
         draft = await self.api.prepare_payment({
             "reference": "session-credit:" + review["review_id"],
@@ -279,6 +287,20 @@ class SessionReviews:
         review["credit_draft_id"] = draft["draft_id"]
         await self.save()
         return self.public(review)
+
+    async def prepare_adjustment_credit(self, data):
+        from .fees import quote
+        from .energy_adjustment import KIND, MAX_TOTAL
+        review = self.get(data["review_id"])
+        self.exact(review, data)
+        if review.get("account_kind") != KIND:
+            raise WalletError("Select a separate energy adjustment")
+        if review.get("credit_draft_id"):
+            return self.public(review)
+        fee = (await quote(self.api.chain))["fee_sats"]
+        if review["amount_sats"] + fee > MAX_TOTAL:
+            raise WalletError("Adjustment plus quoted fee exceeds 1000 sat")
+        return await self.prepare_credit(data | {"fee_sats": fee})
 
     async def broadcast_credit(self, data, user_id):
         review = self.get(data["review_id"])
@@ -403,6 +425,8 @@ class SessionReviews:
         if not user_id:
             raise WalletError("An explicit administrator context is required")
         handlers = {
+            "prepare_energy_adjustment": lambda: self.prepare_adjustment(data, user_id),
+            "prepare_adjustment_credit": lambda: self.prepare_adjustment_credit(data),
             "prepare_session_review": lambda: self.prepare(data, user_id),
             "approve_session_review": lambda: self.approve(data, user_id),
             "prepare_session_credit": lambda: self.prepare_credit(data),
@@ -413,3 +437,7 @@ class SessionReviews:
         if action == "session_review_status":
             return self.public(self.get(data["review_id"])) if data.get("review_id") else self.latest()
         return await handlers[action]()
+
+    async def prepare_adjustment(self, data, user_id):
+        from .energy_adjustment import prepare
+        return await prepare(self, data, user_id)

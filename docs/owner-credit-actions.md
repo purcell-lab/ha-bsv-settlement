@@ -11,6 +11,8 @@ Owner credits means money received by the charging owner from the driver. Driver
 - Review held collection uses the existing read-only recovery service. Release controls appear only for a pre-signing hold that the server declares eligible. All four evidence attestations, a nonsecret reference and final confirmation remain required. The server compares the original quote and claim before release.
 - Check provider status refreshes provider evidence without resubmission. Successful refresh is not a claim that payment was confirmed.
 - Manual requests carry a nonsecret review ID in the authenticated payment summary so their existing review can be opened exactly. Missing IDs never fall back to the latest review.
+- Driver collection rows carry the exact nonsecret `budget_id` from the saved collection key, including weekly child collections and expired approvals. The ID is independent of quote validity and never comes from an untrusted quote payload.
+- Existing collections never borrow another approval for the same session. If an older backend omits the ID, targeted approval, waiver and recovery controls are withheld with “Collection reference unavailable”. Provider refresh remains available for uncertain attempts. Updating the integration restores routing; no ledger migration or new invitation is needed.
 
 Uncertain, signing-authorised and submitted attempts offer reconciliation, not a new consent or payment path. Rendering the page makes no service calls. Links and QR codes are disclosed only after an administrator selects the specific record.
 
@@ -23,6 +25,7 @@ This view covers records available in the existing authenticated sensor summarie
 ## QA inventory
 
 - State model: current and historical sessions; exact budget and manual-review routing; direction filtering; unfinished-first grouping; terminal confirmation requires a transaction ID.
+- Backend-to-frontend contract: actual Python payment summaries are passed into the JavaScript action model, covering expired requests and uncertain weekly child collections with competing newer approvals.
 - Consent: exact session selection; prepare without mutation; warning disclosure; existing confirmations retained; form values persist after refresh.
 - Waiver: read-only preparation; incomplete form blocked; explicit final confirmation; no resend or refund.
 - Recovery: uncertain payment has no release or waiver; eligible pre-signing hold requires all attestations; fresh reviewed link uses the original quote.

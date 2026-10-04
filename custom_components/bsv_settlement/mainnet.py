@@ -304,6 +304,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             p = r.get("credit_draft") or r.get("receipt") or {}
             rows.append({
                 "review_id": review["review_id"],
+                "account_kind": review.get("account_kind"),
                 "session_id": r["account"]["session_id"],
                 "transaction_id": r["account"]["ocpp_transaction_id"],
                 "state": p.get("state", r["state"]),
@@ -316,6 +317,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             if row:
                 session_id = self.collections.session_id(row)
                 rows.append({
+                    "budget_id": budget_id,
                     "session_id": session_id,
                     "transaction_id": (row.get("binding") or {}).get(
                         "transaction_id", row["terms"].get("transaction_id")),
@@ -423,6 +425,13 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
     async def prepare_payment(self, data):
         amount, fee, reference = data["amount_sats"], data["fee_sats"], data["reference"]
         driver = copy.deepcopy(self.saved["driver"])
+        adjustment = self.saved["session_reviews"].get(data.get("session_review_id"), {})
+        if adjustment.get("account_kind") == "manual_energy_adjustment":
+            from .energy_adjustment import payment_driver, MAX_TOTAL
+            driver = payment_driver(self, adjustment)
+            if (adjustment["state"] != "credit_review_approved"
+                    or amount != adjustment["amount_sats"] or amount + fee > MAX_TOTAL):
+                raise WalletError("Adjustment amount, approval or total limit does not match")
         if not all(driver.values()):
             raise WalletError("Submit both driver public identity and a separately confirmed receiving address")
         fingerprint = hashlib.sha256(json.dumps(driver, sort_keys=True).encode()).hexdigest()
@@ -472,6 +481,14 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             "session_review_id": data.get("session_review_id"), "fee_quote": fee_quote,
         }
         self.saved["payments"][draft_id] = payment
+        if adjustment.get("account_kind") == "manual_energy_adjustment":
+            payment.update(budget_id="adjustment:" + adjustment["review_id"],
+                           session_id=adjustment["account"]["session_id"],
+                           transaction_id=adjustment["account"]["ocpp_transaction_id"],
+                           account=copy.deepcopy(adjustment["account"]),
+                           source_hash=adjustment["source_hash"],
+                           net_amount_aud=adjustment["account"]["net_amount_aud"],
+                           created_at=utcnow().isoformat())
         self.saved["active_payment"] = draft_id
         await self.store.async_save(self.saved)
         return self.public_payment(payment)
@@ -495,7 +512,12 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             p["state"] = "expired"
             await self.store.async_save(self.saved)
             raise WalletError("Payment approval expired")
-        fingerprint = hashlib.sha256(json.dumps(self.saved["driver"], sort_keys=True).encode()).hexdigest()
+        driver = self.saved["driver"]
+        review = self.saved["session_reviews"].get(p.get("session_review_id"), {})
+        if review.get("account_kind") == "manual_energy_adjustment":
+            from .energy_adjustment import payment_driver
+            driver = payment_driver(self, review)
+        fingerprint = hashlib.sha256(json.dumps(driver, sort_keys=True).encode()).hexdigest()
         if fingerprint != p["driver_fingerprint"]:
             raise WalletError("Driver details changed; prepare a new payment")
         rows = await self.chain.unspent(self.identity["address"])
