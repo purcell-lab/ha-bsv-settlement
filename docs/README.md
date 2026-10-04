@@ -54,6 +54,10 @@ The design document describes the target interface. The implementation deliberat
 
 ## Next implementation milestone
 
+The opt-in [OCPP import shadow adapter](ocpp-import-shadow.md) records partial
+entity-observed import spans without payment ownership or charger control.
+It does not implement the native settlement recorder or source selector.
+
 Prioritise recovery, confirmation reassessment, real-wallet compatibility and
 criterion-level evidence before expanding scope. Sensor-proxy accounting,
 browser-open collection and capped operator credits are implemented; native

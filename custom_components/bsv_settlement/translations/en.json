@@ -19,6 +19,16 @@
           "export_price_entity": "Signed feed-in price ($/kWh)"
         }
       },
+      "ocpp_shadow": {
+        "title": "Read-only OCPP import shadow",
+        "description": "Observe three enabled OCPP sensors from the same connector. Import register must currently be numeric in Wh, kWh or MWh. Records partial observed import spans only, not complete bills. No export, prices, payments, charger control or change to the existing recorder. Original charger timestamps and negotiated protocol remain unverified.",
+        "data": {
+          "name": "Observer name",
+          "import_entity": "OCPP cumulative active import register",
+          "transaction_entity": "OCPP native transaction ID",
+          "status_entity": "OCPP connector status"
+        }
+      },
       "embedded": {
         "title": "Embedded testnet operator wallet",
         "description": "Creates a real private key on this Home Assistant. It is stored in an owner-only local file, not encrypted or hardware protected. HA administrators and backups can access it. Keep backups secure. Do not fund this validation wallet. Broadcasting, driver payment approval and the budget gate are not implemented. The driver wallet stays external.",
@@ -40,6 +50,7 @@
       }
     },
     "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode.",
+              "invalid_ocpp_shadow_sources": "Choose enabled OCPP import-register, transaction-ID and connector-status sensors from the same connector, with a numeric Wh/kWh/MWh import register.",
               "invalid_proxy_sources": "Choose five different existing sensor entities.",
               "invalid_proxy_units": "Energy counters must be MWh and price sensors must be $/kWh.",
               "acknowledgement_required": "Acknowledge the local-key custody and unfunded validation restrictions."},
