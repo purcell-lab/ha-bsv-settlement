@@ -17,6 +17,23 @@ The operator should select **Legacy Sigenergy** or **OCPP** for future sessions.
 That selection must not change charger control, redirect a historical payment,
 extend a driver's consent or create a second account for the same energy.
 
+## Implementation status
+
+Updated with Tranche C. Nothing below selects or switches a source.
+
+| Item | Status | Where |
+|---|---|---|
+| Read-only OCPP import observation, provenance | Implemented (shadow only) | [OCPP import shadow](ocpp-import-shadow.md) |
+| Derived OCPP export observation and grading | Implemented (shadow only, estimated) | [OCPP export shadow](ocpp-export-shadow.md) |
+| Source-neutral recorder contract: kind, role, health, per-direction capabilities, last sample, limitations | Implemented, read-only facades over the legacy proxy and the OCPP shadow | [Recorder readiness](recorder-readiness.md) |
+| Readiness ladder (unavailable to validated directional accounting) | Implemented; the validated level needs an operator flag that does not exist yet | [Recorder readiness](recorder-readiness.md#readiness-ladder) |
+| Shadow comparison against the legacy recorder | Implemented: aligned-window register reconciliation per closed span, persisted, with explanation codes | [Recorder readiness](recorder-readiness.md#aligned-window-reconciliation) |
+| **Session recorder** display | Implemented as a read-only diagnostic sensor (`legacy_sigen`) | [Recorder readiness](recorder-readiness.md#sensors) |
+| Operator validation record | Not implemented (future) | — |
+| Timestamp-preserving event capture, native transaction finalisation, `RecordedSession` | Not implemented | — |
+| Selector, guarded switching, selection generation | Not implemented | — |
+| Financial integration of any OCPP source | Not implemented; financial modules still accept only `sensor_proxy` | — |
+
 ## Evidence and limits
 
 The live inspection used Home Assistant MCP integration/HACS metadata,
@@ -152,6 +169,9 @@ RecordedSession
   immutable_approval_binding, settlement_owner_key
 ```
 
+The capabilities/health part is now implemented as a read-only contract; see
+[Recorder readiness](recorder-readiness.md). Observation, history and
+reconciliation of `RecordedSession` remain proposals.
 These are proposed logical fields, not a committed public API. Migration must
 retain legacy record IDs, quotes, signed terms and all existing payment evidence.
 Create a new adapter kind; do not rename `sensor_proxy` in old stored records.

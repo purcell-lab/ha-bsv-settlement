@@ -240,8 +240,67 @@ def shadow_export_schema(hass, binding, current=None, grading=None):
     return vol.Schema(schema)
 
 
+RECONCILE_ERRORS = ("invalid_recorder_link", "invalid_reconciliation_tolerances")
+NO_LINK = "none"
+RECONCILE_FIELDS = {"import_pct": "reconcile_import_tolerance_pct",
+                    "import_floor_kwh": "reconcile_import_floor_kwh",
+                    "export_pct": "reconcile_export_tolerance_pct",
+                    "export_floor_kwh": "reconcile_export_floor_kwh",
+                    "min_energy_kwh": "reconcile_min_energy_kwh"}
+RECONCILE_KEYS = ("legacy_proxy_entry_id", "reconciliation_tolerances", *RECONCILE_FIELDS.values())
+
+
+def shadow_reconcile_options(hass, user_input):
+    """Validated link and tolerances; ValueError(args[0]) names the form error."""
+    from .recorder import LINK_OPTION, TOLERANCE_OPTION, proxy_entries
+    from .recorder_reconciliation import tolerance_rules
+    chosen = user_input.get(LINK_OPTION)
+    if chosen != NO_LINK and chosen not in proxy_entries(hass):
+        raise ValueError(RECONCILE_ERRORS[0])
+    try:
+        rules = tolerance_rules({k: user_input.get(f) for k, f in RECONCILE_FIELDS.items()})
+    except ValueError:
+        raise ValueError(RECONCILE_ERRORS[1]) from None
+    return {LINK_OPTION: None if chosen == NO_LINK else chosen,
+            **{field: float(rules[k]) for k, field in RECONCILE_FIELDS.items()},
+            TOLERANCE_OPTION: rules}
+
+
+def shadow_reconcile_schema(hass, options, current=None):
+    """Default to the stored link, else the only sensor_proxy entry; never guess among several."""
+    from .recorder import LINK_OPTION, TOLERANCE_OPTION, proxy_entries
+    from .recorder_reconciliation import tolerance_rules
+    entries = proxy_entries(hass)
+    stored = options.get(LINK_OPTION, "")
+    if current is not None:
+        default = current.get(LINK_OPTION)
+    elif LINK_OPTION in options:
+        default = stored if stored in entries else NO_LINK if stored is None else None
+    else:
+        default = next(iter(entries)) if len(entries) == 1 else None
+    choices = {**entries, NO_LINK: "Do not reconcile"}
+    key = (vol.Required(LINK_OPTION, default=default) if default in choices
+           else vol.Required(LINK_OPTION))
+    try:
+        rules = tolerance_rules(options.get(TOLERANCE_OPTION))
+    except ValueError:
+        rules = tolerance_rules()
+    schema = {key: vol.In(choices)}
+    limits = {"import_pct": (0.01, 100, "%"), "import_floor_kwh": (0, 10, "kWh"),
+              "export_pct": (0.01, 100, "%"), "export_floor_kwh": (0, 10, "kWh"),
+              "min_energy_kwh": (0.001, 100, "kWh")}
+    for name, field in RECONCILE_FIELDS.items():
+        low, high, unit = limits[name]
+        value = (current or {}).get(field, float(rules[name]))
+        schema[vol.Optional(field, default=value)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=low, max=high, step="any", unit_of_measurement=unit,
+                                          mode=selector.NumberSelectorMode.BOX))
+    return vol.Schema(schema)
+
+
 class OCPPShadowOptionsFlow(config_entries.OptionsFlowWithReload):
-    """Bind/unbind optional provenance metadata and export observation.
+    """Bind/unbind optional provenance metadata and export observation, then
+    link the legacy recorder for reconciliation (shown only when one exists).
 
     The three measurand sources and their frozen binding are not editable here.
     """
@@ -275,10 +334,31 @@ class OCPPShadowOptionsFlow(config_entries.OptionsFlowWithReload):
             except ValueError as err:
                 errors["base"] = str(err) if str(err) in EXPORT_ERRORS else EXPORT_ERRORS[0]
             else:
-                return self.async_create_entry(data={**self._metadata_options, **export})
+                self._export_options = export
+                from .recorder import proxy_entries
+                if proxy_entries(self.hass):
+                    return await self.async_step_reconcile()
+                # No legacy recorder to link: keep any earlier reconciliation choice.
+                kept = {k: v for k, v in options.items() if k in RECONCILE_KEYS}
+                return self.async_create_entry(data={**self._metadata_options, **export, **kept})
         current = user_input
         if current is None and options.get("export_binding"):
             current = dict(options)
         return self.async_show_form(
             step_id="export", errors=errors, data_schema=shadow_export_schema(
                 self.hass, binding, current, options.get("export_grading")))
+
+    async def async_step_reconcile(self, user_input=None):
+        """Link the legacy recorder to compare against, and tolerances. Read-only."""
+        errors = {}
+        if user_input is not None:
+            try:
+                reconcile = shadow_reconcile_options(self.hass, user_input)
+            except ValueError as err:
+                errors["base"] = str(err) if str(err) in RECONCILE_ERRORS else RECONCILE_ERRORS[0]
+            else:
+                return self.async_create_entry(
+                    data={**self._metadata_options, **self._export_options, **reconcile})
+        return self.async_show_form(step_id="reconcile", errors=errors,
+                                    data_schema=shadow_reconcile_schema(
+                                        self.hass, self.config_entry.options, user_input))

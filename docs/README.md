@@ -9,6 +9,9 @@ an implemented control. The original no-budget mock documentation remains below.
 
 - **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
   integration evidence and guarded Legacy Sigenergy / OCPP source selection.
+- **[Recorder readiness](recorder-readiness.md):** read-only per-direction
+  readiness ladder and aligned-window reconciliation of OCPP shadow spans
+  against the legacy recorder; no selector or switching.
 - **[Driver portal](driver-portal.md):** static wallet sign-in and owned session
   history; portal authentication is not spending authority.
 - **[Driver collection assurance](driver-collection-assurance.md):** restart
@@ -61,6 +64,9 @@ entity-observed import spans without payment ownership or charger control.
 With the purcell-lab OCPP fork it also records context and protocol provenance,
 and an optional [OCPP export shadow](ocpp-export-shadow.md) grades derived export
 spans by bound spread, diagnostic only.
+[Recorder readiness](recorder-readiness.md) places both recorders on a readiness
+ladder that never reaches validated automatically, and reconciles closed OCPP
+spans against the legacy Sigenergy counters over aligned windows.
 It does not implement the native settlement recorder or source selector.
 
 Prioritise recovery, confirmation reassessment, real-wallet compatibility and

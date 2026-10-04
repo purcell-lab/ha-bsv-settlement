@@ -173,6 +173,16 @@ malformed sections and spans claiming billing eligibility or a settlement owner
 are refused and left on disk untouched. The section retains at most 1,000
 journal events and 50 closed spans; trimming is flagged.
 
+## Reconciliation
+
+Closed export spans are also reconciled against the legacy Sigen discharge
+counter over the same HA time window (see
+[Recorder readiness](recorder-readiness.md#aligned-window-reconciliation)). If
+the legacy delta lies within this span's lower/upper bounds, the result is
+`ocpp_bounds_contain_legacy`. It counts as within tolerance only when the span's
+grade is `within_tolerance`. Derived export is capped at
+`fresh_attributable_sample` readiness with the `export_estimated` limitation.
+
 ## Limitations
 
 - **Derived, not metered.** The register integrates negative import power
