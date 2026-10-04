@@ -7,6 +7,8 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
+  integration evidence and guarded Legacy Sigenergy / OCPP source selection.
 - **[Connect BSV Browser](browser-pairing.md):** encrypted mobile pairing,
   separate session spending approval and the wallet network-capability gate.
 - **[Driver collection recovery](collection-recovery.md):** persistent failure
