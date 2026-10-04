@@ -17,6 +17,7 @@ SIGNED_STATES = {"broadcast_unknown", "submitted", "provider_unconfirmed", "prov
 BENIGN_FLAGS = {"interval_energy_allocation_estimated", "not_a_final_bill"}
 WARNING_FLAGS = BENIGN_FLAGS | {
     "import:energy_without_matching_state", "export:energy_without_matching_state",
+    "import:estimated_tariff", "export:estimated_tariff",
 }
 CAP = 100000
 
@@ -43,15 +44,14 @@ def decimal(value):
 def account_snapshot(record):
     if not record.get("ended_at") or record.get("status") != "ended_observed":
         raise WalletError("Only a closed session can enter payment review")
-    # State/meter timing mismatches are disclosed, not payment vetoes. Unknown
-    # flags still fail closed; never infer complete metering from a warning label.
+    # Known timing and estimated-tariff flags are disclosed, not payment vetoes.
+    # Unknown flags still fail closed; a warning never substitutes for coverage.
     blockers = set(record.get("quality_flags", [])) - WARNING_FLAGS
     if blockers:
         raise WalletError("Resolve session quality issues before review: " + ", ".join(sorted(blockers)))
-    for field in ("unpriced_import_wh", "unpriced_export_wh",
-                  "estimated_rate_import_wh", "estimated_rate_export_wh"):
+    for field in ("unpriced_import_wh", "unpriced_export_wh"):
         if record.get(field) is None or decimal(record[field]) != 0:
-            raise WalletError("Complete non-estimated interval pricing is required")
+            raise WalletError("Complete interval pricing is required; unpriced energy cannot settle")
     if record.get("net_cost_aud_unrounded") is None:
         raise WalletError("The final session amount is unavailable")
     if record.get("import_kwh") is None or record.get("export_kwh") is None:
@@ -59,6 +59,16 @@ def account_snapshot(record):
     if any(not 0 <= decimal(record[field]) <= 1000000000
            for field in ("import_kwh", "export_kwh")):
         raise WalletError("Invalid session energy")
+    for direction in ("import", "export"):
+        field = f"estimated_rate_{direction}_wh"
+        if record.get(field) is None:
+            raise WalletError("Estimated tariff coverage is unavailable")
+        estimated = decimal(record[field])
+        # kWh is a float in the recorder summary; tolerate only conversion noise.
+        if not 0 <= estimated <= decimal(record[f"{direction}_kwh"]) * 1000 + Decimal("0.00000001"):
+            raise WalletError("Invalid estimated tariff coverage")
+        if estimated > 0 and f"{direction}:estimated_tariff" not in record.get("quality_flags", []):
+            raise WalletError("Estimated tariffs must be disclosed in the session warnings")
     amount = decimal(record["net_cost_aud_unrounded"]).quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
     if abs(amount) > 1000000:
         raise WalletError("Session account exceeds demonstration limits")

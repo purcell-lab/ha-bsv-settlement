@@ -96,6 +96,38 @@ def test_unfinished_or_unreconciled_accounts_block(changes):
         account_snapshot(session() | changes)
 
 
+def test_fully_priced_estimated_tariffs_are_disclosed_nonblocking():
+    record = session("-0.81") | {
+        "import_kwh": .51, "export_kwh": 9.71,
+        "estimated_rate_import_wh": "465.2272870908510805",
+        "estimated_rate_export_wh": "3755.5841231647186679",
+        "quality_flags": ["import:estimated_tariff", "export:estimated_tariff",
+                         "interval_energy_allocation_estimated", "not_a_final_bill"],
+    }
+    frozen = account_snapshot(record)
+    assert frozen["net_amount_aud"] == "-0.81"
+    assert frozen["quality_flags"] == record["quality_flags"]
+    assert record["estimated_rate_export_wh"] == "3755.5841231647186679"
+
+
+@pytest.mark.parametrize("changes", [
+    {"unpriced_import_wh": "0.001"}, {"unpriced_export_wh": "1"},
+    {"estimated_rate_import_wh": "-1"}, {"estimated_rate_export_wh": "1"},
+    {"estimated_rate_import_wh": "1001"}, {"estimated_rate_import_wh": None},
+    {"estimated_rate_import_wh": "NaN"}, {"estimated_rate_import_wh": "Infinity"},
+    {"net_cost_aud_unrounded": None},
+    {"quality_flags": ["import:missing_tariff", "import:estimated_tariff"]},
+    {"quality_flags": ["import:overlapping_tariff_periods", "import:estimated_tariff"]},
+    {"quality_flags": ["import:missing_counter_baseline", "import:estimated_tariff"]},
+    {"quality_flags": ["new_unknown_flag", "import:estimated_tariff"]},
+])
+def test_estimate_warning_never_bypasses_incomplete_or_invalid_account(changes):
+    record = session() | {"estimated_rate_import_wh": "500",
+                          "quality_flags": ["import:estimated_tariff"]}
+    with pytest.raises(WalletError):
+        account_snapshot(record | changes)
+
+
 @pytest.mark.asyncio
 async def test_credit_requires_separate_exact_approval_and_linked_action(tmp_path):
     hass, entry, api = await setup_wallet(tmp_path)

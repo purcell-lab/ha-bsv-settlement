@@ -222,7 +222,7 @@ async def test_prep_rejects_conflicting_session_and_bad_data_before_mutating(tmp
         await api.credit_recovery.prepare({"credit_id": route["route_id"]}, "admin")
     assert not route.get("manual_recovery") and not api.saved["automatic_credits"]
     await api.reviews.cancel({"review_id": api.reviews.latest()["review_id"]})
-    proxy.data["latest_session"]["quality_flags"] = ["export:estimated_tariff"]
+    proxy.data["latest_session"]["quality_flags"] = ["export:missing_tariff"]
     with pytest.raises(WalletError, match="quality"):
         await api.credit_recovery.prepare({"credit_id": route["route_id"]}, "admin")
     assert not api.chain.posts and not route.get("manual_recovery")

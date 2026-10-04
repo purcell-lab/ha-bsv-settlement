@@ -310,7 +310,9 @@ function show(invitation) {
     const c=t.closed_session_review,a=c.account,total=Number(a.import_kwh)+Number(a.export_kwh);
     const warnings=(a.quality_flags||c.accepted_flags).map(f=>({
       "import:energy_without_matching_state":"Charging energy was recorded while the charger state did not indicate charging",
-      "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging"
+      "export:energy_without_matching_state":"Export energy was recorded while the charger state did not indicate discharging",
+      "import:estimated_tariff":"Some charging energy uses estimated buy rates; this is a non-blocking warning",
+      "export:estimated_tariff":"Some exported energy uses estimated sell rates; this is a non-blocking warning"
     })[f]||f).join(". ");
     $("closed-account").textContent=`Completed session ${t.transaction_id}. Energy Imported to EV: ${a.import_kwh} kWh; Energy Imported from EV: ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
   }

@@ -68,6 +68,28 @@ async def test_pays_without_browser_or_per_payment_approval_and_freezes_rate(tmp
     assert (await api.collections.status(row))["direction"] == "operator_to_driver"
     assert "signed_raw" not in canonical(api.auto_credits.summary())
 
+
+async def test_estimated_tariff_credit_pays_once_retains_warning_and_frozen_amount(tmp_path):
+    _, api, proxy, row, _, _ = await ready(tmp_path, "-0.81")
+    record = proxy.data["latest_session"]
+    record.update(import_kwh=.51, export_kwh=9.71,
+                  estimated_rate_import_wh="465.227287090851",
+                  estimated_rate_export_wh="3755.584123164718",
+                  quality_flags=["import:estimated_tariff", "export:estimated_tariff"])
+    await api.auto_credits.tick()
+    item = api.auto_credits.get(row)
+    assert item["amount_sats"] == 81
+    assert item["account"]["quality_flags"] == record["quality_flags"]
+    original_txid = item["txid"]
+    # Later tariff revisions must not trigger a replacement or a second payment.
+    record.update(net_cost_aud_unrounded="-0.95", estimated_rate_import_wh="0",
+                  estimated_rate_export_wh="0", quality_flags=[])
+    await api.auto_credits.tick()
+    await api.auto_credits.tick()
+    assert len(api.chain.posts) == 1
+    assert item["txid"] == original_txid and item["amount_sats"] == 81
+    assert "export:estimated_tariff" in item["account"]["quality_flags"]
+
 async def test_credit_receipt_energy_is_frozen_and_legacy_recovery_is_hash_checked(tmp_path):
     _, api, proxy, row, _, _ = await ready(tmp_path)
     record = proxy.data["latest_session"]
