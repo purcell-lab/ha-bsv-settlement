@@ -216,6 +216,21 @@ async def async_setup(hass, config):
 
 
 async def async_setup_entry(hass, entry):
+    if entry.data.get("backend") == "ocpp_import_shadow":
+        from .ocpp_shadow import OCPPShadowCoordinator
+        coordinator = OCPPShadowCoordinator(hass, entry)
+        try:
+            await coordinator.load()
+            await coordinator.async_config_entry_first_refresh()
+            hass.data[DOMAIN][entry.entry_id] = coordinator
+            await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
+        except Exception:
+            # Do not overwrite a rejected/unknown store during failed loading.
+            if coordinator.cancel_listener:
+                await coordinator.close()
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+            raise
+        return True
     if entry.data.get("backend") == "sensor_proxy":
         from .proxy import ProxyCoordinator
         coordinator = ProxyCoordinator(hass, entry)
@@ -250,7 +265,8 @@ async def async_setup_entry(hass, entry):
 
 
 async def async_unload_entry(hass, entry):
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    platforms = [Platform.SENSOR] if entry.data.get("backend") == "ocpp_import_shadow" else PLATFORMS
+    unloaded = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unloaded:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
         from .pairing import KEY
@@ -259,6 +275,6 @@ async def async_unload_entry(hass, entry):
             for topic, item in list(hub.sessions.items()):
                 if item["coord"] is coordinator:
                     await hub.close(topic)
-        if coordinator is not None and coordinator.mode == "sensor_proxy":
+        if coordinator is not None and coordinator.mode in ("sensor_proxy", "ocpp_import_shadow"):
             await coordinator.close()
     return unloaded

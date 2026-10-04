@@ -14,6 +14,12 @@ SENSORS = [
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    if coordinator.mode == "ocpp_import_shadow":
+        async_add_entities(OCPPShadowSensor(coordinator, entry, key, name, unit)
+                           for key, name, unit in (
+                               ("shadow_status", "OCPP import shadow status", None),
+                               ("observed_import_kwh", "Observed import span energy", "kWh")))
+        return
     if coordinator.mode == "sensor_proxy":
         async_add_entities(ProxySensor(coordinator, entry, key, name, unit) for key, name, unit in (
             ("recorder_status", "Recorder status", None),
@@ -29,6 +35,41 @@ async def async_setup_entry(hass, entry, async_add_entities):
     if coordinator.mode == "embedded_mainnet":
         specs = [*specs, ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
     async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in specs)
+
+
+class OCPPShadowSensor(CoordinatorEntity, SensorEntity):
+    """No settleable session schema or private journal in entity attributes."""
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:eye-outline"
+
+    def __init__(self, coordinator, entry, key, name, unit):
+        super().__init__(coordinator)
+        self.key = key
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)}, "name": entry.title,
+            "manufacturer": "Proof of concept", "model": "Read-only OCPP import shadow"}
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data or {}
+        if self.key == "shadow_status":
+            return data.get("state")
+        from decimal import Decimal
+        span = data.get("current_span") or {}
+        value = span.get("observed_import_kwh")
+        return Decimal(value) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data or {}
+        return {k: data.get(k) for k in (
+            "mode", "quality_flags", "current_span", "previous_span",
+            "retained_span_count", "journal_trimmed", "spans_trimmed",
+            "billing_eligible", "settlement_owner", "payment_control",
+            "charger_control", "export_kwh", "net_cost_aud")}
 
 
 class SettlementSensor(CoordinatorEntity, SensorEntity):

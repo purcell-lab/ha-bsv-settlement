@@ -78,3 +78,18 @@ async def test_public_prices_preserve_origin_and_input_guards(tmp_path):
             assert r.status == 403
     finally:
         await client.close()
+
+
+async def test_shadow_observer_does_not_change_public_tariff_routing(tmp_path):
+    hass, api, _, _, _, view, _, client = await fixture(tmp_path)
+    rates(hass)
+    try:
+        before = current_prices(api)
+        hass.data["bsv_settlement"]["shadow"] = SimpleNamespace(
+            mode="ocpp_import_shadow", sources={"import": "sensor.synthetic_register"})
+        after = current_prices(api)
+        assert after["valid"]
+        assert after["import"] == before["import"]
+        assert after["export"] == before["export"]
+    finally:
+        await client.close()

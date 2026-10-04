@@ -13,6 +13,8 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
+            if user_input["backend"] == "ocpp_import_shadow":
+                return await self.async_step_ocpp_shadow()
             if user_input["backend"] == "sensor_proxy":
                 return await self.async_step_proxy()
             if user_input["backend"] == "embedded_testnet":
@@ -21,8 +23,35 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_mainnet()
             return await self.async_step_mock()
         return self.async_show_form(step_id="user", data_schema=vol.Schema({
-            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet", "embedded_mainnet", "sensor_proxy"]),
+            vol.Required("backend", default="mock"): vol.In(["mock", "embedded_testnet", "embedded_mainnet", "sensor_proxy", "ocpp_import_shadow"]),
         }))
+
+    async def async_step_ocpp_shadow(self, user_input=None):
+        from .ocpp_shadow import METRICS, source_binding, energy
+        errors = {}
+        if user_input is not None:
+            try:
+                sources = {k: user_input[k + "_entity"] for k in METRICS}
+                binding = source_binding(self.hass, sources)
+                state = self.hass.states.get(sources["import"])
+                if state is None:
+                    raise ValueError("Missing import register")
+                energy(state.state, state.attributes.get("unit_of_measurement"))
+            except (ValueError, KeyError):
+                errors["base"] = "invalid_ocpp_shadow_sources"
+            else:
+                identity = binding["import"]
+                await self.async_set_unique_id(
+                    "ocpp-shadow:" + identity["config_entry_id"] + ":" + identity["device_id"])
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=user_input.get("name", "OCPP import shadow"),
+                    data={**user_input, "backend": "ocpp_import_shadow", "source_binding": binding})
+        schema = {vol.Optional("name", default="OCPP import shadow"): str}
+        schema.update({
+            vol.Required(k + "_entity"): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", integration="ocpp")) for k in METRICS})
+        return self.async_show_form(step_id="ocpp_shadow", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_proxy(self, user_input=None):
         errors = {}
