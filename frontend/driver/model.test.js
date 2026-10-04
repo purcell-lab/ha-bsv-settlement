@@ -19,6 +19,38 @@ function invitation(t = terms) {
   const payload = canonical([2,3].includes(t.version) ? {...t,payment_authority:t.payment_authority || paymentAuthority(t)} : t);
   return {version:1,payload,signature:operator.sign(bytes(payload)).toDER("hex")};
 }
+test("current-plus-future scope is explicit in the fresh wallet signature",async()=>{
+ const initial={session_id:"current",transaction_id:"current-tx",
+   opened_at:new Date(Date.now()-3600000).toISOString(),account:null,amount_sats:null};
+ const t={...terms,version:3,scope:multiScope,session_mode:"multi_session",included_session:initial};
+ const checked=parseInvitation(JSON.stringify(invitation(t)));
+ const identity=(await driver.getPublicKey({identityKey:true})).publicKey;
+ const receipt=await signConsent(driver,checked,identity);
+ assert.equal(JSON.parse(receipt.payload).payment_authority.included_session_id,"current");
+ assert.equal(JSON.parse(receipt.payload).payment_authority.max_total_sats_including_fees,1000);
+ assert.throws(()=>parseInvitation(JSON.stringify(invitation({...t,
+   payment_authority:paymentAuthority({...t,included_session:undefined})}))));
+ for(const patch of [{opened_at:"invalid"},{session_id:""},{amount_sats:10}]){
+   assert.throws(()=>parseInvitation(JSON.stringify(invitation({...t,included_session:{...initial,...patch}}))));
+ }
+});
+test("closed current account must match its derived ticket",async()=>{
+ const opened=new Date(Date.now()-3600000).toISOString();
+ const a={session_id:"current",ocpp_transaction_id:"current-tx",opened_at:opened,
+   ended_at:new Date(Date.now()-1000).toISOString(),currency:"AUD",
+   import_kwh:13.38,export_kwh:1.53,net_amount_aud:"0.71"};
+ const initial={session_id:"current",transaction_id:"current-tx",opened_at:opened,account:a,amount_sats:71};
+ const p={...terms,version:3,scope:multiScope,session_mode:"multi_session",included_session:initial};
+ const parent=parseInvitation(JSON.stringify(invitation(p)));
+ const child={...terms,session_mode:"existing_session",session_id:"current",transaction_id:"current-tx",
+   weekly_parent_hash:await hash(parent.invitation.payload),closed_session_review:{
+     account:a,amount_sats:71,satoshis_per_aud:"100",accepted_flags:[],reason:"Explicit current account included"}};
+ await derivedInvitation(invitation(child),parent,"current");
+ await assert.rejects(derivedInvitation(invitation({...child,closed_session_review:{
+   ...child.closed_session_review,account:{...a,import_kwh:99}}}),parent,"current"));
+ for(const patch of [{amount_sats:1000},{account:{...a,session_id:"wrong"}},{account:{...a,import_kwh:-1}}])
+   assert.throws(()=>parseInvitation(JSON.stringify(invitation({...p,included_session:{...initial,...patch}}))));
+});
 test("weekly root signature grants aggregate authority, not an individual reset",async()=>{
  const t={...terms,version:3,scope:multiScope,session_mode:"multi_session",
   expires_at:new Date(Date.now()+7*86400000).toISOString()};

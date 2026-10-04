@@ -65,6 +65,9 @@ def payment_authority(terms):
             max_payments=None, aggregate_limit=True,
             terminates_on_new_driver_registration=True, credits_replenish_budget=False,
             receiving_expires_at=terms["expires_at"])
+        if terms.get("included_session"):
+            result.update(trigger="explicit_current_session_and_future_sessions_after_registration",
+                          included_session_id=terms["included_session"]["session_id"])
     return result
 
 
@@ -320,6 +323,8 @@ class SessionBudgets:
 
     async def create(self, data, user_id, *, closed_review=None):
         multi=data.get("multi_session",False)
+        if data.get("initial_session_id") and not multi:
+            raise WalletError("Including a current session requires a fresh multi-session approval")
         if type(multi) is not bool or multi and (data.get("session_id") or closed_review):
             raise WalletError("Multi-session consent applies only to future sessions")
         if multi and not self.api.auto_credits.policy.get("enabled"):
@@ -362,9 +367,16 @@ class SessionBudgets:
         minutes = data.get("valid_minutes", 10080 if multi else 720)
         if type(minutes) is not int or not 1 <= minutes <= (10080 if multi else 1440):
             raise WalletError("Expiry must be within seven days for multi-session or 24 hours for single-session consent")
+        included = None
+        if data.get("initial_session_id"):
+            from .weekly import initial_session
+            included = initial_session(self.api, data["proxy_config_entry_id"],
+                                       data["initial_session_id"], rate, maximum)
+        from .weekly import superseded_registration
         old = next((r for r in self.api.saved["session_budgets"].values()
                     if r["session_key"] == key and not r.get("binding")
-                    and self.public(r)["state"] not in ("revoked", "expired")), None)
+                    and self.public(r)["state"] not in ("revoked", "expired")
+                    and not (multi and superseded_registration(self.api, r))), None)
         replacement = any(k in data for k in (
             "replace_pending_budget_id", "expected_invitation_hash", "confirm_replace_pending"))
         if old:
@@ -378,7 +390,8 @@ class SessionBudgets:
                                datetime.fromisoformat(t["created_at"])).total_seconds() / 60) == minutes
                     and t["operator_name"] == data.get("operator_name", "Charging operator")
                     and t["operator_contact"] == data.get("operator_contact", "")
-                    and t["conversion_rate_entity"] == data["conversion_rate_entity"])
+                    and t["conversion_rate_entity"] == data["conversion_rate_entity"]
+                    and t.get("included_session") == included)
             if not replacement:
                 if not same:
                     raise WalletError("An unapproved invitation already exists. Confirm replacement to apply changed limits or operator details")
@@ -419,6 +432,13 @@ class SessionBudgets:
                 account_scope="Future sessions opened after receiving registration on this charger. "
                 "One aggregate spending limit includes all driver payments and fees. "
                 "Ends at expiry or a newer driver registration. Operator credits do not replenish the allowance.")
+            if included:
+                terms["included_session"] = included
+                terms["transaction_id"] = "Current and future sessions"
+                terms["account_scope"] += (
+                    f" Also explicitly includes current session {included['transaction_id']}, "
+                    "including energy recorded before this approval. "
+                    "Its charge and network fee use the same aggregate limit, not an extra allowance.")
         terms["payment_authority"] = payment_authority(terms)
         if closed_review is not None:
             terms["closed_session_review"] = copy.deepcopy(closed_review)

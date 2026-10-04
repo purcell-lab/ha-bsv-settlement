@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {driverView,showOngoingOverview,ongoingCreditMessage} from "./view.js";
+import {sessionReference} from "./session-reference.js";
+test("unbound approval has its own ID and never invents a session ID",()=>{
+ const r=sessionReference({budget_id:"approval",session_id:"reservation:internal",session_mode:"next_session_reservation"});
+ assert.equal(r.approval,"approval");assert.equal(r.session,"Not assigned");
+ assert.equal(r.transaction,"Not assigned");assert.equal(r.scope,"One session only");
+ assert.equal(sessionReference(null),null);
+});
+test("bound, completed and multi-session identifiers remain distinct",()=>{
+ const t={budget_id:"approval",session_id:"session-a",transaction_id:"tx-a",session_mode:"existing_session"};
+ assert.equal(sessionReference(t).transaction,"tx-a");
+ assert.equal(sessionReference(t,{session_id:"session-b",transaction_id:"tx-b"}).session,"session-b");
+ assert.equal(sessionReference({...t,closed_session_review:{}}).scope,"This completed session only");
+ assert.equal(sessionReference({...t,version:3},null,"session-c").session,"session-c");
+ assert.equal(sessionReference({...t,version:3}).session,"No session selected yet");
+});
 test("unconfirmed payment awaits a block without offering another collection",()=>{
  const v=driverView({hasInvitation:true,accepted:true,registered:true,state:"provider_unconfirmed"});
  assert.equal(v.title,"Awaiting block confirmation");

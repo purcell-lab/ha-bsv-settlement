@@ -385,6 +385,10 @@ create_session_budget:
   name: Create session budget invitation
   description: Sign an invitation before charging, or for a named open session. No payment, funds reservation or charger control.
   fields:
+    initial_session_id:
+      name: Include this current session in the fresh weekly approval
+      description: Multi-session only. Must match the recorder's latest session, open or completed, without another settlement owner. Its charge and fees share the total allowance. Requires a fresh driver signature; never broadens an existing approval.
+      selector: {text: {}}
     multi_session:
       default: false
       description: Fresh aggregate approval for future sessions, ending at expiry or a newer driver registration. Fees count toward the shared limit; credits do not replenish it. Requires automatic-credit receiving registration.

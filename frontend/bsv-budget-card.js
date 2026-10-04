@@ -1,6 +1,6 @@
 import {awaitingApproval,approvalUrl,drawApprovalQR} from "./approval-qr.js";
 import {styles,esc,stamp,short,stateLabel} from "./ui.js";
-import {invitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
+import {invitationDefaults,futureInvitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
 import {registrationOpenRequest} from "./public-registration.js";
 class BSVBudgetCard extends HTMLElement {
   setConfig(config) {
@@ -9,7 +9,7 @@ class BSVBudgetCard extends HTMLElement {
     if(!this.shadowRoot)this.attachShadow({mode:"open"});
     this.shadowRoot.innerHTML=`<style>${styles}</style><ha-card>
       <div class="head"><div><p class="eyebrow">Driver setup</p><h2>Driver approval and limits</h2></div><ha-icon icon="mdi:account-check-outline"></ha-icon></div>
-      <p class="note">Choose one session or a shared allowance for future sessions. Each needs fresh wallet consent.</p>
+      <p class="note">Approve a shared allowance once for future sessions. Eligible sessions then settle without per-session operator matching while the driver wallet is available. Single-session approval is optional.</p>
       <p id="ongoing-notice" class="notice" hidden></p>
       <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
@@ -34,14 +34,15 @@ class BSVBudgetCard extends HTMLElement {
       <p id="session" class="note" style="margin-top:12px"></p>
       <details id="create-panel" open><summary>Create a driver invitation</summary>
         <form id="create-form">
-        <label>Use this approval for<select id="scope"><option value="next">The next session</option><option id="current-option" value="current" disabled>The current open session</option><option value="multi">Multiple future sessions, up to seven days</option></select></label>
+        <label>Use this approval for<select id="scope"><option value="multi">Multiple future sessions, up to seven days (recommended)</option><option value="next">The next session only (operator matching required)</option><option id="current-option" value="current" disabled>The current open session only</option></select></label>
         <p class="notice">Multi-session approval ends at expiry or a newer driver registration. Its total includes all charging payments and fees, with no per-session reset. Credits do not refill it. Keep the driver wallet available for collection; this is not an offline payment guarantee.</p>
-        <div class="notice"><strong id="defaults">1,000 sat total limit · up to 1,000 sat fee within total · 12 hours</strong><span id="rate"></span></div>
+        <label><input id="include-current" type="checkbox"> Include the current recorder session, even if it has just ended, in this fresh multi-session approval</label>
+        <div class="notice"><strong id="defaults">1,000 sat shared total including all fees · seven days</strong><span id="rate"></span></div>
         <p class="note">The fee is a ceiling, not a fixed charge. Payment plus actual fee must fit within the total limit. New invitations only: existing signed approvals do not change.</p>
         <details id="limits-panel" open><summary>Change limits or operator contact</summary><div class="form-grid">
           <label>Total spending limit including fee (sat)<input id="total" type="number" required min="1" max="100000" value="${invitationDefaults.total}"></label>
           <label>Maximum fee within total (sat)<input id="fee" type="number" required min="0" max="1000" value="${invitationDefaults.fee}"></label>
-          <label>Approval duration (minutes)<input id="minutes" type="number" required min="1" max="1440" value="${invitationDefaults.minutes}"></label>
+          <label>Approval duration (minutes)<input id="minutes" type="number" required min="1" max="10080" value="${futureInvitationDefaults.minutes}"></label>
           <label>Operator name<input id="name" maxlength="100"></label>
           <label class="full">Operator contact<input id="contact" maxlength="200"></label>
         </div>
@@ -74,6 +75,8 @@ class BSVBudgetCard extends HTMLElement {
       const multi=this.$("scope").value==="multi";
       this.$("minutes").max=multi?"10080":"1440";
       this.$("minutes").value=multi?"10080":String(invitationDefaults.minutes);
+      this.$("include-current").disabled=!multi;
+      if(!multi)this.$("include-current").checked=false;
       this.$("minutes").oninput();this.$("replace-pending").checked=false;this.paint();
     };
     this.$("create-form").onsubmit=async event=>{
@@ -85,6 +88,10 @@ class BSVBudgetCard extends HTMLElement {
       const data={proxy_config_entry_id:config.proxy_config_entry_id,conversion_rate_entity:config.rate_entity,
         max_total_sats:n("total"),max_fee_sats:n("fee"),valid_minutes:n("minutes"),multi_session:this.$("scope").value==="multi",
         operator_name:this.$("name").value,operator_contact:this.$("contact").value};
+      if(data.multi_session&&this.$("include-current").checked){
+        if(!this.session){this.$("form-error").textContent="No current recorder session is available.";return;}
+        data.initial_session_id=this.session.session_id;
+      }
       if(this.$("scope").value==="current"){
         if(!this.session||this.session.ended_at){this.$("status").textContent="That session has ended. Create a next-session invitation instead.";return;}
         data.session_id=this.session.session_id;
