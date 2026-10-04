@@ -37,6 +37,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
         async with self.lock:
             try:
                 if self.mode == "embedded_mainnet":
+                    await self.api.driver_confirmations.tick()
                     await self.api.ongoing_credits.tick()
                     await self.api.auto_credits.tick()
                     await self.api.refresh_balance_if_due(reconcile_payment=True)

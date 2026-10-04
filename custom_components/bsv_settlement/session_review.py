@@ -4,12 +4,14 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
+import math
 import re
 from uuid import uuid4
 
 from bsv import P2PKH, Transaction
 from .api import WalletError
 from .const import DOMAIN
+from .confirmation import read_transaction, confirmation_count
 
 SIGNED_STATES = {"broadcast_unknown", "submitted", "provider_unconfirmed", "provider_confirmed"}
 BENIGN_FLAGS = {"interval_energy_allocation_estimated", "not_a_final_bill"}
@@ -102,7 +104,8 @@ class SessionReviews:
             return None
         result = copy.deepcopy(review)
         # Private HA/user identifiers and raw signing material are never returned.
-        for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash"):
+        for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash",
+                    "driver_payment_raw"):
             result.pop(key, None)
         if review.get("credit_draft_id"):
             payment = self.api.saved["payments"].get(review["credit_draft_id"])
@@ -305,32 +308,66 @@ class SessionReviews:
         old = review.get("receipt")
         if old and old["outpoint"] != outpoint:
             raise WalletError("A payment output is already bound; reconcile it before any replacement")
+        return await self._check_driver_payment(review, txid, vout, outpoint)
+
+    async def reconcile_driver_payment(self, review_id):
+        """Recheck an already attributed output without new payer authority."""
+        review = self.get(review_id)
+        old = review.get("receipt")
+        if review.get("direction") != "driver_to_operator" or not old:
+            raise WalletError("No attributed driver payment to reconcile")
         try:
-            raw = await self.api.chain.request("GET", f"/tx/{txid}/hex", raw=True)
+            return await self._check_driver_payment(
+                review, old["txid"], old["output_index"], old["outpoint"])
+        except WalletError:
+            if self.api.store.blocked:
+                raise
+            return self.public(review)
+
+    async def _check_driver_payment(self, review, txid, vout, outpoint):
+        old = review.get("receipt")
+        try:
+            if (not isinstance(txid, str) or not re.fullmatch(r"[0-9a-f]{64}", txid)
+                    or type(vout) is not int or vout < 0):
+                raise WalletError("Invalid recorded transaction ID or output index")
+            created = datetime.fromisoformat(review["created_at"])
+            expires = datetime.fromisoformat(review["expires_at"])
+            if created.tzinfo is None or expires.tzinfo is None:
+                raise WalletError("Invalid recorded payment timestamps")
+            after_expiry = now() >= expires
+            if old and (outpoint != f"{txid}:{vout}" or
+                        self.api.saved["received_outpoints"].get(outpoint) != review["review_id"]):
+                raise WalletError("The recorded payment output ownership does not match")
+            raw, details = await read_transaction(self.api.chain, txid)
+            if review.get("driver_payment_raw") and raw != review["driver_payment_raw"]:
+                raise WalletError("Chain evidence differs from the recorded driver payment")
             await self.hass.async_add_executor_job(
                 verify_output, raw, txid, vout, review["recipient_address"], review["amount_sats"])
-            details = await self.api.chain.details(txid)
-            confirmations = details.get("confirmations", 0)
-            if type(confirmations) is not int or confirmations < 0:
-                raise WalletError("Invalid provider confirmation evidence")
+            confirmations = confirmation_count(raw, details, txid)
             # Reject known older transactions. Absent timestamps do not prove freshness.
             block_time = details.get("blocktime", details.get("time"))
-            if type(block_time) in (int, float) and block_time < datetime.fromisoformat(review["created_at"]).timestamp():
-                raise WalletError("Provider evidence dates this payment before the request")
-        except WalletError:
+            if block_time is not None:
+                if type(block_time) not in (int, float) or not math.isfinite(block_time):
+                    raise WalletError("Invalid provider transaction timestamp")
+                if block_time < created.timestamp():
+                    raise WalletError("Provider evidence dates this payment before the request")
+        except (WalletError, ValueError, TypeError, OverflowError) as exc:
             if old:
                 review["state"] = "driver_payment_evidence_unavailable"
-                old["verification_error"] = True
+                old.update(verification_error=True, confirmations=None, checked_at=now().isoformat())
                 await self.save()
-            raise
+            if isinstance(exc, WalletError):
+                raise
+            raise WalletError("Invalid recorded payment or provider evidence") from None
         self.api.saved["received_outpoints"][outpoint] = review["review_id"]
+        review["driver_payment_raw"] = raw
         review["receipt"] = {
             "outpoint": outpoint, "txid": txid, "output_index": vout,
             "recipient_address": review["recipient_address"], "amount_sats": review["amount_sats"],
             "confirmations": confirmations, "checked_at": now().isoformat(),
             "evidence": "provider-reported transaction, exact output verified; not independent SPV",
             "attribution": "administrator-attested driver reference, not cryptographic payer proof",
-            "verified_after_request_expiry": now() >= datetime.fromisoformat(review["expires_at"]),
+            "verified_after_request_expiry": after_expiry,
             "verification_error": False,
         }
         review["state"] = "driver_payment_provider_confirmed" if confirmations else "driver_payment_provider_unconfirmed"

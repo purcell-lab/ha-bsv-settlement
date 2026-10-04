@@ -20,10 +20,11 @@ The original transaction, signed bytes, immutable account, attempt and any
 received-output ownership remain retained. A repeated report only reconciles
 the original transaction; it cannot broadcast a replacement.
 
-These are explicit collection reconciliation checks. This tranche does not add
-periodic driver-history polling or provider calls to the read-only portal.
-Bounded and fair background driver reassessment remains a next step in #19.
-Operator-credit reassessment already has its separate scheduling policy.
+These checks also support the subsequent
+[bounded background reassessment worker](driver-confirmation-scheduling.md).
+The worker adds fair polling for existing driver transactions, including manual
+receipt parity, without provider calls from the read-only history portal.
+Operator-credit reassessment retains its separate scheduling policy.
 
 ## Deterministic interruption matrix
 

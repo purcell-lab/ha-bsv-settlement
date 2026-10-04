@@ -266,6 +266,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.credit_recovery = OperatorCreditRecovery(self)
         from .session_closure import ClosedSessions
         self.closures = ClosedSessions(self)
+        from .confirmation_scheduler import DriverConfirmationScheduler
+        self.driver_confirmations = DriverConfirmationScheduler(self)
 
     def status(self):
         result = super().status()
