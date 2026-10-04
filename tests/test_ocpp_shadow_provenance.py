@@ -187,7 +187,8 @@ def v1_store():
 def test_v1_store_migrates_without_loss():
     old = v1_store()
     migrated = migrate(deepcopy(old))
-    assert migrated["schema"] == 2 and migrated["migrated_from_schema"] == 1
+    assert migrated["schema"] == 3 and migrated["migrated_from_schema"] == 1
+    assert migrated["export"] is None
     assert migrated["events"] == old["events"]
     assert migrated["sequence"] == old["sequence"]
     for before, after in zip([*old["spans"], old["current"]],
@@ -199,11 +200,11 @@ def test_v1_store_migrates_without_loss():
         assert after["provenance_changed"] is False
     restored = ImportShadowLedger(BINDING, deepcopy(old))
     assert restored.data == migrated
-    assert migrate(migrated) is migrated  # schema 2 untouched
+    assert migrate(migrated) is migrated  # current schema untouched
 
 
 @pytest.mark.parametrize("change", [
-    {"schema": 3}, {"schema": 0}, {"schema": "2"}, {"spans": [{"span_id": 1}]}])
+    {"schema": 4}, {"schema": 0}, {"schema": "2"}, {"spans": [{"span_id": 1}]}])
 def test_malformed_or_future_store_rejected(change):
     with pytest.raises((ValueError, KeyError, TypeError)):
         ImportShadowLedger(BINDING, {**v1_store(), **change})
@@ -348,15 +349,22 @@ async def test_config_and_options_flow_round_trip(tmp_path):
         form = await options.async_step_init()
         assert form["step_id"] == "init"
         assert {str(k): k.description["suggested_value"] for k in form["data_schema"].schema} == suggested
-        saved = await options.async_step_init(suggested)
+        export_form = await options.async_step_init(suggested)
+        assert export_form["step_id"] == "export"
+        saved = await options.async_step_export({})
         assert saved["type"] == "create_entry"
-        assert saved["data"] == created["options"]
+        assert {k: v for k, v in saved["data"].items()
+                if not k.startswith("export_")} == created["options"]
+        assert saved["data"]["export_binding"] == {}
+        assert saved["data"]["export_reference_binding"] is None
         hass.config_entries.async_update_entry(entry, options=saved["data"])
         # Reopening shows the bound choice; clearing unbinds without touching sources.
         assert {str(k): k.description["suggested_value"]
                 for k in (await options.async_step_init())["data_schema"].schema} == suggested
-        cleared = await options.async_step_init({})
-        assert cleared["data"] == {"metadata_binding": {}}
+        await options.async_step_init({})
+        cleared = await options.async_step_export({})
+        assert cleared["data"]["metadata_binding"] == {}
+        assert cleared["data"]["export_binding"] == {}
         assert entry.data["source_binding"] == source_binding(hass, sources)
     finally:
         await hass.async_stop(force=True)
@@ -403,7 +411,7 @@ async def test_coordinator_provenance_serial_and_financial_flags(tmp_path):
         assert summary["provenance"]["protocol_version"] == "unverified"
         await coord.close()
         saved = await ShadowStore(hass, entry.entry_id, binding).async_load()
-        assert saved["schema"] == 2 and SERIAL not in json.dumps(saved)
+        assert saved["schema"] == 3 and SERIAL not in json.dumps(saved)
     finally:
         if coord:
             await coord.close()
@@ -459,14 +467,14 @@ async def test_v1_store_file_migrated_and_future_file_not_rewritten(tmp_path):
         assert len(coord.ledger.data["spans"]) == 2  # v1 current closed by restart gap
         await coord.close()
         on_disk = json.loads(path.read_text())
-        assert on_disk["version"] == 2 and on_disk["data"]["schema"] == 2
+        assert on_disk["version"] == 3 and on_disk["data"]["schema"] == 3
         assert on_disk["data"]["migrated_from_schema"] == 1
 
-        for bad in ({"version": 3, "minor_version": 1, "key": path.name, "data": old},
+        for bad in ({"version": 4, "minor_version": 1, "key": path.name, "data": old},
                     {"version": 1, "minor_version": 1, "key": path.name,
                      "data": {**old, "binding": {"other": "charger"}}},
                     {"version": 2, "minor_version": 1, "key": path.name,
-                     "data": {**old, "schema": 3}}):
+                     "data": {**old, "schema": 4}}):
             other = config_entry("bsv_settlement", data)
             bad_path = storage / f"bsv_settlement.ocpp_shadow.{other.entry_id}"
             bad_path.write_text(json.dumps(bad))

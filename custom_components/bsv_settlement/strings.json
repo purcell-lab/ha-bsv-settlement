@@ -76,9 +76,27 @@
           "configuration_keys_entity": "Charger configuration keys sensor (Configuration.Keys)",
           "boot_notification_entity": "Boot notification sensor (Boot.Notification)"
         }
+      },
+      "export": {
+        "title": "OCPP export shadow",
+        "description": "Optionally observe the derived export register published by the purcell-lab OCPP fork. Bind the Energy Active Export Register and Flow Direction sensors of the same connector (prefilled by exact unique ID) to enable it; leave all three OCPP fields blank to keep export observation disabled. An optional independent cumulative energy counter is recorded per span as a diagnostic reference only. Spans are graded by the spread of the fork's lower/upper bounds. Read-only: no pricing, export credit, net amount or charger command, and the settlement source is unchanged.",
+        "data": {
+          "export_register_entity": "Derived export register (Energy Active Export Register)",
+          "flow_direction_entity": "Flow direction sensor (Flow Direction)",
+          "session_export_entity": "Optional session export cross-check (Energy Session Export)",
+          "export_reference_entity": "Optional independent export energy reference",
+          "export_min_energy_kwh": "Minimum span estimate to grade (kWh)",
+          "export_tolerance_pct": "Within-tolerance bound spread (%)",
+          "export_wide_pct": "Wide bound spread limit (%)"
+        }
       }
     },
-    "error": {"invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank."}
+    "error": {
+      "invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank.",
+      "invalid_ocpp_export_sources": "Choose enabled export-register and flow-direction sensors (and optionally the session export sensor) of the same OCPP entry and connector as the observed sources, or leave all three blank.",
+      "invalid_ocpp_export_reference": "The reference must be an enabled, registered non-OCPP sensor with an energy unit, chosen only when the export register is bound.",
+      "invalid_ocpp_export_grading": "Use a minimum energy of 0.001-100 kWh and spreads with 0 < within-tolerance < wide <= 100 %."
+    }
   },
   "services": {
     "configure_automatic_credit": {

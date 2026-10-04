@@ -183,8 +183,65 @@ def shadow_metadata_schema(hass, binding, current=None):
         for key, field in METADATA_FIELDS.items()})
 
 
+EXPORT_ERRORS = ("invalid_ocpp_export_sources", "invalid_ocpp_export_reference",
+                 "invalid_ocpp_export_grading")
+
+
+def shadow_export_options(hass, binding, user_input):
+    """Validated export options; ValueError(args[0]) names the form error."""
+    from .ocpp_export_shadow_ledger import grading_rules
+    from .ocpp_shadow import (EXPORT_FIELDS, GRADING_FIELDS, REFERENCE_FIELD,
+                              export_binding, reference_binding)
+    try:
+        bound = export_binding(hass, binding, {k: user_input.get(f) for k, f in EXPORT_FIELDS.items()})
+    except ValueError:
+        raise ValueError(EXPORT_ERRORS[0]) from None
+    try:
+        reference = reference_binding(hass, binding, bound, user_input.get(REFERENCE_FIELD))
+    except ValueError:
+        raise ValueError(EXPORT_ERRORS[1]) from None
+    try:
+        grading = grading_rules({k: user_input.get(f) for k, f in GRADING_FIELDS.items()})
+    except ValueError:
+        raise ValueError(EXPORT_ERRORS[2]) from None
+    return {**{EXPORT_FIELDS[k]: v["entity_id"] for k, v in bound.items()},
+            **({REFERENCE_FIELD: reference["entity_id"]} if reference else {}),
+            **{field: float(grading[k]) for k, field in GRADING_FIELDS.items()},
+            "export_binding": bound, "export_reference_binding": reference,
+            "export_grading": grading}
+
+
+def shadow_export_schema(hass, binding, current=None, grading=None):
+    """Prefill exact unique-ID export matches, else the current choice.
+
+    The reference counter is never prefilled; thresholds default to the stored
+    or built-in grading rules.
+    """
+    from .ocpp_export_shadow_ledger import grading_rules
+    from .ocpp_shadow import EXPORT_FIELDS, GRADING_FIELDS, REFERENCE_FIELD, suggest_export
+    found = suggest_export(hass, binding)
+    rules = grading_rules(grading)
+    schema = {
+        vol.Optional(field, description={"suggested_value": (
+            current.get(field) if current is not None else found.get(key))}):
+        selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", integration="ocpp"))
+        for key, field in EXPORT_FIELDS.items()}
+    schema[vol.Optional(REFERENCE_FIELD, description={"suggested_value": (
+        current or {}).get(REFERENCE_FIELD)})] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor"))
+    limits = {"min_energy_kwh": (0.001, 100, "kWh"), "tolerance_pct": (0.01, 100, "%"),
+              "wide_pct": (0.01, 100, "%")}
+    for key, field in GRADING_FIELDS.items():
+        low, high, unit = limits[key]
+        value = (current or {}).get(field, float(rules[key]))
+        schema[vol.Optional(field, default=value)] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=low, max=high, step="any", unit_of_measurement=unit,
+                                          mode=selector.NumberSelectorMode.BOX))
+    return vol.Schema(schema)
+
+
 class OCPPShadowOptionsFlow(config_entries.OptionsFlowWithReload):
-    """Bind/unbind optional provenance metadata on an existing observer entry.
+    """Bind/unbind optional provenance metadata and export observation.
 
     The three measurand sources and their frozen binding are not editable here.
     """
@@ -198,10 +255,30 @@ class OCPPShadowOptionsFlow(config_entries.OptionsFlowWithReload):
             except ValueError:
                 errors["base"] = "invalid_ocpp_shadow_metadata"
             else:
-                return self.async_create_entry(data=options)
+                self._metadata_options = options
+                return await self.async_step_export()
         current = user_input
         if current is None and self.config_entry.options.get("metadata_binding"):
             current = dict(self.config_entry.options)
         return self.async_show_form(
             step_id="init", errors=errors,
             data_schema=shadow_metadata_schema(self.hass, binding, current))
+
+    async def async_step_export(self, user_input=None):
+        """Optional read-only export shadow; disabled until the register is bound."""
+        binding = self.config_entry.data["source_binding"]
+        options = self.config_entry.options
+        errors = {}
+        if user_input is not None:
+            try:
+                export = shadow_export_options(self.hass, binding, user_input)
+            except ValueError as err:
+                errors["base"] = str(err) if str(err) in EXPORT_ERRORS else EXPORT_ERRORS[0]
+            else:
+                return self.async_create_entry(data={**self._metadata_options, **export})
+        current = user_input
+        if current is None and options.get("export_binding"):
+            current = dict(options)
+        return self.async_show_form(
+            step_id="export", errors=errors, data_schema=shadow_export_schema(
+                self.hass, binding, current, options.get("export_grading")))

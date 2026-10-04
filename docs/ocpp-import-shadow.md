@@ -4,6 +4,8 @@ This is an opt-in **observer**, not the OCPP settlement recorder or the source
 selector proposed in [issue #61](https://github.com/purcell-lab/ha-bsv-settlement/issues/61).
 It leaves the existing Sigenergy recorder, prices, approvals, payment routing and
 charger control unchanged. It does not make a second bill for the same energy.
+The same entry can optionally observe the fork's derived export register; see
+[OCPP export shadow](ocpp-export-shadow.md).
 
 ## Setup after an approved deployment
 
@@ -49,6 +51,8 @@ nor changes integration options. It needs only HA's entity registry and states.
   not themselves split the observation. Missing/stale data still can.
 - **No export or cost:** export energy and net cost remain null, never zero.
   This adapter deliberately does not calculate prices, fees or settlement.
+  The optional [export shadow](ocpp-export-shadow.md) reports graded derived
+  export estimates separately and never fills these fields.
 
 Freshness uses HA `last_updated`, with a conservative 180-second limit and
 five-second future-clock tolerance. These thresholds are observation safeguards,
@@ -102,7 +106,8 @@ journal event records `context_source`.
 New entries offer the **Optional OCPP provenance metadata** step after source
 validation. For an entry configured before this release, open **Settings >
 Devices & services > BSV Settlement**, choose the OCPP import shadow entry and
-select **Configure** (options step **OCPP shadow provenance metadata**). When
+select **Configure** (options step **OCPP shadow provenance metadata**, followed
+by the optional [export shadow](ocpp-export-shadow.md#configuration) step). When
 nothing is bound yet, both forms prefill sensors whose unique ID exactly matches
 the bound charger; nothing is matched by entity name. All three fields are optional and can be cleared.
 
@@ -156,7 +161,7 @@ presence-only.
 ## Storage, restart and safety
 
 The observer owns a separate HA store:
-`bsv_settlement.ocpp_shadow.<entry_id>`, schema version 2. It retains at most
+`bsv_settlement.ocpp_shadow.<entry_id>`, schema version 3. It retains at most
 1,000 journal events and 50 ended-span summaries plus the current span. Trimming
 is flagged. This bounded diagnostic store is not a permanent accounting ledger
 and cannot be used as an authoritative bill.
@@ -167,12 +172,14 @@ prior span is retained as ended by a restart gap, and a fresh post-start baselin
 is required. No energy is bridged across downtime. Unknown schema, malformed
 records or changed source bindings are rejected rather than silently reset.
 
-Schema 1 stores migrate to schema 2 on first load. Every v1 event and span is
+Schema 1 stores migrate to schema 2 and then 3 on first load. Every v1 event and span is
 kept unchanged; spans gain `provenance` with unknown fields, `provenance_flags`
 including `provenance_not_recorded`, and `provenance_changed: false`. The store
 records `migrated_from_schema: 1`. The whole v1 store is validated against the
 current source binding before HA rewrites the file, so a rejected store is left
-on disk untouched. Future versions are refused without rewriting.
+on disk untouched. Future versions are refused without rewriting. Schema 3 adds
+the [export shadow](ocpp-export-shadow.md#storage) section (`export: null` for
+migrated schema 2 stores); `migrated_from_schema` keeps the oldest schema.
 
 Only the existing `refresh` service is accepted for this entry. Every wallet,
 consent, payment and charger action is refused. There is no wallet API object,

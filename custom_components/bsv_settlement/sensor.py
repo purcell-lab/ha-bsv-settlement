@@ -1,5 +1,6 @@
 """Five fixed sensors for the latest session, without full ledger attributes."""
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
@@ -19,6 +20,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
                            for key, name, unit in (
                                ("shadow_status", "OCPP import shadow status", None),
                                ("observed_import_kwh", "Observed import span energy", "kWh")))
+        async_add_entities(OCPPExportShadowSensor(coordinator, entry, key, name, unit)
+                           for key, name, unit in (
+                               ("export_last_span", "OCPP export shadow last span", "kWh"),
+                               ("export_quality", "OCPP export shadow quality", None)))
         return
     if coordinator.mode == "sensor_proxy":
         async_add_entities(ProxySensor(coordinator, entry, key, name, unit) for key, name, unit in (
@@ -70,6 +75,49 @@ class OCPPShadowSensor(CoordinatorEntity, SensorEntity):
             "retained_span_count", "journal_trimmed", "spans_trimmed",
             "billing_eligible", "settlement_owner", "payment_control",
             "charger_control", "export_kwh", "net_cost_aud")}
+
+
+class OCPPExportShadowSensor(OCPPShadowSensor):
+    """Diagnostic export estimate and grade; never a credit, price or settlement input."""
+    _attr_icon = "mdi:transmission-tower-export"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def export(self):
+        return (self.coordinator.data or {}).get("export_shadow") or {}
+
+    @property
+    def native_value(self):
+        export = self.export
+        if self.key == "export_quality":
+            return "not_bound" if export.get("state") == "not_bound" else export.get("latest_grade")
+        from decimal import Decimal
+        value = (export.get("last_span") or {}).get("estimate_kwh")
+        return Decimal(value) if value is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        export = self.export
+        common = {"mode": (self.coordinator.data or {}).get("mode"), "state": export.get("state"),
+                  "flags": export.get("flags"), "grading": export.get("grading"),
+                  "billing_eligible": False, "settlement_owner": None,
+                  "payment_control": False, "charger_control": False}
+        if self.key == "export_quality":
+            return {**common, "grade_counts": export.get("grade_counts"),
+                    "retained_span_count": export.get("retained_span_count"),
+                    "journal_trimmed": export.get("journal_trimmed"),
+                    "spans_trimmed": export.get("spans_trimmed")}
+        span = export.get("last_span") or {}
+        return {**common, **{k: span.get(k) for k in (
+            "span_id", "grade", "spread", "estimate_kwh", "lower_kwh", "upper_kwh",
+            "source_label", "anomaly_flags", "quality_flags", "provenance_flags",
+            "sample_count", "step_intervals", "max_gap_s", "flow_direction_counts",
+            "first_source_timestamp", "last_source_timestamp",
+            "first_meter_ha_updated_at", "last_meter_ha_updated_at",
+            "observation_ended_at", "end_reason", "reference_status",
+            "reference_delta_kwh", "reference_divergence_kwh", "reference_divergence_ratio",
+            "session_export_delta_kwh")},
+            "current_span": export.get("current_span")}
 
 
 class SettlementSensor(CoordinatorEntity, SensorEntity):
