@@ -2,6 +2,8 @@
 
 The stable entry point is `/bsv_settlement/driver/index.html`. A driver signs in with a wallet to view retained charging sessions linked to that wallet identity, without receiving a new private URL for each session.
 
+The verified-wallet panel uses a compact identity preview with visible Refresh, Sync credits and Sign out controls. “Wallet details” shows the access expiry and expands to reveal the full identity and permission explanation. The preview is display-only; all wallet matching still uses the complete key. Verified sign-in is not a claim that the wallet transport is currently connected.
+
 ## Authority boundary
 
 Sign-in proves control of a wallet key. It does not authorise spending, reserve funds, create a payment, renew a mandate, change a recipient, register an unclaimed session, or start charging. Existing signed spending approvals and collection safeguards remain separate.
@@ -33,6 +35,25 @@ Each session starts as one compact line: local date/time, payment direction and 
 “Sync credits on this page” imports only already-confirmed operator payments belonging to the signed-in identity. Receipt retrieval can refresh provider evidence and cache an existing proof. Reporting acceptance requires the separate existing wallet-signed acknowledgement. Login alone cannot mark a receipt accepted. No new payment is created or broadcast.
 
 Sync is explicit in this first portal revision. Load more pages to sync older credits. A page reload may restore a valid server login, but the wallet must be available again for receipt import. Chain confirmation and wallet-reported receipt acceptance remain distinct.
+
+## Current public rates
+
+The sign-in and verified-wallet cards show Buy (Import/ EV Charging) and
+Sell (Export/ V2G) rates in AUD/kWh. Negative and zero rates keep their signs
+and units. These are indicative current rates, not a fixed quote for a session.
+
+A same-origin, rate-limited `prices` action reads the single configured sensor
+proxy's price sources without creating a login, inspecting driver records,
+changing authority or making a payment. The response allowlists only rate
+values, interval times, estimate/availability flags and a check time. Multiple
+or missing proxy configurations return unavailable rather than choosing a site.
+
+The page fetches rates on load, every minute while visible, when returning to
+the tab, and with the signed-in Refresh control. Each rate is hidden as
+unavailable if missing, malformed, estimated, outside its interval or more
+than 90 seconds past the last check. Fetch failure also clears displayed prices.
+The two values remain visible after sign-in and never expose session history
+before authentication.
 
 ## BSV Browser pairing
 

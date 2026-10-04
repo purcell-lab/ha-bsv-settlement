@@ -321,7 +321,12 @@ class DriverCollections:
             return self.public(item) if item else {"state": "no_payment_attempt"}
         try:
             raw = await self.api.chain.request("GET", f"/tx/{item['txid']}/hex", raw=True)
-            tx = Transaction.from_hex(raw)
+            try:
+                if not isinstance(raw, str) or raw != item.get("signed_raw"):
+                    raise ValueError()
+                tx = Transaction.from_hex(raw)
+            except Exception:
+                raise WalletError("Chain evidence differs from the recorded signed payment") from None
             if not tx or tx.txid() != item["txid"] or digest(transaction_shape(tx)) != item["draft_hash"]:
                 raise WalletError("Chain evidence differs from the authorised payment")
             details = await self.api.chain.details(item["txid"])
@@ -355,7 +360,11 @@ class DriverCollections:
                         confirmations=confirmations, checked_at=now().isoformat())
             item.pop("error", None)
         except WalletError as exc:
-            item.update(error=str(exc), checked_at=now().isoformat())
+            # A previous observation is not current evidence. Retain ownership,
+            # exact signed bytes and the attempt; uncertainty never releases it
+            # or grants permission to make a replacement payment.
+            item.update(state="broadcast_unknown", confirmations=None,
+                        error=str(exc), checked_at=now().isoformat())
         await self.save()
         return self.public(item)
 

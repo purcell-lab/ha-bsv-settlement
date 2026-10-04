@@ -28,6 +28,29 @@ HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Vary"
 IDENTITY = re.compile(r"^(02|03)[0-9a-f]{64}$")
 
 
+def current_prices(api):
+    """Public indicative tariffs only; never infer a site from a driver's ledger."""
+    from .session_review import now
+    unavailable = {"checked_at": now().isoformat(), "valid": False,
+                   "import": {"available": False}, "export": {"available": False}}
+    proxies = [c for c in api.hass.data.get(DOMAIN, {}).values()
+               if getattr(c, "mode", None) == "sensor_proxy"]
+    if len(proxies) != 1:
+        return unavailable  # Multiple sites need explicit selection, never guess.
+    sources = getattr(proxies[0], "sources", {})
+    if not all(isinstance(sources.get(k), str) for k in ("import_price", "export_price")):
+        return unavailable
+    prices = api.budgets.prices({"terms": {
+        "import_price_entity": sources["import_price"],
+        "export_price_entity": sources["export_price"],
+    }})
+    # Explicit allowlist: no entity IDs, invitations, identities or private URLs.
+    return {"checked_at": prices["checked_at"], "valid": prices["valid"],
+            **{direction: {k: value for k, value in prices[direction].items()
+                          if k in ("available", "aud_per_kwh", "start", "end", "estimate")}
+               for direction in ("import", "export")}}
+
+
 def owned(api, row, identity):
     """Verify historical signed ownership, even after spending expiry/revocation."""
     try:
@@ -213,7 +236,7 @@ class DriverPortalView(HomeAssistantView):
             if not isinstance(data, dict):
                 raise WalletError("Invalid request")
             action = data.get("action")
-            if action not in ("challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
+            if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
                               "credit_receipt", "acknowledge_credit_receipt"):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
@@ -221,6 +244,8 @@ class DriverPortalView(HomeAssistantView):
             if len(coords) != 1:
                 raise WalletError("Driver portal is unavailable")
             coord = coords[0]
+            if action == "prices":
+                return web.json_response(current_prices(coord.api), headers=HEADERS)
             token = request.cookies.get(COOKIE, "")
             key = sha(token)
             item = state.sessions.get(key)

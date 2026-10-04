@@ -2,8 +2,38 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {PrivateKey,ProtoWallet} from "@bsv/sdk";
 import {canonical} from "./model.js";
-import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary} from "./portal-model.js";
+import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity} from "./portal-model.js";
+import {priceCard} from "./portal-prices.js";
+const priceNow=Date.parse("2026-10-04T00:00:00Z");
+const currentRate={available:true,estimate:false,aud_per_kwh:"0.285",
+  start:"2026-10-03T23:55:00Z",end:"2026-10-04T00:05:00Z"};
+const livePrices={checked_at:new Date(priceNow).toISOString(),import:currentRate,
+  export:{...currentRate,aud_per_kwh:"-0.052"}};
+test("public price cards preserve buy sell direction, zero and negative AUD units",()=>{
+  assert.equal(priceCard(livePrices,"import",priceNow).value,"0.2850 $/kWh");
+  assert.equal(priceCard(livePrices,"export",priceNow).value,"-0.0520 $/kWh");
+  assert.equal(priceCard({...livePrices,import:{...currentRate,aud_per_kwh:"0"}},"import",priceNow).value,"0.0000 $/kWh");
+});
+test("price cards fail closed on missing malformed estimated and expired data",()=>{
+  for(const patch of [{available:false},{estimate:true},{estimate:null},{aud_per_kwh:null},
+    {aud_per_kwh:""},{aud_per_kwh:"NaN"},{aud_per_kwh:"Infinity"},{aud_per_kwh:"1000001"},
+    {start:"invalid"},{end:"2026-10-04T00:00:00Z"},{start:"2026-10-04T00:01:00Z"}])
+    assert.equal(priceCard({...livePrices,import:{...currentRate,...patch}},"import",priceNow).value,"Unavailable");
+  assert.equal(priceCard(null,"import",priceNow).value,"Unavailable");
+});
+test("price cards expire cached checks and reject future checks independently of sign-in",()=>{
+  assert.equal(priceCard(livePrices,"import",priceNow+90001).available,false);
+  assert.equal(priceCard(livePrices,"import",priceNow-5001).available,false);
+  assert.equal(priceCard({...livePrices,checked_at:"invalid"},"import",priceNow).available,false);
+});
 const origin="https://charging.example.com";
+test("wallet identity preview is display-only and never invents missing identity",()=>{
+  const identity="02"+"ab".repeat(32);
+  assert.equal(compactIdentity(identity),"02abab…abab");
+  assert.equal(identity.length,66);
+  for(const invalid of [null,undefined,"","short",{},17,"04"+"ab".repeat(32)])
+    assert.equal(compactIdentity(invalid),"");
+});
 function challenge(patch={}){
   const payload={action:"sign_in_driver_portal",version:1,origin,scope:loginScope,
     nonce:"a".repeat(43),browser_binding:"b".repeat(64),issued_at:Math.floor(Date.now()/1000),

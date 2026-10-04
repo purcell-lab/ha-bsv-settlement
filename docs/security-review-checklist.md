@@ -9,13 +9,16 @@ assessment, legal opinion or permission to expand the demonstration.
 |---|---|---|
 | Driver impersonation or modified consent | Signed canonical terms, scoped identity proof, expiry/revocation | Supported-wallet matrix and independent protocol review |
 | Capability link theft | Random fragment capability, server hash, scoped endpoint, no HA admin token | Leakage/referrer/log review, revocation and retention tests |
+| Portal login mistaken for spending authority | Wallet identity challenge, scoped authenticated history; sign-in does not renew or widen consent | Native-device expiry/reconnect tests and independent cookie/challenge review |
+| Portal exposes another driver's history | Server-side identity ownership filtering; anonymous requests denied | Cross-identity and historical-route retention audit |
+| Receipt retry treated as new money | Import acknowledgement kept separate from chain confirmation; repeat sync does not send funds | Native-wallet receipt replay and failure evidence |
 | Cross-origin or oversized input | Browser-origin checks, JSON size and request limits | Non-browser abuse, global-limit denial-of-service and malformed-input matrix |
 | Driver invoking privileged actions | Administrator context for wallet/policy services | Role matrix and unprivileged integration/service probes |
 | New registration redirects another vehicle's credit | Verified registration, recipient frozen per session | Operator accepts physical-driver attribution assumption; race/revocation tests |
 | Ongoing authority mistaken for driver consent | Separate operator-credit policy and spending mandate | Clear lifecycle/expiry/re-enable documentation and device UX review |
 | HA or backup compromise | Local private atomic storage and identity anchor | Protected backup drill; acknowledge key is not encrypted/hardware protected |
 | Duplicate or changed payment | Immutable hashes, exact bytes, shared ownership and input exclusions | Complete interruption/concurrency/stale-restore matrix |
-| Provider gives stale or false evidence | Exact tx/output comparisons, provider-labelled states | Reorg reassessment and independent header/finality policy |
+| Provider gives stale or false evidence | Exact signed-byte/output checks; credit reassessment and explicit driver uncertainty correction | Bounded driver/manual reassessment and independent header/finality policy |
 | Sensor/tariff tampering or gaps | Unit/quality checks, price windows, frozen accounts | Physical attribution, independent calculations and source trust review |
 | Browser is closed or driver refuses | No silent authority expansion; unresolved payment remains | Unpaid-account process; no claim of secured funds |
 | Aggregate operator-wallet drain | Per-session 1,000 sat total cap and stop control | Explicit policy for aggregate/daily exposure; currently no cumulative cap |

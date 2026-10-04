@@ -33,3 +33,12 @@ def test_all_acceptance_evidence_points_to_real_test_functions():
             names = {n.name for n in ast.walk(ast.parse(path.read_text()))
                      if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
             assert ref["test"] in names, f"{row['id']}: {ref}"
+
+
+def test_current_validation_is_separate_from_historical_baseline():
+    data = matrix()
+    current = data["current_validation"]
+    assert len(current["commit"]) == 40 and current["commit"] != data["baseline"]
+    assert current["ci"].startswith("https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/")
+    assert sum(current["test_counts"].values()) == 871
+    assert "not live-payment" in current["scope"]

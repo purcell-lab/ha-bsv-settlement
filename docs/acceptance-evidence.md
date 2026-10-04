@@ -7,6 +7,26 @@ with 181 Python/HA, 24 driver JavaScript and five operator tests passing in
 [baseline CI](https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/37066045552).
 Later branch tests are additional evidence, not retrospective baseline results.
 
+## Current checkpoint: 4 October 2026
+
+The deployed checkpoint is [PR #58](https://github.com/purcell-lab/ha-bsv-settlement/pull/58),
+commit `309e8a8cacdb3e120ded0dd1b4da29a674c76579`. Its
+[CI](https://github.com/purcell-lab/ha-bsv-settlement/actions/runs/37160686208)
+passed 729 Python/HA, 86 driver JavaScript and 56 operator JavaScript tests.
+The original baseline above is retained as historical evidence, not replaced.
+
+Since the earlier batches, implementation includes seven-day aggregate driver
+consent, fee-aware credits, completed-session resolution, separate receipt
+acceptance reporting, receipt synchronisation and the static wallet-sign-in
+portal with expandable one-line session history. These are implemented features,
+not closure of the complete roadmap acceptance criteria.
+
+The [driver assurance tranche](driver-collection-assurance.md) adds explicit
+confirmation-loss correction and deterministic driver interruption tests.
+Its branch evidence remains separate from the deployed checkpoint.
+Protected restore, independent security/accounting, native-wallet compatibility,
+native OCPP and safe physical charger enforcement remain open gates.
+
 ## Acceptance inventory
 
 The machine-readable [matrix](../validation/acceptance-matrix.json) maps all ten
@@ -24,7 +44,7 @@ that a test exists; a passing test proves only the case it exercises.
 | D06 Debit, credit and zero outcomes | Partial | Real-device debit and unified zero/tiny-account evidence |
 | D07 Immutable terms and payment evidence | Partial | Full provenance, finality and recovery assurance |
 | D08 No duplicate effects under interruption | Partial | All transition boundaries, restore and device failures |
-| D09 Honest session/payment UX | Partial | Recovery-state regression and native-device accessibility |
+| D09 Honest session/payment UX | Partial | Native-device accessibility and distinction between portal login, wallet connection and payment authority |
 | D10 Recovery and public-data protection | Blocked | Protected isolated restore and independent review |
 
 Do not mark the whole demonstration complete by counting unit tests. Checked
