@@ -1,5 +1,21 @@
 @font-face{font-family:"DM Sans";src:url("./dm-sans-latin-wght-normal.woff2") format("woff2");font-weight:100 1000;font-display:swap}
 #portal-count{white-space:nowrap;flex-shrink:0}
+#portal-account{padding:var(--s3) var(--s4)}
+.portal-wallet-toolbar{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);flex-wrap:wrap}
+.portal-wallet-heading{display:flex;align-items:center;gap:var(--s2);min-width:0}
+.portal-wallet-heading h2{font-size:var(--text-sm);white-space:nowrap}
+#portal-identity-short{color:var(--muted);white-space:nowrap}
+.portal-wallet-actions{display:flex;gap:var(--s2)}
+.portal-wallet-actions button{padding:var(--s2) var(--s3);min-height:44px}
+#portal-wallet-details{margin:var(--s2) 0 0;padding:0;border-top:1px solid var(--line)}
+#portal-wallet-details>summary{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);font-size:var(--text-xs);padding:var(--s2) 0;list-style:none}
+#portal-wallet-details>summary::-webkit-details-marker{display:none}
+#portal-wallet-details>summary::before{content:"›";color:var(--accent);font-size:var(--text-lg)}
+#portal-wallet-details[open]>summary::before{transform:rotate(90deg)}
+#portal-expiry{margin-left:auto;font-weight:400;color:var(--muted);white-space:nowrap}
+#portal-wallet-details p{margin:var(--s2) 0}
+#portal-status{padding:var(--s2) var(--s3);margin:var(--s2) 0 var(--s3);font-size:var(--text-sm)}
+@media(max-width:720px){.portal-wallet-toolbar{display:block}.portal-wallet-heading{justify-content:space-between;margin-bottom:var(--s2)}.portal-wallet-actions{width:100%}.portal-wallet-actions button{flex:1;min-width:0;padding:var(--s2);font-size:var(--text-xs);white-space:nowrap}}
 .portal-session{border-top:1px solid var(--line);margin:0;padding:0}
 .portal-session>.portal-session-summary{display:grid;grid-template-columns:12px 105px minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:var(--s2);padding:var(--s2) 0;min-height:44px;list-style:none;font-size:var(--text-sm);font-weight:500}
 .portal-session-summary::-webkit-details-marker{display:none}

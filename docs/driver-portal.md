@@ -2,6 +2,8 @@
 
 The stable entry point is `/bsv_settlement/driver/index.html`. A driver signs in with a wallet to view retained charging sessions linked to that wallet identity, without receiving a new private URL for each session.
 
+The verified-wallet panel uses a compact identity preview with visible Refresh, Sync credits and Sign out controls. “Wallet details” shows the access expiry and expands to reveal the full identity and permission explanation. The preview is display-only; all wallet matching still uses the complete key. Verified sign-in is not a claim that the wallet transport is currently connected.
+
 ## Authority boundary
 
 Sign-in proves control of a wallet key. It does not authorise spending, reserve funds, create a payment, renew a mandate, change a recipient, register an unclaimed session, or start charging. Existing signed spending approvals and collection safeguards remain separate.

@@ -2,8 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {PrivateKey,ProtoWallet} from "@bsv/sdk";
 import {canonical} from "./model.js";
-import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary} from "./portal-model.js";
+import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity} from "./portal-model.js";
 const origin="https://charging.example.com";
+test("wallet identity preview is display-only and never invents missing identity",()=>{
+  const identity="02"+"ab".repeat(32);
+  assert.equal(compactIdentity(identity),"02abab…abab");
+  assert.equal(identity.length,66);
+  for(const invalid of [null,undefined,"","short",{},17,"04"+"ab".repeat(32)])
+    assert.equal(compactIdentity(invalid),"");
+});
 function challenge(patch={}){
   const payload={action:"sign_in_driver_portal",version:1,origin,scope:loginScope,
     nonce:"a".repeat(43),browser_binding:"b".repeat(64),issued_at:Math.floor(Date.now()/1000),
