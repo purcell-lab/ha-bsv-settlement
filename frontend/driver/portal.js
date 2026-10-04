@@ -1,17 +1,23 @@
 import {WalletClient} from "@bsv/sdk";
 import {BrowserPairing} from "./pairing.js";
-import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary} from "./portal-model.js";
+import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary,compactIdentity} from "./portal-model.js";
 import {parseInvitation} from "./model.js";
 import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
 import qrcode from "qrcode-generator";
+import {priceCard} from "./portal-prices.js";
 
+const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
+<div><span>Buy (Import/ EV Charging) rate</span><strong id="${prefix}-buy">Unavailable</strong></div>
+<div><span>Sell (Export/ V2G) rate</span><strong id="${prefix}-sell">Unavailable</strong></div>
+</div><p id="${prefix}-price-note" class="small portal-price-note">Checking current rates. Indicative only, not a fixed session quote.</p>`;
 document.title="My charging sessions | BSV Settlement";
 document.querySelector("main").innerHTML=`
 <div class="intro"><p class="eyebrow">DRIVER PORTAL</p><h1>My charging sessions</h1>
 <p>One address for your charging history, payments and credit receipts.</p></div>
 <section id="portal-signin"><h2>Your wallet is your sign-in</h2>
 <p>Prove control of your wallet to see only your recorded sessions. Signing in does not authorise spending, reserve funds or start charging.</p>
+${priceCards("signin")}
 <div class="actions"><button id="portal-login">Sign in with wallet</button><button id="portal-pair" class="secondary">Pair and sign in with BSV Browser</button></div>
 <p class="small">Use wallet sign-in on this device. If your wallet is on a phone, pair it using a fresh QR or connection URI. No private session link is needed.</p></section>
 <p id="portal-status" class="notice" role="status" aria-live="polite">Sign in to load your private history. Wallet permission prompts may appear.</p>
@@ -21,10 +27,16 @@ document.querySelector("main").innerHTML=`
 <textarea id="portal-uri" readonly rows="3" spellcheck="false"></textarea>
 <div class="actions"><button id="portal-copy" class="secondary">Copy pairing URI</button><button id="portal-disconnect" class="secondary">Cancel pairing</button></div>
 <p class="small">The code expires after two minutes. Keep this page open. Saved connections cannot restore an expired code; create a fresh one here.</p></section>
-<section id="portal-account" hidden><div class="section-head"><h2>Wallet verified</h2><button id="portal-logout" class="secondary">Sign out</button></div>
-<p id="portal-identity" class="mono"></p><p id="portal-expiry" class="small"></p>
-<div class="actions"><button id="portal-refresh" class="secondary">Refresh history</button><button id="portal-sync">Sync credits on this page</button></div>
-<p class="small">History does not enable charging payments. Credit sync imports existing confirmed payments and records wallet acceptance; it never sends another payment.</p></section>
+<section id="portal-account" hidden aria-label="Verified wallet">
+<div class="portal-wallet-toolbar">
+<div class="portal-wallet-heading"><h2>Wallet verified</h2><span id="portal-identity-short" class="mono" aria-label="Wallet identity preview"></span></div>
+<div class="portal-wallet-actions"><button id="portal-refresh" class="secondary" aria-label="Refresh session history">Refresh</button><button id="portal-sync" aria-label="Sync confirmed credits on this page">Sync credits</button><button id="portal-logout" class="secondary">Sign out</button></div>
+</div>
+${priceCards("account")}
+<details id="portal-wallet-details"><summary>Wallet details <span id="portal-expiry"></span></summary>
+<p class="small">Full wallet identity</p><p id="portal-identity" class="mono"></p>
+<p class="small">This is verified sign-in, not a live wallet connection or spending approval. Signing out or restarting the operator service ends private access.</p>
+<p class="small">Sync credits applies to sessions loaded on this page. It imports existing confirmed payments and records wallet acceptance; it never sends another payment.</p></details></section>
 <section id="portal-history" hidden><div class="section-head"><h2>Sessions and transactions</h2><span id="portal-count" class="badge"></span></div>
 <p class="small">Tap a session for details. ! indicates a metering warning.</p>
 <p id="portal-empty" hidden>No sessions are linked to this wallet yet. New charging authority must be registered separately by the operator.</p>
@@ -37,6 +49,7 @@ document.querySelector("main").innerHTML=`
 const $=id=>document.getElementById(id),message=text=>{$("portal-status").textContent=text;};
 const framed=window.top!==window;
 let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
+let prices=null,pricesBusy=false;
 const imports=new Map();
 const expandedSessions=new Set();
 function controls(){
@@ -52,11 +65,29 @@ async function api(action,extra={}){
   if(!r.ok){const error=Error(data.error||"Portal request failed");error.status=r.status;throw error;}
   return data;
 }
+function paintPrices(){
+  const buy=priceCard(prices,"import"),sell=priceCard(prices,"export");
+  const note=buy.available&&sell.available
+    ?`Checked ${new Date(prices.checked_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. Indicative only, not a fixed session quote.`
+    :"A current verified rate is unavailable. Indicative only, not a fixed session quote.";
+  for(const prefix of ["signin","account"]){
+    $(`${prefix}-buy`).textContent=buy.value;$(`${prefix}-sell`).textContent=sell.value;
+    $(`${prefix}-price-note`).textContent=note;
+  }
+}
+async function refreshPrices(){
+  if(pricesBusy||framed||document.hidden)return;
+  pricesBusy=true;
+  try{prices=await api("prices");}catch{prices=null;}
+  finally{pricesBusy=false;paintPrices();}
+}
 function clearPrivate(){
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
   expandedSessions.clear();
   $("portal-sessions").replaceChildren();$("portal-identity").textContent="";
+  $("portal-identity-short").textContent="";$("portal-identity-short").removeAttribute("title");
+  $("portal-expiry").textContent="";$("portal-wallet-details").open=false;
   $("portal-account").hidden=true;$("portal-history").hidden=true;$("portal-signin").hidden=false;
 }
 function node(tag,text,cls){const e=document.createElement(tag);e.textContent=text;if(cls)e.className=cls;return e;}
@@ -64,8 +95,10 @@ const number=(v,suffix="")=>v===null||v===undefined||v===""||!Number.isFinite(Nu
 function render(){
   $("portal-signin").hidden=!!identity;$("portal-account").hidden=!identity;$("portal-history").hidden=!identity;
   $("portal-identity").textContent=identity||"";$("portal-count").textContent=`${sessions.length} of ${total}`;
+  $("portal-identity-short").textContent=compactIdentity(identity);
+  $("portal-identity-short").title=identity||"";
   $("portal-empty").hidden=sessions.length>0;$("portal-more").hidden=sessions.length>=total;
-  $("portal-expiry").textContent=`Private access expires at ${new Date(expires).toLocaleTimeString()}. Signing out or restarting the operator service ends access.`;
+  $("portal-expiry").textContent=`Expires ${new Date(expires).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
   const list=$("portal-sessions");list.replaceChildren();
   for(const s of sessions){
     const box=node("details","","portal-session"),summary=node("summary","","portal-session-summary");
@@ -143,10 +176,10 @@ async function signIn(candidate){
   if(before!==generation)throw Error("Sign-in was interrupted. Please try again.");
   if(result.identity!==proof.identity)throw Error("Sign-in identity mismatch.");
   wallet=candidate;identity=result.identity;imports.clear();await load();
-  message("Signed in. Your charging history is private to this wallet. No payment was sent.");
+  message("Signed in. No spending approved.");
 }
 $("portal-login").onclick=()=>run(()=>signIn(new WalletClient(window.CWI?"window.CWI":"auto")));
-$("portal-refresh").onclick=()=>run(()=>load());
+$("portal-refresh").onclick=()=>run(async()=>{await load();await refreshPrices();});
 $("portal-more").onclick=()=>run(()=>load(true));
 $("portal-logout").onclick=()=>run(async()=>{
   try{await api("logout");if(pairing)await pairing.disconnect();pairing=null;message("Signed out. Spending approvals and payments are unchanged.");}
@@ -205,8 +238,12 @@ let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
 function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";}
 $("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
 window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
+document.addEventListener("visibilitychange",()=>{paintPrices();if(!document.hidden)void refreshPrices();});
+setInterval(()=>void refreshPrices(),60000);
+setInterval(paintPrices,1000); // Expire displayed data even if a fetch is stalled.
+void refreshPrices(); // No wallet prompt, cookie creation or private history required.
 setInterval(()=>{if(identity&&Date.now()>=expires){clearPrivate();message("Private access expired. Sign in again.");}},1000);
 // Only restore a server-authenticated session; never prompt a wallet on public page load.
-try{if(!framed){await load();message("Private history restored. Wallet connection is needed only for receipt sync.");}}
+try{if(!framed){await load();message("Private history restored. Connect your wallet only to sync receipts.");}}
 catch{clearPrivate();}controls();
 if(framed)message("Open the driver portal directly in your browser to sign in.");

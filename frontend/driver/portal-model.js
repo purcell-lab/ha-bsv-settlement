@@ -2,6 +2,10 @@ import {KeyDeriver,Signature} from "@bsv/sdk";
 import {bytes,hex,canonical} from "./model.js";
 export const loginProtocol=[2,"ev portal login"];
 export const loginScope="read_own_charging_sessions_and_sync_existing_credit_receipts";
+export function compactIdentity(identity){
+  return typeof identity==="string"&&/^(02|03)[0-9a-f]{64}$/.test(identity)?
+    `${identity.slice(0,6)}…${identity.slice(-4)}`:"";
+}
 export async function signPortalLogin(wallet,challenge,origin,now=Date.now()){
   const p=JSON.parse(challenge.payload);
   if(Object.keys(p).sort().join(",")!=="action,browser_binding,expires_at,issued_at,nonce,origin,scope,version"||
