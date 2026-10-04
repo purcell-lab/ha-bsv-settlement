@@ -66,6 +66,19 @@ async def authorised(tmp_path):
     return hass, api, proxy, row, driver, args, tx
 
 
+async def test_estimated_tariff_debit_quote_discloses_warning_without_claiming_wallet(tmp_path):
+    _, api, proxy, row, _ = await ready(tmp_path, "0.24")
+    proxy.data["latest_session"].update(
+        estimated_rate_import_wh="500", quality_flags=["import:estimated_tariff"])
+    result = await api.collections.status(row)
+    assert result["state"] == "ready"
+    quote = json.loads(result["quote"]["payload"])
+    assert quote["amount_sats"] == 24
+    assert "import:estimated_tariff" in quote["account"]["quality_flags"]
+    assert not result.get("claimed_at") and not result.get("txid")
+    assert not api.chain.posts
+
+
 async def test_frozen_quote_exact_amount_and_no_duplicate_broadcast(tmp_path):
     hass, api, proxy, row, driver, args, tx = await authorised(tmp_path)
     hass.states.async_set("sensor.demo_rate", "200", {"unit_of_measurement": "sat/AUD"})

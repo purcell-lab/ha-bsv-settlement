@@ -80,6 +80,19 @@ test("known quality flags are disclosed, while unknown or incomplete metering st
  assert.match(warningMessage(flags),/allocation/);
  assert.equal(sessionStatus({...s,ended_at:"2026-10-02T00:00:00Z",quality_flags:["meter_reset"]},{}).label,"Data review required");
 });
+test("estimated import and export tariffs warn without requiring data review",()=>{
+ const flags=["import:estimated_tariff","export:estimated_tariff"];
+ assert.deepEqual(qualityFlags(flags).blockers,[]);
+ assert.match(warningMessage(flags),/estimated buy rates/);
+ assert.match(warningMessage(flags),/estimated sell rates/);
+ const ended={...s,ended_at:"2026-10-04T12:44:23Z",quality_flags:flags};
+ assert.notEqual(sessionStatus(ended,{}).label,"Data review required");
+ for(const flag of ["import:missing_tariff","export:overlapping_tariff_periods",
+   "export:missing_counter_baseline","unknown_quality"]){
+  assert.deepEqual(qualityFlags([...flags,flag]).blockers,[flag]);
+  assert.equal(sessionStatus({...ended,quality_flags:[...flags,flag]},{}).label,"Data review required");
+ }
+});
 test("state mismatch preserves automatic credit readiness but never invents approval",()=>{
  const ended={...s,ended_at:"2026-10-02T00:00:00Z",quality_flags:["export:energy_without_matching_state"]};
  const h={ongoing_credit:{effective:true,sessions:[{session_id:s.session_id,recipient_address:"fictional"}]}};

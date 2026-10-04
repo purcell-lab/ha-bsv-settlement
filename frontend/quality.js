@@ -4,6 +4,8 @@ export const meteringWarnings = {
   not_a_final_bill: "This sensor-derived account is provisional, not a certified bill.",
   "import:energy_without_matching_state": "Charging energy was recorded while the charger state did not indicate charging.",
   "export:energy_without_matching_state": "Export energy was recorded while the charger state did not indicate discharging.",
+  "import:estimated_tariff": "Some charging energy uses estimated buy rates. The calculated account can settle; the estimate remains disclosed.",
+  "export:estimated_tariff": "Some exported energy uses estimated sell rates. The calculated account can settle; the estimate remains disclosed.",
 };
 export function qualityFlags(flags = []) {
   return {
