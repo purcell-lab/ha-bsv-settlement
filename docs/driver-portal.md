@@ -36,6 +36,25 @@ Each session starts as one compact line: local date/time, payment direction and 
 
 Sync is explicit in this first portal revision. Load more pages to sync older credits. A page reload may restore a valid server login, but the wallet must be available again for receipt import. Chain confirmation and wallet-reported receipt acceptance remain distinct.
 
+## Current public rates
+
+The sign-in and verified-wallet cards show Buy (Import/ EV Charging) and
+Sell (Export/ V2G) rates in AUD/kWh. Negative and zero rates keep their signs
+and units. These are indicative current rates, not a fixed quote for a session.
+
+A same-origin, rate-limited `prices` action reads the single configured sensor
+proxy's price sources without creating a login, inspecting driver records,
+changing authority or making a payment. The response allowlists only rate
+values, interval times, estimate/availability flags and a check time. Multiple
+or missing proxy configurations return unavailable rather than choosing a site.
+
+The page fetches rates on load, every minute while visible, when returning to
+the tab, and with the signed-in Refresh control. Each rate is hidden as
+unavailable if missing, malformed, estimated, outside its interval or more
+than 90 seconds past the last check. Fetch failure also clears displayed prices.
+The two values remain visible after sign-in and never expose session history
+before authentication.
+
 ## BSV Browser pairing
 
 The portal can create a fresh two-minute QR and pasteable connection URI without an active spending invitation. The encrypted relay belongs to the browser login, transfers through cookie rotation, and closes on sign-out.

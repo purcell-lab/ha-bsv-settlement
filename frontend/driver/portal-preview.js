@@ -55,6 +55,13 @@ window.fetch=async(url,options)=>{
   if(url!=="/api/bsv_settlement/portal")throw Error("Offline preview: network disabled");
   const data=JSON.parse(options.body);window.portalPreviewCalls.push(data.action);
   const response=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json"}});
+  if(data.action==="prices"){
+    if(params.has("pricefail"))throw Error("Fictional price outage");
+    const stamp=Date.now(),rate={available:true,estimate:params.has("estimated"),
+      start:new Date(stamp-300000).toISOString(),end:new Date(stamp+(params.has("stale")?-1000:300000)).toISOString()};
+    return response({checked_at:new Date(stamp).toISOString(),valid:true,
+      import:{...rate,aud_per_kwh:"0.2850"},export:{...rate,aud_per_kwh:"-0.0520"}});
+  }
   if(data.action==="challenge"){
     const now=Math.floor(Date.now()/1000),nonce="a".repeat(43);
     return response({payload:canonical({action:"sign_in_driver_portal",version:1,origin:location.origin,
