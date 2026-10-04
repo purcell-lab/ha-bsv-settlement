@@ -1,6 +1,7 @@
 """Choose the existing mock service or an unfunded embedded testnet wallet."""
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
 
@@ -10,6 +11,17 @@ from .const import DOMAIN
 
 class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return OCPPShadowOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_supports_options_flow(cls, config_entry):
+        # Only the read-only observer has options; financial entries have none.
+        return config_entry.data.get("backend") == "ocpp_import_shadow"
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
@@ -44,14 +56,30 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(
                     "ocpp-shadow:" + identity["config_entry_id"] + ":" + identity["device_id"])
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=user_input.get("name", "OCPP import shadow"),
-                    data={**user_input, "backend": "ocpp_import_shadow", "source_binding": binding})
+                self._shadow_data = {**user_input, "backend": "ocpp_import_shadow",
+                                     "source_binding": binding}
+                return await self.async_step_ocpp_shadow_metadata()
         schema = {vol.Optional("name", default="OCPP import shadow"): str}
         schema.update({
             vol.Required(k + "_entity"): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", integration="ocpp")) for k in METRICS})
         return self.async_show_form(step_id="ocpp_shadow", data_schema=vol.Schema(schema), errors=errors)
+
+    async def async_step_ocpp_shadow_metadata(self, user_input=None):
+        """Optional fork provenance sensors; skipping keeps the shadow unverified."""
+        data = self._shadow_data
+        errors = {}
+        if user_input is not None:
+            try:
+                options = shadow_metadata_options(self.hass, data["source_binding"], user_input)
+            except ValueError:
+                errors["base"] = "invalid_ocpp_shadow_metadata"
+            else:
+                return self.async_create_entry(
+                    title=data.get("name", "OCPP import shadow"), data=data, options=options)
+        return self.async_show_form(
+            step_id="ocpp_shadow_metadata", errors=errors,
+            data_schema=shadow_metadata_schema(self.hass, data["source_binding"], user_input))
 
     async def async_step_proxy(self, user_input=None):
         errors = {}
@@ -134,3 +162,46 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
         })
         return self.async_show_form(step_id="mock", data_schema=schema, errors=errors)
+
+
+def shadow_metadata_options(hass, binding, user_input):
+    from .ocpp_shadow import METADATA_FIELDS, metadata_binding
+    selected = {k: user_input.get(field) for k, field in METADATA_FIELDS.items()}
+    bound = metadata_binding(hass, binding, selected)
+    return {**{METADATA_FIELDS[k]: v["entity_id"] for k, v in bound.items()},
+            "metadata_binding": bound}
+
+
+def shadow_metadata_schema(hass, binding, current=None):
+    """Prefill exact unique-ID matches, else the current choice; all optional."""
+    from .ocpp_shadow import METADATA_FIELDS, suggest_metadata
+    found = suggest_metadata(hass, binding)
+    return vol.Schema({
+        vol.Optional(field, description={"suggested_value": (
+            current.get(field) if current is not None else found.get(key))}):
+        selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", integration="ocpp"))
+        for key, field in METADATA_FIELDS.items()})
+
+
+class OCPPShadowOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Bind/unbind optional provenance metadata on an existing observer entry.
+
+    The three measurand sources and their frozen binding are not editable here.
+    """
+
+    async def async_step_init(self, user_input=None):
+        binding = self.config_entry.data["source_binding"]
+        errors = {}
+        if user_input is not None:
+            try:
+                options = shadow_metadata_options(self.hass, binding, user_input)
+            except ValueError:
+                errors["base"] = "invalid_ocpp_shadow_metadata"
+            else:
+                return self.async_create_entry(data=options)
+        current = user_input
+        if current is None and self.config_entry.options.get("metadata_binding"):
+            current = dict(self.config_entry.options)
+        return self.async_show_form(
+            step_id="init", errors=errors,
+            data_schema=shadow_metadata_schema(self.hass, binding, current))

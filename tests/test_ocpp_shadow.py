@@ -221,7 +221,10 @@ async def test_binding_config_flow_and_rejection(tmp_path):
         flow.hass, flow.context = hass, {}
         data = {k + "_entity": v for k, v in sources.items()}
         result = await flow.async_step_ocpp_shadow(data)
+        assert result["step_id"] == "ocpp_shadow_metadata"
+        result = await flow.async_step_ocpp_shadow_metadata({})
         assert result["type"] == "create_entry"
+        assert result["options"] == {"metadata_binding": {}}
         assert result["data"]["backend"] == "ocpp_import_shadow"
         assert result["data"]["source_binding"] == binding
         wrong = {**sources, "import": sources["transaction"]}
@@ -265,7 +268,7 @@ async def test_coordinator_store_sensors_and_no_actions(tmp_path):
         await coord.close()
         coord = OCPPShadowCoordinator(hass, entry)
         await coord.load()
-        assert coord.ledger.data["schema"] == 1
+        assert coord.ledger.data["schema"] == 2
         er.async_get(hass).async_update_entity(sources["import"], new_unique_id="ocpp.other.energy_active_import_register.sensor")
         coord.observe()
         assert coord.summary()["state"] == "incompatible"
@@ -336,7 +339,7 @@ async def test_rejected_store_is_not_saved_or_subscribed(tmp_path):
             **{k + "_entity": v for k, v in sources.items()},
             "backend": "ocpp_import_shadow", "source_binding": source_binding(hass, sources)})
         await async_setup(hass, {})
-        with patch("custom_components.bsv_settlement.ocpp_shadow.Store") as store:
+        with patch("custom_components.bsv_settlement.ocpp_shadow.ShadowStore") as store:
             store.return_value.async_load = AsyncMock(return_value={"schema": 999})
             store.return_value.async_save = AsyncMock()
             with pytest.raises(ValueError):

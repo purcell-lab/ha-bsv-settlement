@@ -66,7 +66,7 @@ class OCPPShadowSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
         return {k: data.get(k) for k in (
-            "mode", "quality_flags", "current_span", "previous_span",
+            "mode", "quality_flags", "provenance", "current_span", "previous_span",
             "retained_span_count", "journal_trimmed", "spans_trimmed",
             "billing_eligible", "settlement_owner", "payment_control",
             "charger_control", "export_kwh", "net_cost_aud")}

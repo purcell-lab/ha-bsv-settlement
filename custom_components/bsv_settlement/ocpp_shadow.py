@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import timedelta
 import logging
+import re
 
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
@@ -17,6 +18,14 @@ from .ocpp_shadow_ledger import ImportShadowLedger, energy
 _LOGGER = logging.getLogger(__name__)
 METRICS = {"import": "energy_active_import_register",
            "transaction": "transaction_id", "status": "status_connector"}
+# Optional charger-level (connector 0) diagnostics published by the purcell-lab
+# OCPP fork. Upstream builds lack them; provenance then stays unverified.
+METADATA = {"version": "version_ocpp", "configuration": "configuration_keys",
+            "boot": "boot_notification"}
+METADATA_FIELDS = {"version": "ocpp_version_entity",
+                   "configuration": "configuration_keys_entity",
+                   "boot": "boot_notification_entity"}
+STORE_VERSION = 2
 
 
 def source_binding(hass, sources):
@@ -45,6 +54,64 @@ def source_binding(hass, sources):
     return binding
 
 
+def charger_prefix(binding):
+    """`ocpp.<cpid>` of a validated measurand binding, without any connN scope."""
+    scope = binding["import"]["unique_id"][:-len("." + METRICS["import"] + ".sensor")]
+    head, _, tail = scope.rpartition(".")
+    return head if head != "ocpp" and re.fullmatch(r"conn\d+", tail) else scope
+
+
+def metadata_binding(hass, binding, selected):
+    """Validate optional metadata sensors against the measurands' charger.
+
+    Same OCPP config entry and exact `ocpp.<cpid>.<slug>.sensor` unique ID are
+    required; the device may be the charger rather than the connector device.
+    """
+    registry = er.async_get(hass)
+    prefix, entry_id = charger_prefix(binding), binding["import"]["config_entry_id"]
+    result = {}
+    for key, entity_id in selected.items():
+        if key not in METADATA:
+            raise ValueError("Unknown OCPP metadata source")
+        if not entity_id:
+            continue
+        row = registry.async_get(entity_id)
+        if (row is None or row.platform != "ocpp" or row.domain != "sensor"
+                or row.disabled_by is not None or row.config_entry_id != entry_id
+                or row.unique_id != f"{prefix}.{METADATA[key]}.sensor"):
+            raise ValueError("Metadata must be enabled sensors of the same OCPP charger")
+        result[key] = {"entity_id": entity_id, "unique_id": row.unique_id,
+                       "config_entry_id": row.config_entry_id, "device_id": row.device_id}
+    return result
+
+
+def suggest_metadata(hass, binding):
+    """Discover metadata entity IDs by exact unique ID; never guess by name."""
+    registry, prefix = er.async_get(hass), charger_prefix(binding)
+    found = {}
+    for key, slug in METADATA.items():
+        entity_id = registry.async_get_entity_id("sensor", "ocpp", f"{prefix}.{slug}.sensor")
+        try:
+            if entity_id and metadata_binding(hass, binding, {key: entity_id}):
+                found[key] = entity_id
+        except ValueError:
+            pass
+    return found
+
+
+class ShadowStore(Store):
+    """Schema 1 -> 2 is validated in full before HA rewrites the file."""
+
+    def __init__(self, hass, entry_id, binding):
+        super().__init__(hass, STORE_VERSION, f"{DOMAIN}.ocpp_shadow.{entry_id}")
+        self.binding = binding
+
+    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
+        if old_major_version != 1:
+            raise ValueError("Unsupported OCPP shadow store version")
+        return ImportShadowLedger(self.binding, old_data).data
+
+
 class OCPPShadowCoordinator(DataUpdateCoordinator):
     mode = "ocpp_import_shadow"
 
@@ -53,10 +120,13 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
                          update_interval=timedelta(seconds=15))
         self.entry = entry
         self.sources = {k: entry.data[k + "_entity"] for k in METRICS}
-        self.store = Store(hass, 1, f"{DOMAIN}.ocpp_shadow.{entry.entry_id}")
+        self.metadata = {k: v["entity_id"]
+                         for k, v in entry.options.get("metadata_binding", {}).items()}
+        self.store = ShadowStore(hass, entry.entry_id, entry.data["source_binding"])
         self.ledger = None
         self.cancel_listener = None
         self.binding_error = False
+        self.metadata_error = False
 
     async def load(self):
         binding = source_binding(self.hass, self.sources)
@@ -92,19 +162,40 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
                 snapshot[key] = {
                     "value": state.state, "unit": state.attributes.get("unit_of_measurement"),
                     "context": state.attributes.get("context"),
+                    "context_source": state.attributes.get("context_source"),
                     "restored": state.attributes.get("restored", False),
                     "ha_updated_at": state.last_updated.isoformat(),
                 }
+        snapshot["metadata"] = self.metadata_snapshot()
         before = deepcopy(self.ledger.data)
         self.ledger.observe(snapshot, now)
         if before != self.ledger.data:
             self.store.async_delay_save(lambda: deepcopy(self.ledger.data), 1)
+
+    def metadata_snapshot(self):
+        """Degrade, never fail: a changed metadata identity is simply ignored."""
+        try:
+            self.metadata_error = metadata_binding(
+                self.hass, self.entry.data["source_binding"], self.metadata
+            ) != self.entry.options.get("metadata_binding", {})
+        except ValueError:
+            self.metadata_error = True
+        if self.metadata_error:
+            return {}
+        # Raw attributes stay in memory; the ledger copies an allow-list only.
+        return {key: {"state": state.state, "attributes": dict(state.attributes)}
+                for key, entity_id in self.metadata.items()
+                if (state := self.hass.states.get(entity_id)) is not None}
 
     def summary(self):
         result = self.ledger.summary()
         if self.binding_error:
             result["state"] = "incompatible"
             result["quality_flags"].append("source_binding_changed")
+        if self.metadata_error:
+            result["quality_flags"] = sorted({*result["quality_flags"], "metadata_binding_changed"})
+        elif not self.metadata:
+            result["quality_flags"] = sorted({*result["quality_flags"], "metadata_not_bound"})
         return {**result, "mode": self.mode, "updated_at": dt_util.utcnow().isoformat()}
 
     async def _async_update_data(self):

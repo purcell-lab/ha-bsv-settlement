@@ -21,12 +21,21 @@
       },
       "ocpp_shadow": {
         "title": "Read-only OCPP import shadow",
-        "description": "Observe three enabled OCPP sensors from the same connector. Import register must currently be numeric in Wh, kWh or MWh. Records partial observed import spans only, not complete bills. No export, prices, payments, charger control or change to the existing recorder. Original charger timestamps and negotiated protocol remain unverified.",
+        "description": "Observe three enabled OCPP sensors from the same connector. Import register must currently be numeric in Wh, kWh or MWh. Records partial observed import spans only, not complete bills. No export, prices, payments, charger control or change to the existing recorder. Original charger timestamps remain unavailable; protocol provenance can be added in the next step.",
         "data": {
           "name": "Observer name",
           "import_entity": "OCPP cumulative active import register",
           "transaction_entity": "OCPP native transaction ID",
           "status_entity": "OCPP connector status"
+        }
+      },
+      "ocpp_shadow_metadata": {
+        "title": "Optional OCPP provenance metadata",
+        "description": "Optionally bind the charger-level Version.OCPP, Configuration.Keys and Boot.Notification diagnostic sensors published by the purcell-lab OCPP fork. Matching sensors of the same charger are prefilled when found. They must be enabled and belong to the same OCPP entry and charger as the selected sources. Leave blank on upstream OCPP builds; provenance then stays unverified. Read-only: no configuration change is sent to the charger and billing is unaffected.",
+        "data": {
+          "ocpp_version_entity": "OCPP version sensor (Version.OCPP)",
+          "configuration_keys_entity": "Charger configuration keys sensor (Configuration.Keys)",
+          "boot_notification_entity": "Boot notification sensor (Boot.Notification)"
         }
       },
       "embedded": {
@@ -51,10 +60,25 @@
     },
     "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode.",
               "invalid_ocpp_shadow_sources": "Choose enabled OCPP import-register, transaction-ID and connector-status sensors from the same connector, with a numeric Wh/kWh/MWh import register.",
+              "invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank.",
               "invalid_proxy_sources": "Choose five different existing sensor entities.",
               "invalid_proxy_units": "Energy counters must be MWh and price sensors must be $/kWh.",
               "acknowledgement_required": "Acknowledge the local-key custody and unfunded validation restrictions."},
     "abort": {"already_configured": "This backend is already configured."}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "OCPP shadow provenance metadata",
+        "description": "Bind or clear the optional Version.OCPP, Configuration.Keys and Boot.Notification sensors from the purcell-lab OCPP fork. Matching sensors of the same charger are prefilled when nothing is bound yet. The observed import sources cannot be changed here. Saving reloads this observer; the open span ends at a restart gap. Read-only: no charger commands and no billing change.",
+        "data": {
+          "ocpp_version_entity": "OCPP version sensor (Version.OCPP)",
+          "configuration_keys_entity": "Charger configuration keys sensor (Configuration.Keys)",
+          "boot_notification_entity": "Boot notification sensor (Boot.Notification)"
+        }
+      }
+    },
+    "error": {"invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank."}
   },
   "services": {
     "configure_automatic_credit": {
