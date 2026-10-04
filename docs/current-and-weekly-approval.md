@@ -11,8 +11,11 @@ a newer driver registers.
 - **Default:** Create a multi-session invitation. The operator form defaults to
   seven days; the single-session alternatives remain explicit options.
 - **Current session:** Select “Include the current recorder session”. The backend
-  verifies its ID against the recorder's latest session. A different historical
-  account cannot be substituted.
+  verifies its ID against the recorder's latest session. If a new session opens
+  while the operator is preparing approval, the explicitly named immediately
+  previous completed account is also eligible through `initial_session_id`.
+  Arbitrary archived sessions cannot be substituted, and the newly opened
+  session is not silently included in place of the named account.
 - **Completed account:** The invitation freezes its energy, rounded AUD account,
   converted amount and warnings. The driver sees these before signing. Subsequent
   account changes block collection rather than silently changing the bill.

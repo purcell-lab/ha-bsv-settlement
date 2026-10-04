@@ -27,9 +27,11 @@ def weekly_terms(terms):
 def initial_session(api, proxy_id, sid, rate, maximum):
     """Explicit named current account only, without changing any prior owner."""
     proxy = api.hass.data[DOMAIN][proxy_id]
-    record = (proxy.data or {}).get("latest_session")
-    if not record or record["session_id"] != sid:
-        raise WalletError("The current session changed; select it again")
+    data = proxy.data or {}
+    latest, previous = data.get("latest_session"), data.get("previous_session")
+    record = next((r for r in (latest, previous) if r and r["session_id"] == sid), None)
+    if not record or record is previous and not record.get("ended_at"):
+        raise WalletError("Select the current session or its immediately previous completed account")
     if datetime.fromisoformat(record["opened_at"]) > now():
         raise WalletError("Current session start is in the future")
     key = proxy_id + "|" + sid
