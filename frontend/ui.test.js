@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {sessionStatus,num,esc,provisionalSats} from "./ui.js";
+import {sessionStatus,num,esc,provisionalSats,provisionalDisplay} from "./ui.js";
 import {qualityFlags,warningMessage} from "./quality.js";
 test("provisional sat amounts use exact half-up rounding and fixed session rates",()=>{
  assert.equal(provisionalSats({net_cost_aud:"-0.38"},{},{state:"100"}).sats,38);
@@ -14,6 +14,36 @@ test("provisional sat amounts use exact half-up rounding and fixed session rates
  for(const value of [null,undefined,"",true,"bad"])
   assert.equal(provisionalSats({net_cost_aud:value},{},{state:"100"}).sats,null);
  assert.equal(provisionalSats(session,{driver_approvals:[{session_id:"s",approved:true,satoshis_per_aud:"80"}]},{state:"100"}).sats,99);
+});
+test("missing account has neutral direction and preserves healthy conversion",()=>{
+ for(const value of [null,undefined,"","bad",true]){
+  const session={net_cost_aud:value,quality_flags:["import:overlapping_tariff_periods"]};
+  const view=provisionalDisplay(session,{}, {state:"100"});
+  assert.equal(view.label,"Session amount unavailable");
+  assert.equal(view.value,"Unavailable");
+  assert.equal(view.rate,100);
+  assert.equal(view.reason,"Tariff reconciliation required.");
+  assert.doesNotMatch(view.value,/sat/);
+  assert.equal(sessionStatus(session,{}).label,"Session amount unavailable");
+ }
+});
+test("provisional display distinguishes charge credit zero and missing conversion",()=>{
+ for(const [amount,label,value] of [[.2,"Provisional driver charge","20 sat"],
+   [-.2,"Provisional credit to driver","20 sat"],[0,"Provisional session balance","0 sat"]]){
+  const v=provisionalDisplay({net_cost_aud:amount},{},{state:"100"});
+  assert.equal(v.label,label);assert.equal(v.value,value);assert.equal(v.reason,"");
+ }
+ const noRate=provisionalDisplay({net_cost_aud:.2},{},{state:"unavailable"});
+ assert.equal(noRate.label,"Provisional driver charge");
+ assert.equal(noRate.reason,"Conversion rate unavailable.");
+ assert.equal(provisionalDisplay({net_cost_aud:null},{},{state:"100"}).reason,"Session pricing is incomplete.");
+});
+test("known payment remains visible when a later recorder calculation is unavailable",()=>{
+ const session={session_id:"paid",net_cost_aud:null,quality_flags:["import:missing_tariff"]};
+ const view=sessionStatus(session,{session_payments:[
+   {session_id:"paid",state:"provider_confirmed",txid:"existing"}]});
+ assert.equal(view.label,"Confirmed on chain");
+ assert.equal(view.payment.txid,"existing");
 });
 const s={session_id:"new-session",net_cost_aud:-1.24};
 test("zero-balance closure is not labelled a waived charge",()=>{
