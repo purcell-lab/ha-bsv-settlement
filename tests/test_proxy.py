@@ -129,8 +129,13 @@ def test_proxy_price_effective_period_not_arrival_and_final_preferred():
     r = build_records(h, "sensor.state", stamp(15))[0]
     assert r["net_cost_aud"] == .41
     h["import_price"][0]["end"] = stamp(7)
-    assert select_prices(h["import_price"])[1] == ["overlapping_tariff_periods"]
-    assert build_records(h, "sensor.state", stamp(15))[0]["net_cost_aud"] is None
+    prices, issues = select_prices(h["import_price"])
+    assert not issues
+    assert [p for p in prices if p["rate"] is None] == [
+        {"start": instant(stamp(5)), "end": instant(stamp(7)), "rate": None, "final": True}]
+    # No import energy is allocated to 05-07; unrelated conflicts cannot
+    # invalidate this session's priced import periods.
+    assert build_records(h, "sensor.state", stamp(15))[0]["net_cost_aud"] == .41
 
 
 def test_proxy_partial_start_and_unknown_state_are_explicit():

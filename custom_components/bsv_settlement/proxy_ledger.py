@@ -32,26 +32,65 @@ def intersect(a, b, c, d):
 
 
 def select_prices(rows):
+    """Resolve effective intervals, not observation arrival intervals.
+
+    Final revisions replace estimates for identical bounds. Across different
+    bounds, final rates outrank estimates; conflicting final rates stay
+    ambiguous. Estimate-only overlaps prefer the newest observation, then the
+    narrower interval. Equal-priority conflicting rates are never guessed.
+    """
     selected = {}
     for row in rows:
         if row.get("unit") != "$/kWh":
             continue
-        rate = number(row["value"])
+        rate = number(row.get("value"))
         try:
             start, end = instant(row["start"]), instant(row["end"])
+            observed = instant(row["t"])
+            if any(t.tzinfo is None for t in (start, end, observed)):
+                continue
         except (KeyError, TypeError, ValueError):
             continue
         if rate is None or start >= end:
             continue
         final = row.get("estimate") is False
-        priority = (final, instant(row["t"]))
+        priority = (final, observed)
         key = (start, end)
         if key not in selected or priority > selected[key]["priority"]:
             selected[key] = {"start": start, "end": end, "rate": rate,
-                             "final": final, "priority": priority}
-    result = sorted(selected.values(), key=lambda p: p["start"])
-    if any(a["end"] > b["start"] for a, b in zip(result, result[1:])):
-        return [], ["overlapping_tariff_periods"]
+                             "final": final, "priority": priority,
+                             "rates": {rate}}
+        elif priority == selected[key]["priority"]:
+            selected[key]["rates"].add(rate)
+
+    # Sweep boundaries so every instant is represented at most once. Conflicts
+    # remain local spans: a later bad interval must not erase earlier accounts.
+    events = {}
+    for key, price in selected.items():
+        events.setdefault(price["start"], {"start": [], "end": []})["start"].append(key)
+        events.setdefault(price["end"], {"start": [], "end": []})["end"].append(key)
+    bounds = sorted(events)
+    active, result = {}, []
+    for start, end in zip(bounds, bounds[1:]):
+        for key in events[start]["end"]:
+            active.pop(key, None)
+        for key in events[start]["start"]:
+            active[key] = selected[key]
+        if not active:
+            continue  # Preserve gaps; never carry forward a price silently.
+        candidates = list(active.values())
+        finals = [p for p in candidates if p["final"]]
+        if finals:
+            winners = finals
+        else:
+            def rank(p):
+                return p["priority"][1], -duration(p["start"], p["end"])
+            best = max(rank(p) for p in candidates)
+            winners = [p for p in candidates if rank(p) == best]
+        rates = set().union(*(p["rates"] for p in winners))
+        result.append({"start": start, "end": end,
+                       "rate": next(iter(rates)) if len(rates) == 1 else None,
+                       "final": bool(finals)})
     return result, []
 
 
@@ -146,6 +185,9 @@ def price_direction(session, rows, prices, direction, as_of):
                 for tariff in prices:
                     part = intersect(a, b, tariff["start"], tariff["end"])
                     if not part:
+                        continue
+                    if tariff["rate"] is None:
+                        issues.add("overlapping_tariff_periods")
                         continue
                     wh = energy * duration(*part) / length
                     covered += wh

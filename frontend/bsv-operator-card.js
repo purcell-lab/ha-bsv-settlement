@@ -1,4 +1,4 @@
-import {esc,num,stamp,short,styles,sessionStatus,energyMetrics,currentPrice,provisionalSats} from "./ui.js";
+import {esc,num,stamp,short,styles,sessionStatus,energyMetrics,currentPrice,provisionalDisplay} from "./ui.js";
 import {awaitingApproval,approvalUrl,drawApprovalQR,pendingForSession} from "./approval-qr.js";
 import {warningMessage} from "./quality.js";
 class BSVOperatorCard extends HTMLElement{
@@ -31,7 +31,7 @@ class BSVOperatorCard extends HTMLElement{
     }else{
       const s=sessions[0], summary=stale?{label:"Wallet unavailable",tone:"warn",detail:"Reconnect the wallet before assessing payment readiness.",target:"wallet"}:sessionStatus(s,health);
       const unavailable=!proxy||["unknown","unavailable"].includes(proxy.state);
-      const estimate=provisionalSats(s,health,rateState);
+      const estimate=provisionalDisplay(s,health,rateState);
       const energy=energyMetrics(s),settlementPath=summary.payment?.direction==="operator_to_driver"||
         (summary.payment&&!summary.payment.direction)||Number(s?.net_cost_aud)<0?"operator-credits":"payments";
       body=`<div class="head"><div><p class="eyebrow">Charging & settlement</p><h2>${unavailable?"Recorder unavailable":!s?"Ready for the next driver":s.ended_at?"Latest session complete":"Session in progress"}</h2></div><ha-icon icon="mdi:ev-station"></ha-icon></div>
@@ -42,7 +42,7 @@ class BSVOperatorCard extends HTMLElement{
       ${warningMessage(s?.quality_flags)?`<p class="notice" style="margin-top:12px" role="note"><strong>Metering warning · settlement not blocked by this flag</strong>${esc(warningMessage(s.quality_flags))} Consent, valid amounts, complete pricing and payment safety checks still apply.</p>`:""}
       <div class="actions">${link(summary.target==="payments"?settlementPath:summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${link("wallet","View funds")}</div>
       <section id="approval-qr" class="section" hidden aria-label="Driver approval"></section>
-      ${s?`<div class="section"><div class="row"><div><p class="note">${Number(s.net_cost_aud)<0?"Provisional credit to driver":"Provisional driver charge"}</p><p class="amount">${num(estimate.sats)} sat</p><p class="note">AUD ${num(s.net_cost_aud===null?null:Math.abs(Number(s.net_cost_aud)),2)} · ${estimate.rate===null?"Conversion unavailable":`${num(estimate.rate,2)} sat/AUD (${estimate.fixed?"session rate":"current indicative rate"})`}</p><p class="note">Estimate only; network fees excluded. Actual payment and confirmation appear in settlement.</p></div><span class="badge ${summary.tone}">${esc(summary.label)}</span></div>
+      ${s?`<div class="section"><div class="row"><div><p class="note">${esc(estimate.label)}</p><p class="amount">${esc(estimate.value)}</p>${estimate.reason?`<p class="note" role="status">${esc(estimate.reason)}</p>`:""}<p class="note">AUD ${num(s.net_cost_aud===null||s.net_cost_aud===undefined||s.net_cost_aud===""?null:Math.abs(Number(s.net_cost_aud)),2)} · ${estimate.rate===null?"Conversion unavailable":`${num(estimate.rate,2)} sat/AUD (${estimate.fixed?"session rate":"current indicative rate"})`}</p><p class="note">Estimate only; network fees excluded. Actual payment and confirmation appear in settlement.</p></div><span class="badge ${summary.tone}">${esc(summary.label)}</span></div>
       <dl><dt>Energy Imported to EV</dt><dd>${num(energy.toEV.kwh,2)} kWh<br><span class="note">Average ${num(energy.toEV.average,4)} $/kWh</span></dd><dt>Energy Imported from EV</dt><dd>${num(energy.fromEV.kwh,2)} kWh<br><span class="note">Average ${num(energy.fromEV.average,4)} $/kWh</span></dd><dt>${s.ended_at?"Ended":"Started"}</dt><dd>${esc(stamp(s.ended_at||s.energy_started_at||s.opened_at))}</dd><dt>Session reference</dt><dd>${esc(short(s.ocpp_transaction_id))}</dd></dl>
       <p class="note">Energy-weighted session averages in AUD, not current live prices. Negative rates retain their sign. Network fees excluded; zero energy has no average price.</p>
       <details><summary>Full session reference and meter notes</summary><code>${esc(s.ocpp_transaction_id)}</code><p class="note">Sensor-derived proxy ID, not a charger-issued OCPP ID. Interval costs are provisional, not a certified bill.</p></details></div>`:""}`}

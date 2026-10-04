@@ -17,11 +17,24 @@ export function provisionalSats(session,health={},rateState) {
     return m?{n:BigInt(m[1]+(m[2]||"")),d:10n**BigInt((m[2]||"").length)}:null;
   };
   const amount=parts(session?.net_cost_aud),r=parts(rate);
-  if(!amount||!r||Number(rate)<=0)return {sats:null,rate:null,fixed:!!fixed};
+  if(!r||Number(rate)<=0)return {sats:null,rate:null,fixed:!!fixed};
+  if(!amount)return {sats:null,rate:Number(rate),fixed:!!fixed};
   const numerator=amount.n*r.n,denominator=amount.d*r.d;
   const rounded=(numerator*2n+denominator)/(denominator*2n);
   return {sats:rounded<=BigInt(Number.MAX_SAFE_INTEGER)?Number(rounded):null,
     rate:Number(rate),fixed:!!fixed};
+}
+export function provisionalDisplay(session,health={},rateState) {
+  const estimate=provisionalSats(session,health,rateState);
+  const validAmount=(typeof session?.net_cost_aud==="number"||
+    typeof session?.net_cost_aud==="string"&&session.net_cost_aud.trim()!=="")&&finite(session.net_cost_aud);
+  const tariffProblem=(session?.quality_flags||[]).some(f=>/:(missing_tariff|overlapping_tariff_periods)$/.test(f));
+  const label=!validAmount?"Session amount unavailable":
+    Number(session.net_cost_aud)<0?"Provisional credit to driver":
+    Number(session.net_cost_aud)>0?"Provisional driver charge":"Provisional session balance";
+  const reason=!validAmount?(tariffProblem?"Tariff reconciliation required.":"Session pricing is incomplete."):
+    estimate.sats===null?"Conversion rate unavailable.":"";
+  return {...estimate,label,value:estimate.sats===null?"Unavailable":`${num(estimate.sats)} sat`,reason};
 }
 export const chainRecordUrl=txid=>typeof txid==="string"&&/^[0-9a-f]{64}$/.test(txid)
   ?`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`:null;
@@ -77,6 +90,9 @@ export function sessionStatus(s,health,now=Date.now()) {
   if(closure)return {label:stateLabel(closure.state),tone:"quiet",
     detail:closure.received_funds?`Charge waived. ${closure.received_funds.amount_sats} sat received remains unallocated; no refund authorised.`:
       `${closure.state==="closed_zero"?"Closed: no payment due.":"Charge waived; no further collection."} ${closure.reason}`,target:"payments"};
+  const pricing=provisionalDisplay(s);
+  if(pricing.label==="Session amount unavailable")return {
+    label:pricing.label,tone:"warn",detail:`${pricing.reason} Payment direction and amount cannot be determined.`,target:"payments"};
   const flags=qualityFlags(s.quality_flags).blockers;
   const reviewed=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.reviewed_closed_account&&
     ["awaiting_driver_consent","spending_authorised_wallet_permission_required"].includes(a.state)&&Date.parse(a.expires_at)>now);
