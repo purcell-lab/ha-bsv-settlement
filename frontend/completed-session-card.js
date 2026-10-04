@@ -49,6 +49,11 @@ class CompletedSessionCard extends HTMLElement{
       catch{this.$("link").focus();this.$("link").select();this.$("message").textContent="Link selected. Use your device's Copy command.";}};
   }
   reset(){this.plan=null;this.$("account").hidden=true;this.$("actions").hidden=true;this.$("message").textContent="Review this account before choosing an action.";this.clearLink();}
+  selectSession(id){
+    this.$("session-id").value=id;
+    this.$("recent").value=id;
+    this.reset();
+  }
   clearLink(){this.invitation=null;this.$("link-panel").hidden=true;this.$("link").value="";this.$("qr").replaceChildren();}
   set hass(h){
     this.h=h;if(!this.ready)return;

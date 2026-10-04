@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Owner credits · BSV Settlement</title>
+<style>
+@font-face{font-family:DM;src:url('./dm-sans-latin-wght-normal.woff2')}
+*{box-sizing:border-box}body{margin:0;background:#f1f5f7;font:16px DM,Arial,sans-serif;color:#152a3a;
+--primary-font-family:DM,Arial,sans-serif;--primary-color:#186776;--primary-text-color:#152a3a;--secondary-text-color:#526472;
+--card-background-color:white;--secondary-background-color:#eef3f5;--divider-color:#d8e0e5;--text-primary-color:white}
+body.dark{background:#101c25;color:#edf4f7;--primary-text-color:#edf4f7;--secondary-text-color:#b3c2cb;--primary-color:#73c8ce;--text-primary-color:#10262b;--card-background-color:#172832;--secondary-background-color:#203540;--divider-color:#38505d;--success-color:#87d2a2}
+header,main{max-width:1120px;margin:auto;padding:24px}header{padding-bottom:12px}h1{font-size:28px;margin-bottom:8px}p{line-height:1.5}
+.brand{display:flex;gap:12px;align-items:center;font-weight:650}.brand svg{width:32px;height:32px}
+.tools{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}button,select{font:inherit;padding:10px;min-height:44px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);color:inherit}label{display:flex;align-items:center;gap:8px}
+#preview-log{padding:16px;border:1px solid var(--divider-color);border-radius:8px;overflow-wrap:anywhere}
+@media(max-width:480px){header,main{padding:16px}h1{font-size:24px}}
+</style></head><body>
+<header><div class="brand"><svg aria-label="Two-way settlement" role="img" viewBox="0 0 40 40" fill="none"><rect x="1" y="1" width="38" height="38" rx="10" stroke="currentColor"/><path d="M10 15h20m-6-5 6 5-6 5M30 26H10m6-5-6 5 6 5" stroke="currentColor" stroke-width="2"/></svg>BSV Settlement</div>
+<h1>Owner credits</h1><p>Every unfinished transaction has its own next step. Fictional preview only: no Home Assistant, wallet or payment connection.</p>
+<p><a href="./portal/index.html">Preview Driver portal</a> · <a href="./recovery/index.html?scenario=closed">Preview Your charging session</a></p>
+<div class="tools"><button id="theme">Dark theme</button><label>Access <select id="role"><option value="admin">Administrator</option><option value="viewer">Read-only viewer</option><option value="offline">Wallet unavailable</option></select></label><button id="refresh">Simulate live update</button></div></header>
+<main><bsv-session-review-card></bsv-session-review-card><p id="preview-log" role="status">No preview action yet.</p></main>
+<script type="module" src="./owner-actions-preview.js"></script></body></html>

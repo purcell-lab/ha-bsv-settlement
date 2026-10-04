@@ -1,5 +1,6 @@
 import qrcode from "qrcode-generator";
 import "./completed-session-card.js";
+import "./owner-actions-card.js";
 import {styles, stateLabel, short, stamp,chainRecordLink} from "./ui.js";
 import {settlementRows,paymentStatus} from "./payment-status.js";
 import {sessionTable} from "./session-table.js";
@@ -90,6 +91,10 @@ class BsvSessionReviewCard extends HTMLElement {
     const savedForms=sameReview?[...this.shadowRoot.querySelectorAll("input,select,textarea")].map(e=>({id:e.id,value:e.value,checked:e.checked})):[];
     const focused=sameReview?this.shadowRoot.activeElement?.id:null;
     const closureFocus=this._closureCard?.shadowRoot?.activeElement;
+    let ownerFocus=this._ownerActions?.shadowRoot?.activeElement;
+    while(ownerFocus?.shadowRoot?.activeElement)ownerFocus=ownerFocus.shadowRoot.activeElement;
+    const ownerSelection=ownerFocus&&["TEXTAREA","INPUT"].includes(ownerFocus.tagName)&&
+      ["text","textarea"].includes(ownerFocus.type)?[ownerFocus.selectionStart,ownerFocus.selectionEnd]:null;
     const closureSelection=closureFocus&&["TEXTAREA","INPUT"].includes(closureFocus.tagName)&&
       ["text","textarea"].includes(closureFocus.type)?[closureFocus.selectionStart,closureFocus.selectionEnd]:null;
     const opened=[...this.shadowRoot.querySelectorAll("details[open]")].map(e=>e.querySelector("summary")?.textContent);
@@ -120,7 +125,8 @@ class BsvSessionReviewCard extends HTMLElement {
       <ha-card>
         <div class="head"><div><p class="eyebrow">${mode==="driver_to_operator"?"Driver → Owner":mode==="operator_to_driver"?"Owner → Driver":"Settlement"}</p><h2>${mode==="driver_to_operator"?"Owner credits":mode==="operator_to_driver"?"Driver credits":"Payments & credits"}</h2></div>${creditMode?`<span class="badge ${automatic?.enabled?"good":"warn"}">${automatic?.enabled?"Automatic credits on":"Automatic credits off"}</span>`:""}</div>
         <p class="note">${mode==="driver_to_operator"?"Money received by the owner from drivers. Consent, held collections and charge closure are shown here.":mode==="operator_to_driver"?"Money received by the driver from the owner. Receiving registrations, funding and credit confirmation are shown here.":"Follow each session from review to confirmation."} A submitted transaction must be reconciled, never paid again.</p>
-        ${collectionIssues.map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
+        ${mode==="driver_to_operator"?'<div id="owner-actions"></div>':""}
+        ${(mode==="driver_to_operator"?[]:collectionIssues).map(p=>`<div class="notice"><strong>Driver collection · ${esc(p.state==="recovery_ready"?"Waiting for driver confirmation":"Held for review")}</strong>
           <p class="note">${esc(p.diagnostic?.step||"The original failed step was not recorded.")}</p>
           <p>${esc(p.diagnostic?.message||"No signing permit or payment is implied by a reserved attempt. Inspect the wallet and recipient history before releasing it.")}</p>
           <code>${esc(p.session_id)}</code>
@@ -133,7 +139,7 @@ class BsvSessionReviewCard extends HTMLElement {
         ${ongoing.error?`<p class="notice">${esc(ongoing.error)}</p>`:""}
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
-        ${sessionTable(health,observedSessions,mode)}
+        ${mode==="driver_to_operator"?`<details><summary>All session data</summary>${sessionTable(health,observedSessions,mode)}</details>`:sessionTable(health,observedSessions,mode)}
         ${(creditMode?automatic?.payments || []:[]).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
         <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl>${p.fee_quote?`<p class="note">Quoted rate: ${esc(p.fee_quote.rate_sat_per_kb)} sat/KB · signed-size allowance: ${esc(p.fee_quote.estimated_signed_bytes)} bytes. Quote checked ${esc(stamp(p.fee_quote.observed_at))}.</p>`:""}<p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p>${chainRecordLink(p.txid)}</details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
@@ -141,7 +147,7 @@ class BsvSessionReviewCard extends HTMLElement {
         ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>`:""}
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
         ${!ready ? '<p class="notice">Activate the recorder and mainnet wallet before using this flow.</p>' : ""}
-        ${driverMode?'<div id="completed-resolution"></div>':""}
+        ${driverMode?`<details><summary>Look up another completed session</summary><div id="completed-resolution"></div></details>`:""}
         <details id="new-review"><summary>${creditMode&&!driverMode?"Manual operator credit review":"Manual payment reconciliation"}</summary>
         <p class="note">Use only when automatic settlement is not available. Review the account and receiving address before preparing a payment. Preparing a review sends no money.</p>
         <label>Closed session<select id="session">${sessions.map(s =>
@@ -164,6 +170,17 @@ class BsvSessionReviewCard extends HTMLElement {
           <div id="flow"></div>` : ""}
       </ha-card>`;
     const $ = selector => this.shadowRoot.querySelector(selector);
+    if($("#owner-actions")){
+      if(!this._ownerActions){
+        this._ownerActions=document.createElement("bsv-owner-actions-card");this._ownerActions.setConfig(c);
+        this._ownerActions.addEventListener("open-saved-review",async e=>{
+          await this.action("session_review_status",{review_id:e.detail.review_id});
+          this.shadowRoot.querySelector("#flow")?.scrollIntoView({behavior:"smooth",block:"center"});
+        });
+      }
+      this._ownerActions.hass=h;$("#owner-actions").append(this._ownerActions);
+      if(ownerFocus){ownerFocus.focus({preventScroll:true});if(ownerSelection)ownerFocus.setSelectionRange(...ownerSelection);}
+    }
     if($("#stop-credits")) $("#stop-credits").onclick=()=>{
       if(confirm("Stop new automatic credits? Submitted payments will still be reconciled. Re-enabling requires new invitations."))this.action("configure_automatic_credit",{enabled:false});
     };

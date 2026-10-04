@@ -93,6 +93,9 @@ window.fetch=async(url,options)=>{
 };
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
+const previewNav=document.createElement("p");
+previewNav.innerHTML='<a href="../owner-actions.html">Owner credits preview</a> · <a href="../recovery/index.html?scenario=closed">Session page preview</a>';
+banner.append(previewNav);
 banner.style.cssText="max-width:1012px;width:calc(100% - 32px);margin:16px auto";
 document.querySelector("header").after(banner);
 await import("./portal.js");

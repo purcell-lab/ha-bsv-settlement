@@ -14,12 +14,12 @@
   </ol>
   <p id="status" class="notice" role="status" aria-live="polite">Open the private session link supplied by your charging operator.</p>
   <p id="connection-status" class="notice error" role="status" hidden></p>
-  <section id="session-reference" hidden aria-label="Approval and session identifiers">
+  <details id="session-reference" hidden aria-label="Approval and session identifiers"><summary>Approval and session references</summary>
     <p id="approval-scope-reference" class="eyebrow"></p>
     <dl><dt>Approval ID</dt><dd id="approval-reference" class="mono"></dd>
       <dt>Session ID</dt><dd id="session-reference-id" class="mono"></dd>
       <dt>Proxy transaction ID</dt><dd id="transaction-reference-id" class="mono"></dd></dl>
-  </section>
+  </details>
   <section id="load-section">
     <div id="public-enrolment">
       <h2 class="icon-heading"><i data-lucide="qr-code" aria-hidden="true"></i>New driver</h2>
@@ -53,7 +53,7 @@
         <details><summary>Transaction details</summary><p id="collection-txid" class="mono"></p><a id="collection-chain-link" target="_blank" rel="noopener noreferrer" hidden>View chain-provider record</a><p class="small">Confirmation is reported by the chain provider. It is not independent proof of finality.</p></details>
       </section>
       <section id="ongoing-section" hidden>
-        <div class="section-head"><h2>Your ongoing credits</h2><span class="badge">Operator funded</span></div>
+        <div class="section-head"><h2>Other credits under this registration</h2><span class="badge">Operator funded</span></div>
         <p class="small">These credits use the operator's ongoing payment policy, not an extension of your spending approval. Each session has its own payment record.</p>
         <p class="small">Credits are already sent when confirmed below. Opening this page in your registered BSV wallet syncs their receipts. Wallet permission prompts may still appear. Sync does not send a payment or approve spending.</p>
         <div id="ongoing-list"></div><button id="receive-ongoing" class="wide">Sync confirmed credits to wallet</button>
@@ -72,7 +72,7 @@
           <p><strong>Sell (Export/ V2G) rate:</strong> your wallet is credited for energy imported from the EV, except when this rate is negative. A negative rate debits your wallet.</p>
           <p>Zero rates add no energy cost. All intervals combine into one final net debit or credit. Current rates are not a fixed quote for your session.</p>
         </details>
-        <details><summary>Session and pricing details</summary><dl><dt>Session</dt><dd id="session" class="mono"></dd><dt>Proxy transaction ID</dt><dd id="transaction" class="mono"></dd><dt>Pricing rule</dt><dd id="pricing"></dd><dt>Account scope</dt><dd id="scope"></dd></dl></details>
+        <details><summary>Pricing rule and account scope</summary><dl><dt hidden>Session</dt><dd id="session" class="mono" hidden></dd><dt hidden>Proxy transaction ID</dt><dd id="transaction" class="mono" hidden></dd><dt>Pricing rule</dt><dd id="pricing"></dd><dt>Account scope</dt><dd id="scope"></dd></dl></details>
       </section>
     </div>
     <div class="action-column">
@@ -80,7 +80,7 @@
         <h2 class="icon-heading"><i data-lucide="qr-code" aria-hidden="true"></i>Your private session link</h2>
         <p class="small">Scan with your phone camera or a URL scanner, then open the link in BSV Browser. This opens this same session page; it does not approve spending.</p>
         <div id="private-link-qr" class="session-link-qr"></div>
-        <p class="small">Keep this QR private. For BSV Browser's <strong>Connect to app</strong> scanner, use the separate pairing QR from <strong>Connect BSV Browser</strong> below.</p>
+        <p class="small">Keep this QR private. For BSV Browser's <strong>Connect to app</strong> scanner, select <strong>Connect BSV Browser</strong> at the top of this page.</p>
       </section>
       <section id="pairing-section" hidden>
         <p class="eyebrow">Connect your phone wallet</p>

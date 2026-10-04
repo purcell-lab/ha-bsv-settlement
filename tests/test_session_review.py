@@ -66,6 +66,10 @@ async def test_request_freezes_terms_rate_and_binding_without_broadcast(tmp_path
         assert review["amount_sats"] == 189 and review["state"] == "awaiting_account_approval"
         assert digest(review["frozen_terms"]) == review["terms_hash"]
         assert review["payment_request"] is None
+        summary = api.payment_summary()
+        assert summary[0]["review_id"] == review["review_id"]
+        assert summary[0]["session_id"] == "session-1"
+        assert "terms_hash" not in summary[0] and "recipient_address" not in summary[0]
         hass.states.async_set("sensor.demo_rate", "200", {"unit_of_measurement": "sat/AUD"})
         same = await api.reviews.execute("prepare_session_review", prepare_data(), "admin")
         assert same["amount_sats"] == 189 and same["review_id"] == review["review_id"]

@@ -12,7 +12,8 @@ banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or paymen
 <option value="ongoing">Reviewed collection with a separate ongoing session</option>
 <option value="reservation">Unbound future reservation with ongoing credits</option>
 <option value="offline">Status connection interrupted</option></select>
-<p class="small">Changing the scenario reloads this fixture only. The real page polls every 30 seconds.</p>`;
+<p class="small">Changing the scenario reloads this fixture only. The real page polls every 30 seconds.</p>
+<p><a href="../owner-actions.html">Owner credits preview</a> · <a href="../portal/index.html">Driver portal preview</a></p>`;
 document.querySelector("main").prepend(banner);
 const mode=new URLSearchParams(location.search).get("scenario")||"unconfirmed";
 const select=document.getElementById("preview-mode");select.value=mode;
