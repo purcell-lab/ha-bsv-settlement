@@ -114,6 +114,7 @@ ha-icon{--mdc-icon-size:22px}.steps{display:flex;gap:12px;list-style:none;paddin
         .notice{padding:10px;border:1px solid var(--divider-color,#ccc);border-radius:6px}
         .qr{max-width:220px;margin:16px auto;background:#fff;line-height:0}.qr svg{width:100%;height:auto}
         textarea{min-height:130px;font-size:12px}.divider{border-top:1px solid var(--divider-color,#ddd);margin:20px 0}
+        #owner-actions{border-top:1px solid var(--divider-color,#ddd);margin-top:24px;padding-top:24px}
         .table-scroll{overflow-x:auto;margin-top:16px}table{border-collapse:collapse;width:100%;min-width:780px;font-size:13px}
         th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--divider-color,#ddd);line-height:1.5}
         thead th{background:var(--secondary-background-color,#f1f5f7);font-weight:600}td:last-child{min-width:220px}
