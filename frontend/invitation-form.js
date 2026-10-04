@@ -1,4 +1,5 @@
 export const invitationDefaults={total:1000,fee:1000,minutes:720};
+export const futureInvitationDefaults={...invitationDefaults,scope:"multi",minutes:10080,multi:true};
 export function validateInvitationLimits({total,fee,minutes,multi=false}){
   for(const [value,min,max] of [[total,1,100000],[fee,0,1000],[minutes,1,multi?10080:1440]]){
     if(value===""||!Number.isInteger(Number(value))||Number(value)<min||Number(value)>max)
@@ -9,6 +10,7 @@ export function validateInvitationLimits({total,fee,minutes,multi=false}){
 }
 export function sameInvitationScope(budget,scope,session){
   if(!budget||budget.binding||["revoked","expired"].includes(budget.state))return false;
+  if(scope==="multi"&&budget.multi_session?.error==="A newer driver registration ended this approval")return false;
   return scope==="multi" ? budget.terms.version===3&&budget.terms.session_mode==="multi_session" :
     scope==="current" ? budget.terms.session_mode==="existing_session"&&
     budget.terms.session_id===session?.session_id : budget.terms.session_mode==="next_session_reservation";

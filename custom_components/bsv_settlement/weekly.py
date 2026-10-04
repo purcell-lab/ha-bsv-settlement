@@ -13,7 +13,8 @@ from bsv import PrivateKey, PublicKey
 from .api import WalletError
 from .budget import canonical, message_hash, sha, approval_payload, SPENDING_STATE
 from .const import DOMAIN
-from .session_review import now, account_snapshot, decimal
+from .session_review import now, account_snapshot, decimal, digest
+from decimal import ROUND_HALF_UP
 
 SCOPE = "multi_session_aggregate_spending_until_expiry_or_new_driver"
 DAYS = 7
@@ -21,6 +22,60 @@ DAYS = 7
 
 def weekly_terms(terms):
     return terms.get("version") == 3 and terms.get("scope") == SCOPE
+
+
+def initial_session(api, proxy_id, sid, rate, maximum):
+    """Explicit named current account only, without changing any prior owner."""
+    proxy = api.hass.data[DOMAIN][proxy_id]
+    record = (proxy.data or {}).get("latest_session")
+    if not record or record["session_id"] != sid:
+        raise WalletError("The current session changed; select it again")
+    if datetime.fromisoformat(record["opened_at"]) > now():
+        raise WalletError("Current session start is in the future")
+    key = proxy_id + "|" + sid
+    if any(key in api.saved.get(index, {}) for index in (
+            "driver_collection_index", "automatic_credit_index",
+            "session_review_index", "closed_sessions")):
+        raise WalletError("The current session already has a settlement owner; reconcile it")
+    for row in api.saved["session_budgets"].values():
+        if (row["proxy_config_entry_id"] == proxy_id
+                and api.collections.session_id(row) == sid
+                and api.budgets.public(row)["state"] not in ("expired", "revoked")):
+            raise WalletError("The current session already has an invitation; reconcile it")
+    result = {"session_id": sid, "transaction_id": record["ocpp_transaction_id"],
+              "opened_at": record["opened_at"], "account": None, "amount_sats": None}
+    if record.get("ended_at"):
+        account = account_snapshot(record)
+        if datetime.fromisoformat(account["ended_at"]) > now():
+            raise WalletError("Current session end is in the future")
+        amount = int((decimal(account["net_amount_aud"]) * rate).quantize(
+            decimal("1"), rounding=ROUND_HALF_UP))
+        if amount >= maximum:
+            raise WalletError("Shared limit must cover the current charge plus fee headroom")
+        result.update(account=account, amount_sats=amount)
+    return result
+
+
+def superseded_registration(api, parent):
+    """Allow a fresh invitation, never revive or modify the former mandate."""
+    if not weekly_terms(parent["terms"]) or not parent.get("credit_destination"):
+        return False
+    try:
+        verify_parent(api, parent, active=False)
+        original = api.ongoing_credits.verified_registration(parent)
+        registered = datetime.fromisoformat(original["registered_at"])
+        rows = [row for row in api.saved["session_budgets"].values()
+                if row is not parent and not row.get("weekly_parent_id")
+                and row["proxy_config_entry_id"] == parent["proxy_config_entry_id"]
+                and row.get("credit_destination")]
+        if rows:
+            selected = max(rows, key=lambda row: datetime.fromisoformat(
+                row["credit_destination"]["registered_at"]))
+            newer = api.ongoing_credits.verified_registration(selected)
+            return datetime.fromisoformat(newer["registered_at"]) > registered
+    except (WalletError, KeyError, TypeError, ValueError):
+        return False
+    return False
 
 
 def children(api, parent):
@@ -87,6 +142,11 @@ def guard_child(api, child):
         raise WalletError("Original aggregate approval is unavailable")
     verify_parent(api, parent)
     p, t = parent["terms"], child["terms"]
+    initial = p.get("included_session")
+    is_initial = initial and t["session_id"] == initial["session_id"]
+    expected_review = initial_review(initial, p) if is_initial else None
+    if t.get("closed_session_review") != expected_review:
+        raise WalletError("Included current-session account changed")
     if (t.get("version") != 2 or t.get("session_mode") != "existing_session"
             or child["proxy_config_entry_id"] != parent["proxy_config_entry_id"]
             or t.get("weekly_parent_hash") != sha(parent["invitation"]["payload"])
@@ -149,10 +209,17 @@ async def ticket(api, parent, session_id):
     if not record:
         raise WalletError("Session is not retained")
     account = account_snapshot(record)
+    initial = parent["terms"].get("included_session")
+    included = initial and session_id == initial["session_id"]
+    if included and (record["opened_at"] != initial["opened_at"]
+            or record["ocpp_transaction_id"] != initial["transaction_id"]
+            or initial["account"] is not None and digest(account) != digest(initial["account"])):
+        raise WalletError("The signed current-session account changed")
     start = datetime.fromisoformat(record["opened_at"])
     registered = datetime.fromisoformat(parent["credit_destination"]["registered_at"])
     expiry = datetime.fromisoformat(parent["terms"]["expires_at"])
-    if not registered <= start < datetime.fromisoformat(account["ended_at"]) <= now() < expiry:
+    if not ((included or registered <= start)
+            and start < datetime.fromisoformat(account["ended_at"]) <= now() < expiry):
         raise WalletError("Session or collection is outside the signed multi-session window")
     if decimal(account["net_amount_aud"]) <= 0:
         raise WalletError("This account is not a driver charge; use the separate credit or zero-balance flow")
@@ -176,6 +243,9 @@ async def ticket(api, parent, session_id):
     # The browser verifies parent scope separately before consuming this ticket.
     t["created_at"] = now().isoformat()
     t.pop("credit_receiving", None)
+    t.pop("included_session", None)
+    if included and initial["account"] is not None:
+        t["closed_session_review"] = initial_review(initial, p)
     t["payment_authority"] = payment_authority(t)
     payload = canonical(t)
     operator = PrivateKey(bytes.fromhex(api.identity["secret_hex"]))
@@ -207,5 +277,15 @@ async def candidates(api, parent):
              "ended_at": r.get("ended_at"), "net_cost_aud": r.get("net_cost_aud"),
              "state":(mapped.get(r["session_id"]) or {}).get("state","not_quoted")}
             for r in sorted(records.values(),key=lambda r:r["opened_at"])
-            if registered <= datetime.fromisoformat(r["opened_at"]) < expiry
+            if (registered <= datetime.fromisoformat(r["opened_at"]) < expiry
+                or r["session_id"] == (parent["terms"].get("included_session") or {}).get("session_id"))
             and r.get("ended_at") and r.get("net_cost_aud") is not None and decimal(r["net_cost_aud"]) > 0]
+
+
+def initial_review(initial, terms):
+    if not initial or initial["account"] is None:
+        return None
+    return {"account": copy.deepcopy(initial["account"]), "accepted_flags": [],
+            "reason": "Explicit current account included in the fresh aggregate approval",
+            "reviewed_at": terms["created_at"], "amount_sats": initial["amount_sats"],
+            "satoshis_per_aud": terms["satoshis_per_aud"]}

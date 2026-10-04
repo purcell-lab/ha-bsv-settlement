@@ -3,6 +3,7 @@ import { parseInvitation, signConsent,derivedInvitation } from "./model.js";
 import { collectOnce } from "./collection.js";
 import { registerCredit, importAndReportCredit, receiptReported } from "./credit.js";
 import { ReceiptSync } from "./receipt-sync.js";
+import {sessionReference} from "./session-reference.js";
 import { driverView, showOngoingOverview, ongoingCreditMessage } from "./view.js";
 import { BrowserPairing } from "./pairing.js";
 import qrcode from "qrcode-generator";
@@ -215,6 +216,14 @@ function controls() {
     state:collectionState,credit:creditDirection,creditEnabled,closedSession:!!checked?.terms.closed_session_review,
     imported:importedCredits.has(latestTxid),hasInvitation:!!checked});
   $("page-title").textContent=view.title;$("page-subtitle").textContent=view.subtitle;
+  const reference=sessionReference(checked?.terms,binding,selectedSession);
+  $("session-reference").hidden=!reference;
+  if(reference){
+    $("approval-reference").textContent=reference.approval;
+    $("session-reference-id").textContent=reference.session;
+    $("transaction-reference-id").textContent=reference.transaction;
+    $("approval-scope-reference").textContent=reference.scope;
+  }
   if(!capability&&!checked&&publicQRReady){
     $("page-title").textContent="Ready for the next driver";
     $("page-subtitle").textContent="Scan the invitation to review the rates and authorise your EV charging budget.";
@@ -311,7 +320,15 @@ function show(invitation) {
   if(t.closed_session_review)$("approval-terms").textContent=
     `You authorise one payment of ${t.closed_session_review.amount_sats} sat for this completed account, plus the actual fee, up to ${t.max_total_sats} sat total. Review the warnings above. The operator's explanation is not independent validation of the meter. This approval does not authorise another session or change your receiving wallet.`;
   if(t.version===3){
-    $("approval-terms").textContent=`You authorise collection for multiple future sessions on this charger, up to ${t.max_total_sats} sat TOTAL including all network fees, until ${t.expires_at} or a newer driver registration. No per-session reset. Operator credits do not replenish this allowance. Collection still needs the driver wallet available; this is not a funds reservation or offline payment guarantee.`;
+    $("approval-terms").textContent=`You authorise collection for ${t.included_session?"the named current session and ":""}multiple future sessions on this charger, up to ${t.max_total_sats} sat TOTAL including all network fees, until ${t.expires_at} or a newer driver registration. No per-session reset. Operator credits do not replenish this allowance. Collection still needs the driver wallet available; this is not a funds reservation or offline payment guarantee.`;
+    if(t.included_session){
+      const i=t.included_session,a=i.account;
+      $("closed-account").hidden=false;
+      $("closed-account").textContent=`Included current session: ${i.transaction_id}. This includes energy recorded before you approve. `+
+        (a?`Energy Imported to EV: ${a.import_kwh} kWh. Energy Imported from EV: ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud} (${i.amount_sats} sat, before any fee). Metering warnings: ${(a.quality_flags||[]).join(", ")||"none"}. `:
+          "This session is still open. The final account will be calculated after it ends. ")+
+        "Its charge and fee share the weekly total. Approval may collect an already-completed charge immediately. Credits use the separate operator policy and do not refill the budget.";
+    }
     $("credit-policy").textContent="Receiving registration covers eligible credits for multiple sessions during this approval window, ending earlier on a newer driver registration. Operator funding and separate per-credit caps still apply. No cumulative operator-credit cap is implied.";
   }
   $("credit-status").hidden=!!t.closed_session_review;

@@ -8,7 +8,21 @@ test("weekly limit is explicit and single-session duration stays unchanged",()=>
  assert.equal(sameInvitationScope(row,"next"),false);
 });
 import assert from "node:assert/strict";
-import {invitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
+import {invitationDefaults,futureInvitationDefaults,validateInvitationLimits,sameInvitationScope,pendingReplacement} from "./invitation-form.js";
+test("new future invitations default to seven days without changing single-session terms",()=>{
+ assert.equal(futureInvitationDefaults.scope,"multi");
+ assert.equal(futureInvitationDefaults.minutes,10080);
+ assert.equal(futureInvitationDefaults.total,1000);
+ assert.equal(validateInvitationLimits(futureInvitationDefaults),"");
+ assert.equal(invitationDefaults.minutes,720);
+});
+test("superseded weekly approval does not disable a fresh invitation form",()=>{
+ const row={state:"spending_authorised_wallet_permission_required",
+   terms:{version:3,session_mode:"multi_session"},
+   multi_session:{error:"A newer driver registration ended this approval"}};
+ assert.equal(sameInvitationScope(row,"multi"),false);
+ assert.equal(sameInvitationScope({...row,multi_session:{error:null}},"multi"),true);
+});
 test("default fee cap is 1000 within an unchanged 1000 total",()=>{
  assert.equal(invitationDefaults.fee,1000);assert.equal(invitationDefaults.total,1000);
  assert.equal(validateInvitationLimits(invitationDefaults),"");

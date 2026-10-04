@@ -77,6 +77,7 @@ async def manage(api, row, action, data, user_id):
         if (row["terms"]["budget_id"] != api.saved.get("latest_session_budget")
                 or row["terms"].get("version") != 3
                 or row["terms"].get("session_mode") != "multi_session"
+                or row["terms"].get("included_session")
                 or row.get("binding") or row.get("receipt") or row.get("credit_destination")
                 or api.budgets.public(row)["state"] != "awaiting_driver_consent"):
             raise WalletError("Create a fresh unapproved multi-session invitation first")
@@ -110,6 +111,7 @@ async def manage(api, row, action, data, user_id):
 def available(api):
     row = api.saved["session_budgets"].get(api.saved.get("latest_session_budget"))
     if (not row or row.get("receipt") or row.get("credit_destination")
+            or row["terms"].get("included_session")
             or api.budgets.public(row)["state"] != "awaiting_driver_consent"
             or row["terms"].get("session_mode") not in ("next_session_reservation","multi_session")):
         return None

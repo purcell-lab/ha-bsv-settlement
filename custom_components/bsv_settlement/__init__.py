@@ -128,6 +128,7 @@ async def async_setup(hass, config):
             vol.Optional("expected_invitation_hash"): str,
             vol.Optional("confirm_replace_pending"): vol.In([True]),
             vol.Optional("multi_session",default=False): bool,
+            vol.Optional("initial_session_id"): vol.All(str,vol.Length(min=1,max=200)),
             vol.Optional("valid_minutes"): vol.All(int, vol.Range(min=1, max=10080))},
         "bind_session_budget": {
             **common, vol.Required("budget_id"): str, vol.Required("session_id"): str,

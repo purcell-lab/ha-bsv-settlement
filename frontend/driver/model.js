@@ -31,7 +31,9 @@ export const paymentAuthority = t => ({
   charger_control: false,
   ...(t.version===3?{trigger:"each_closed_session_opened_after_receiving_registration",
     max_payments:null,aggregate_limit:true,terminates_on_new_driver_registration:true,
-    credits_replenish_budget:false,receiving_expires_at:t.expires_at}:{})
+    credits_replenish_budget:false,receiving_expires_at:t.expires_at,
+    ...(t.included_session?{trigger:"explicit_current_session_and_future_sessions_after_registration",
+      included_session_id:t.included_session.session_id}:{})}:{})
 });
 export function parseInvitation(text, clock = Date.now(), allowExpired = false) {
   if (text.length > 20000) throw Error("The invitation is too large.");
@@ -58,6 +60,19 @@ export function parseInvitation(text, clock = Date.now(), allowExpired = false) 
       typeof t.import_price_entity !== "string" || typeof t.export_price_entity !== "string" ||
       typeof t.account_scope !== "string") throw Error("Invalid or expired session terms.");
   const operator = PublicKey.fromString(t.operator_identity);
+  if(t.included_session){
+    const i=t.included_session,a=i.account;
+    if(t.version!==3 || typeof i.session_id!=="string" || !i.session_id ||
+       typeof i.transaction_id!=="string" || !i.transaction_id ||
+       !Number.isFinite(Date.parse(i.opened_at)) || Date.parse(i.opened_at)>Date.parse(t.created_at) ||
+       (a!==null && (!a || a.session_id!==i.session_id || a.ocpp_transaction_id!==i.transaction_id ||
+         a.opened_at!==i.opened_at || !Number.isFinite(Date.parse(a.ended_at)) ||
+         Date.parse(a.ended_at)>Date.parse(t.created_at) || a.currency!=="AUD" ||
+         !Number.isSafeInteger(i.amount_sats) || i.amount_sats>=t.max_total_sats ||
+         ![a.import_kwh,a.export_kwh,a.net_amount_aud].every(v=>v!==null&&v!==""&&Number.isFinite(Number(v))) ||
+         Number(a.import_kwh)<0 || Number(a.export_kwh)<0)) ||
+       (a===null && i.amount_sats!==null))throw Error("Invalid included current session.");
+  }
   if(t.closed_session_review){
     const c=t.closed_session_review,a=c.account;
     if(!a || t.session_mode!=="existing_session" || a.currency!=="AUD" ||
@@ -94,7 +109,7 @@ export async function signConsent(wallet, checked, identity) {
   const { signature } = await wallet.createSignature({
     protocolID: spendingProtocol, keyID: terms.budget_id, counterparty: "anyone",
     data: bytes(payload),
-    description: terms.version===3?`Approve multiple EV sessions: ${terms.max_total_sats} sat TOTAL including all fees until ${terms.expires_at} or a new driver registers. Credits do not replenish allowance.`:
+    description: terms.version===3?`Approve multiple EV sessions${terms.included_session?` including current ${terms.included_session.transaction_id}`:""}: ${terms.max_total_sats} sat TOTAL including all fees until ${terms.expires_at} or a new driver registers. Credits do not replenish allowance.`:
       `Approve one final EV session debit up to ${terms.max_total_sats} sat including fees (fee cap ${terms.max_fee_sats} sat).`
   });
   const key = new KeyDeriver("anyone").derivePublicKey(spendingProtocol, terms.budget_id, identity);
@@ -106,6 +121,12 @@ export async function signConsent(wallet, checked, identity) {
 export async function derivedInvitation(invitation,parent,sessionId){
   parseInvitation(JSON.stringify(parent.invitation));
   const checked=parseInvitation(JSON.stringify(invitation)),t=checked.terms,p=parent.terms;
+  const initial=p.included_session?.session_id===sessionId?p.included_session:null;
+  if(initial?.account){
+    if(canonical(t.closed_session_review?.account)!==canonical(initial.account) ||
+       t.closed_session_review?.amount_sats!==initial.amount_sats)
+      throw Error("Current-session ticket differs from the approved account.");
+  }else if(t.closed_session_review)throw Error("Unexpected historical account on this ticket.");
   if(p.version!==3||t.version!==2||t.weekly_parent_hash!==await hash(parent.invitation.payload)||
     t.session_id!==sessionId||t.session_mode!=="existing_session"||
     t.expires_at!==p.expires_at||t.max_total_sats>p.max_total_sats||t.max_fee_sats>p.max_fee_sats||
