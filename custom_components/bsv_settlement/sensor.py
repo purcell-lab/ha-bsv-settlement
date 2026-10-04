@@ -189,8 +189,51 @@ class RecorderReadinessSensor(OCPPShadowSensor):
                     "retained_count", "results_trimmed", "pending_count", "lifetime_totals")}}
 
 
+# Wallet health fields small enough to record on every update.
+WALLET_SUMMARY_KEYS = (
+    "mode", "network", "backend", "broadcast_enabled", "balance_verified",
+    "budget_gate_implemented", "driver_wallet_external", "last_self_test",
+    "receive_address", "operator_public_key", "driver_identity_status",
+    "chain_checked_at", "chain_error", "balance_source", "last_payment",
+    "chain_attempted_at", "pending_change_sats", "pending_change_source",
+    "max_payment_sats", "max_fee_sats")
+# Ledger-sized fields the dashboard cards read from the live state. Together
+# they reach ~50 KB on a live mainnet wallet, past the recorder's 16 KB
+# attribute limit, so they are kept out of the recorder (history keeps the
+# compact counts from wallet_summary instead).
+WALLET_DETAIL_KEYS = (
+    "driver_approvals", "session_payments", "ongoing_credit", "closed_sessions",
+    "latest_session_review", "automatic_credit")
+BALANCE_KEYS = (
+    "mode", "network", "backend", "balance_verified", "balance_source",
+    "chain_checked_at", "chain_attempted_at", "chain_error",
+    "pending_change_sats", "pending_change_source")
+
+
+def _count(value, key=None):
+    if key is not None:
+        value = value.get(key) if isinstance(value, dict) else None
+    return len(value) if isinstance(value, (list, tuple)) else None
+
+
+def wallet_summary(health):
+    """Recorded counts and flags standing in for the unrecorded ledger fields."""
+    ongoing = health.get("ongoing_credit")
+    automatic = health.get("automatic_credit")
+    return {
+        "driver_approval_count": _count(health.get("driver_approvals")),
+        "session_payment_count": _count(health.get("session_payments")),
+        "closed_session_count": _count(health.get("closed_sessions")),
+        "ongoing_credit_session_count": _count(ongoing, "sessions"),
+        "ongoing_credit_effective": ongoing.get("effective") if isinstance(ongoing, dict) else None,
+        "automatic_credit_enabled": automatic.get("enabled") if isinstance(automatic, dict) else None,
+        "automatic_credit_payment_count": _count(automatic, "payments"),
+    }
+
+
 class SettlementSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset(WALLET_DETAIL_KEYS)
 
     def __init__(self, coordinator, entry, key, name, unit):
         super().__init__(coordinator)
@@ -238,16 +281,13 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        if self.key in ("operator_wallet_status", "confirmed_wallet_balance"):
+        if self.key == "operator_wallet_status":
             health = (self.coordinator.data or {}).get("health", {})
-            return {key: health.get(key) for key in (
-                "mode", "network", "backend", "broadcast_enabled", "balance_verified",
-                "budget_gate_implemented", "driver_wallet_external", "last_self_test",
-                "receive_address", "operator_public_key", "driver_identity_status",
-                "chain_checked_at", "chain_error", "balance_source", "last_payment",
-                "chain_attempted_at", "pending_change_sats", "pending_change_source",
-                "driver_approvals", "session_payments", "ongoing_credit", "closed_sessions",
-                "max_payment_sats", "max_fee_sats", "latest_session_review", "automatic_credit")}
+            return {**{key: health.get(key) for key in (*WALLET_SUMMARY_KEYS, *WALLET_DETAIL_KEYS)},
+                    **wallet_summary(health)}
+        if self.key == "confirmed_wallet_balance":
+            health = (self.coordinator.data or {}).get("health", {})
+            return {key: health.get(key) for key in BALANCE_KEYS}
         remote = self.session.get("remote", {})
         return {"mode": self.coordinator.mode, "session_id": self.session.get("session_id"),
                 "settlement_id": remote.get("settlement_id"),
