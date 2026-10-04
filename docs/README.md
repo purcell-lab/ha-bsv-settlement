@@ -7,6 +7,8 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
+  integration evidence and guarded Legacy Sigenergy / OCPP source selection.
 - **[Driver portal](driver-portal.md):** static wallet sign-in and owned session
   history; portal authentication is not spending authority.
 - **[Driver collection assurance](driver-collection-assurance.md):** restart
