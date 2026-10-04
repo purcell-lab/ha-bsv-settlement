@@ -268,7 +268,7 @@ async def test_coordinator_store_sensors_and_no_actions(tmp_path):
         await coord.close()
         coord = OCPPShadowCoordinator(hass, entry)
         await coord.load()
-        assert coord.ledger.data["schema"] == 2
+        assert coord.ledger.data["schema"] == 3
         er.async_get(hass).async_update_entity(sources["import"], new_unique_id="ocpp.other.energy_active_import_register.sensor")
         coord.observe()
         assert coord.summary()["state"] == "incompatible"
@@ -350,13 +350,57 @@ async def test_rejected_store_is_not_saved_or_subscribed(tmp_path):
         await hass.async_stop(force=True)
 
 
-@pytest.mark.asyncio
-async def test_payment_source_rejects_shadow_before_reading_records():
-    shadow = SimpleNamespace(mode="ocpp_import_shadow", async_request_refresh=AsyncMock())
-    hass = SimpleNamespace(data={"bsv_settlement": {"shadow": shadow}})
-    # Test the existing financial source boundary, not a duplicate shadow guard.
+def shadow_with_export_span():
+    """A loaded observer whose summary carries graded export evidence."""
+    span = {"span_id": "ocpp-export-shadow-x", "session_id": "any-span",
+            "estimate_kwh": "1.307", "grade": "unreliable", "billing_eligible": False}
+    data = {"mode": "ocpp_import_shadow", "latest_session": None,
+            "export_shadow": {"last_span": span, "current_span": None}}
+    return SimpleNamespace(mode="ocpp_import_shadow", async_request_refresh=AsyncMock(),
+                           data=data, archive=[span], sources={"import": "sensor.synthetic"})
+
+
+async def gate_session_review(api, hass):
     reviews = object.__new__(SessionReviews)
     reviews.hass = hass
+    await reviews.source("shadow", "any-span")
+
+
+async def gate_collection(api, hass):
+    from custom_components.bsv_settlement.collection import DriverCollections
+    await DriverCollections(api).source({
+        "proxy_config_entry_id": "shadow", "terms": {"session_id": "any-span"}})
+
+
+async def gate_session_closure(api, hass):
+    from custom_components.bsv_settlement.session_closure import ClosedSessions
+    await ClosedSessions(api).inspect({"proxy_config_entry_id": "shadow", "session_id": "any-span"})
+
+
+async def gate_budget_create(api, hass):
+    from custom_components.bsv_settlement.budget import SessionBudgets
+    await SessionBudgets(api).create({"proxy_config_entry_id": "shadow"}, "admin")
+
+
+async def gate_ongoing_credit(api, hass):
+    from custom_components.bsv_settlement.ongoing_credit import OngoingCredits
+    credits = object.__new__(OngoingCredits)
+    credits.api = api
+    await credits.configure({"enabled": True, "confirm_ongoing_mainnet_credits": True,
+                             "proxy_config_entry_id": "shadow"}, "admin")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gate", [gate_session_review, gate_collection, gate_session_closure,
+                                  gate_budget_create, gate_ongoing_credit])
+async def test_payment_source_rejects_shadow_before_reading_records(gate):
+    shadow = shadow_with_export_span()
+    hass = SimpleNamespace(data={"bsv_settlement": {"shadow": shadow}})
+    api = SimpleNamespace(hass=hass, saved={"ongoing_credit_policy": {}},
+                          auto_credits=SimpleNamespace(policy={"enabled": True}))
+    # Test the existing financial source boundaries, not a duplicate shadow guard:
+    # import or export shadow evidence never becomes a payment record.
     with pytest.raises(WalletError, match="recorder"):
-        await reviews.source("shadow", "any-span")
+        await gate(api, hass)
     shadow.async_request_refresh.assert_not_called()
+    assert api.saved["ongoing_credit_policy"] == {}

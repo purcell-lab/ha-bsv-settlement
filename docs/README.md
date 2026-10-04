@@ -58,7 +58,9 @@ The design document describes the target interface. The implementation deliberat
 
 The opt-in [OCPP import shadow adapter](ocpp-import-shadow.md) records partial
 entity-observed import spans without payment ownership or charger control.
-With the purcell-lab OCPP fork it also records context and protocol provenance.
+With the purcell-lab OCPP fork it also records context and protocol provenance,
+and an optional [OCPP export shadow](ocpp-export-shadow.md) grades derived export
+spans by bound spread, diagnostic only.
 It does not implement the native settlement recorder or source selector.
 
 Prioritise recovery, confirmation reassessment, real-wallet compatibility and

@@ -9,7 +9,7 @@ from decimal import Decimal, DecimalException
 import hashlib
 import json
 
-SCHEMA = 2
+SCHEMA = 3
 MAX_EVENTS = 1000
 MAX_SPANS = 50
 MAX_AGE_SECONDS = 180
@@ -102,10 +102,20 @@ def provenance_flags(snapshot):
 
 
 def migrate(saved):
-    """Schema 1 -> 2: keep every record; old spans get explicit unknown provenance."""
-    if not isinstance(saved, dict) or saved.get("schema") != 1:
+    """Schema 1 -> 2 -> 3 without dropping records.
+
+    1 -> 2: old spans get explicit unknown provenance.
+    2 -> 3: an empty ``export`` section (export shadow not yet observed).
+    ``migrated_from_schema`` keeps the oldest schema this store came from.
+    """
+    if not isinstance(saved, dict) or saved.get("schema") not in (1, 2):
         return saved
     result = deepcopy(saved)
+    if result["schema"] == 2:
+        result["schema"] = SCHEMA
+        result.setdefault("migrated_from_schema", 2)
+        result["export"] = None
+        return result
     unknown = provenance({}, None)
     for span in [*result.get("spans", []), *([result["current"]] if result.get("current") else [])]:
         if isinstance(span, dict):
@@ -113,9 +123,9 @@ def migrate(saved):
             span.setdefault("provenance_flags", sorted(
                 provenance_flags(unknown) | {"provenance_not_recorded"}))
             span.setdefault("provenance_changed", False)
-    result["schema"] = SCHEMA
+    result["schema"] = 2
     result["migrated_from_schema"] = 1
-    return result
+    return migrate(result)
 
 
 def transaction(value):
@@ -132,7 +142,7 @@ class ImportShadowLedger:
         self.binding = deepcopy(binding)
         self.data = {"schema": SCHEMA, "binding": deepcopy(binding), "sequence": 0,
                      "events": [], "spans": [], "current": None,
-                     "journal_trimmed": False, "spans_trimmed": False}
+                     "journal_trimmed": False, "spans_trimmed": False, "export": None}
         if saved is not None:
             # Validate before installing state; never rewrite an unknown schema.
             saved = migrate(saved)
@@ -145,8 +155,13 @@ class ImportShadowLedger:
                     or len(saved["spans"]) > MAX_SPANS
                     or "current" not in saved
                     or type(saved.get("journal_trimmed")) is not bool
-                    or type(saved.get("spans_trimmed")) is not bool):
+                    or type(saved.get("spans_trimmed")) is not bool
+                    or "export" not in saved):
                 raise ValueError("Invalid or incompatible OCPP shadow store")
+            if saved["export"] is not None:
+                # The export section shares this store; validate it before any rewrite.
+                from .ocpp_export_shadow_ledger import validate_section
+                validate_section(saved["export"])
             for row in saved["events"]:
                 if not isinstance(row, dict) or not isinstance(row.get("kind"), str):
                     raise ValueError("Invalid OCPP shadow journal")
