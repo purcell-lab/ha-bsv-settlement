@@ -7,6 +7,21 @@ The operator's Owner credits and Driver credits panels both offer two preparatio
 
 These create separate real-value manual accounts, not charging sessions and not simulated transfers. Pressing either button freezes an account for review; it never signs or broadcasts. Measured energy, charger state, existing session accounts and charging-budget authority are unchanged.
 
+## Main Status card: one-click payments
+
+The main Status card also has **Credit 5 kWh export** and **Debit 5 kWh import** buttons. Unlike the preparation controls above, these invoke `pay_energy_adjustment`. The administrator's click authorises one immediate attempt at the current valid tariff, for the current verified registered driver. There is no second operator review dialog.
+
+- Operator-to-driver: freeze the separate account, quote the network fee, sign and submit within the existing 1,000 sat payment-plus-fee limit.
+- Driver-to-operator: issue the separate manual payment request immediately. This does not collect funds; the driver must approve and pay from their wallet. Charging-session budgets do not authorise unrelated adjustments.
+- Negative tariffs reverse those paths. Submission is labelled “Awaiting block confirmation”, not confirmed or wallet-accepted.
+- Missing/stale tariffs, expired or invalid registration, insufficient funds and invalid fee quotes still block sending. A pre-existing manual, failed or uncertain adjustment is returned for inspection, never silently adopted or retried.
+
+Request UUIDs persist in browser storage across reloads without storing keys, addresses or private links. Storage failure blocks the action. Duplicate clicks and lost-response retries return the same account. Only after a terminal result has been read does the button explicitly offer **New payment**. Clearing browser data discards that local safeguard; inspect existing settlements before initiating another adjustment. The server also deduplicates unresolved adjustments across tabs and UUIDs.
+
+The recorder status sensor exposes its own nonsecret config entry ID so an existing main Status card can resolve its recorder after installation. No guessed recorder or hardcoded installation ID is used. Viewer controls remain disabled, and the server requires an authenticated administrator and explicit mainnet authorisation.
+
+No live payments are part of development or deployment testing.
+
 ## Calculation and review
 
 The server resolves the latest registered driver for the selected recorder and verifies the receiving registration. A revoked or invalid latest registration cannot silently select an older driver. The displayed receiving address and public identity are frozen. Before approval and unsigned credit submission, the current registration must still match.

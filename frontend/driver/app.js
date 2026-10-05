@@ -14,6 +14,7 @@ import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
 import {mountDriverToolbar,qrText} from "./navigation.js";
 import {sessionJourney,simplifySessionLayout} from "./journey.js";
 import {liveSessionView} from "./session-live.js";
+import {walletConnectionUnavailable,walletConnectionHelp} from "./wallet-connection.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
 function drawApprovalQR(holder,url){
@@ -40,6 +41,7 @@ $("open-private-link").onclick=()=>{
   location.assign(url);
 };
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
+let walletUnavailable=false;
 let liveSession=null;
 let sessionCheckedAt=null,sessionUpdatedAt=null,sessionBasis=null,sessionReadFailed=false,liveOcpp=null;
 function paintLiveSession(){
@@ -127,6 +129,7 @@ function syncConfirmedReceipts(manual=false){
     allowed:!!capability&&!enrolment&&!!checked&&!framed&&!document.hidden&&!busy&&!collectionBusy&&!pairingBusy});
 }
 function pairingState(state, detail) {
+  if(state==="paired")walletUnavailable=false;
   $("pairing-status").textContent=detail || ({
     creating:"Creating a private, short-lived pairing code…",
     scanning:"In BSV Browser, select Connect to app and scan this code. Check the app domain before approving. This QR expires in two minutes.",
@@ -172,8 +175,10 @@ $("driver-link-copy").onclick=async()=>{
   let timer;
   try{await Promise.race([navigator.clipboard.writeText(location.href),
       new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Clipboard unavailable")),2000);})]);
-    $("pairing-status").textContent="Private driver link copied. Paste it into BSV Browser on your phone.";}
-  catch{$("pairing-status").textContent="Copy the full address from your browser, including everything after #. Keep it private.";}
+    $("pairing-status").textContent="Private driver link copied. Paste it into BSV Browser on your phone.";
+    if(walletUnavailable)status("Link copied. Open it inside BSV Browser, then authorise your budget.");}
+  catch{$("pairing-status").textContent="Copy the full address from your browser, including everything after #. Keep it private.";
+    if(walletUnavailable)status("Copy the full page address, including everything after #, and open it inside BSV Browser.",true);}
   finally{clearTimeout(timer);}
 };
 window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
@@ -220,6 +225,7 @@ function pricesValid() {
     Date.parse(live[k].end) + 90000 >= Date.now());
 }
 function controls() {
+  if(pairing?.state==="paired")walletUnavailable=false;
   document.body.dataset.pairing=pairing?.state || "local";
   const expired = checked && Date.parse(checked.terms.expires_at) <= Date.now();
   const waived=collectionState==="waived";
@@ -302,17 +308,21 @@ function controls() {
   if(checked){$("page-title").textContent=journey.title;$("page-subtitle").textContent=journey.hint;}
   $("receive-ongoing").classList.add("toolbar-managed");
   toolbar.update({
-    connect:{target:"resume-collection",enabled:!$("resume-collection").disabled&&!$("resume-collection").hidden&&
+    connect:walletUnavailable&&!accepted&&!receipt?{target:"driver-link-copy",
+      enabled:!!capability&&!busy&&!pairingBusy&&!collectionBusy&&!framed,
+      label:"Copy link for BSV Browser",primary:true}:
+    {target:"resume-collection",enabled:!$("resume-collection").disabled&&!$("resume-collection").hidden&&
       !["waiting_for_operator_binding","broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState),
       label:collectionState==="recovery_ready"?"Review and resume payment":liveSession?.ended_at?"Reconnect to finish payment":"Reconnect wallet",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
     pair:{target:"pairing-connect",enabled:!$("pairing-section").hidden&&!$("pairing-connect").disabled,reason:"Load a valid private invitation, or finish the active wallet action."},
-    approve:{target:"approve",primary:true,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
+    approve:{target:"approve",primary:!walletUnavailable,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
     refresh:{enabled:!!capability&&!locked,run:()=>refresh(),reason:"Load an invitation and wait for the current action to finish."},
     sync:{enabled:!!pendingCredit&&!locked&&!!capability&&!enrolment,run:()=>syncConfirmedReceipts(true),primary:!!pendingCredit,reason:"No confirmed credit receipt is awaiting acceptance, or the wallet is busy."},
     signout:{enabled:false,reason:"This is a private-link session, not a portal login. Closing it does not revoke spending approval."},
     save:{target:"retry",primary:true},
     report:{target:"retry-collection",primary:true},
-  },{step:journey.step,title:journey.title,unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
+  },{step:journey.step,title:journey.title,hint:walletUnavailable&&!accepted?"Connect your wallet, then return to authorise.":"",
+    unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
   simpleLayout.update({accepted,receiptOnly,step:journey.step});
   paintLiveSession();
   $("approval-action").classList.add("toolbar-managed");
@@ -603,6 +613,7 @@ async function connectWallet(receiptAutomatic=false) {
   return {wallet,identity};
 }
 function clear() {
+  walletUnavailable=false;
   if(pairing){void pairing.disconnect();pairing=null;}
   collectionFailure=null;pendingDiagnostic=null;latestCollection=null;paintFailure();
   checked=null;receipt=null;accepted=false;live=null;connectedWallet=null;binding=null;halted=false;pendingReport=null;collectionState=null;selectedSession=null;
@@ -661,6 +672,7 @@ $("approve").onclick=async()=>{
       "Waiting for BSV Browser. Approval permits immediate collection of this completed account within the displayed limits.":
       "Waiting for BSV Browser. This action connects your identity and signs your capped spending approval. No payment is made now.");
     const {wallet,identity}=await connectWallet();
+    walletUnavailable=false;
     $("wallet-key").textContent=identity;
     receipt=await signConsent(wallet,checked,identity);
     connectedWallet=wallet;
@@ -668,8 +680,9 @@ $("approve").onclick=async()=>{
     if(capability)await submitReceipt();
     else status("Spending approval signed. Return the receipt to the operator for verification. No funds moved.");
   } catch(e) {
+    if(!receipt&&walletConnectionUnavailable(e))walletUnavailable=true;
     status(receipt ? `Signed, but saving is not confirmed: ${e.message}. Select Retry saving; do not sign again.` :
-      `Approval not completed: ${e.message || e}`,true);
+      walletUnavailable?walletConnectionHelp(!!enrolment):`Approval not completed: ${e.message || e}`,true);
   } finally {busy=false;controls();if(accepted)await checkCollection();}
 };
 $("retry").onclick=async()=>{

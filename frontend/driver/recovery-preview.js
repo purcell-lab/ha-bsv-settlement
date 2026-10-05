@@ -13,6 +13,7 @@ banner.innerHTML=`<p>Design preview. Fictional sessions, no real payments.</p><d
 <option value="stale">Rates unavailable</option>
 <option value="expired">Approval expired</option>
 <option value="decline">Wallet permission declined</option>
+<option value="wallet-unavailable">Wallet unavailable: connection recovery</option>
 <option value="held">Interrupted wallet draft</option>
 <option value="fee">Draft exceeds an existing 10 sat fee cap</option>
 <option value="unconfirmed">Awaiting block confirmation</option>
@@ -42,7 +43,7 @@ const terms={
   created_at:new Date().toISOString(),expires_at:new Date(Date.now()+3600000).toISOString(),scope:spendingScope,
 };
 if(mode==="expired"){terms.created_at=new Date(Date.now()-3600000).toISOString();terms.expires_at=new Date(Date.now()-60000).toISOString();}
-const unsignedMode=["closed","approval","stale","expired","decline"].includes(mode);
+const unsignedMode=["closed","approval","stale","expired","decline","wallet-unavailable"].includes(mode);
 const closedAccount={session_id:terms.session_id,ocpp_transaction_id:terms.transaction_id,currency:"AUD",
   ended_at:new Date(Date.now()-60000).toISOString(),net_cost_aud_unrounded:"0.05",net_amount_aud:"0.05",
   import_kwh:"1.94",export_kwh:"0",quality_flags:["import:energy_without_matching_state"]};
@@ -62,7 +63,7 @@ const quotePayload=canonical({version:1,network:"BSV mainnet",budget_id:terms.bu
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",expires_at:terms.expires_at,
   amount_sats:89,account,recovery_generation:1,created_at:terms.created_at});
 const quote={payload:quotePayload,hash:await hash(quotePayload),signature:operator.sign(bytes(quotePayload)).toDER("hex")};
-let state=mode==="active"||mode==="approval"?"waiting_for_session_end":mode==="confirmed"?"provider_confirmed":mode==="unknown"?"broadcast_unknown":mode==="unconfirmed"?"provider_unconfirmed":mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
+let state=["active","approval","wallet-unavailable"].includes(mode)?"waiting_for_session_end":mode==="confirmed"?"provider_confirmed":mode==="unknown"?"broadcast_unknown":mode==="unconfirmed"?"provider_unconfirmed":mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
@@ -73,7 +74,10 @@ window.previewCalls={claims:0,drafts:0,signs:0,reports:0,approvals:0};
 let closedApproved=false;
 window.CWI={
   getVersion:async()=>({version:"fictional-preview"}),
-  getPublicKey:driver.getPublicKey.bind(driver),createSignature:async args=>{
+  getPublicKey:async args=>{
+    if(mode==="wallet-unavailable")throw Error("No wallet available over any communication substrate. Install a BSV wallet today!");
+    return driver.getPublicKey(args);
+  },createSignature:async args=>{
     if(mode==="decline")throw Error("Wallet permission declined.");
     return driver.createSignature(args);
   },

@@ -36,3 +36,16 @@ The normal multi-session path retains its existing automatic session handling. T
 This revision is a PR, not a live installation. Existing terms, financial caps, payment providers and recorder authority are unchanged. OCPP status is read-only and does not replace Sigenergy energy accounting.
 
 The authorised operational match of the current live session was performed separately using the existing binding service. It does not install this UI revision or broaden the driver's signed budget.
+
+## Main Status payment buttons and wallet connection recovery
+
+The later user request adds two immediate-action 5 kWh buttons to Status, with AUD and sat amounts directly on each button. The click authorises one operator-funded payout within the existing 1,000 sat total, with a fresh fee quote; amounts owed by the driver create a separate manual request. No charging consent is expanded. Existing preparation controls remain on the two credit tabs.
+
+- 1,040 Python tests passed, including 27 energy-adjustment cases covering both tariff signs, restart replay, no adoption of manual reviews, failed-attempt safety, total limits and administrator context.
+- 88 operator tests and 120 driver tests passed.
+- Mobile mock browser at 390 px: both buttons show AUD and sat without horizontal overflow. Export returned “Driver credit submitted: 41 sat. Awaiting block confirmation.” Import returned “Driver payment requested: 62 sat. Driver wallet approval and payment are still required.”
+- Mock wallet-unavailable scenario reproduces the reported SDK error and promotes “Copy link for BSV Browser”. No claims, drafts, signatures, approval submissions or payment reports occurred.
+- The deployed preview uses in-memory mock request storage because its sandbox forbids localStorage. Production retains nonsecret UUIDs in browser storage and blocks sending if storage is unavailable.
+- These checks do not establish that the user's actual BSV Browser is connected. No live HA services, funds or registration changes were used for this addition.
+
+Installation must update both frontend and backend and refresh the operator-card resource cache marker. The recorder sensor now supplies its exact nonsecret config entry ID, so the existing overview configuration does not need a guessed recorder identifier.

@@ -301,6 +301,7 @@ class ProxySensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator, entry, key, name, unit):
         super().__init__(coordinator)
+        self.entry_id = entry.entry_id
         self.key = key
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_{key}"
@@ -324,7 +325,8 @@ class ProxySensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
         if self.key == "recorder_status":
-            return {**data, "mode": "sensor_proxy", "payment_control": False,
+            return {**data, "config_entry_id": self.entry_id,
+                    "mode": "sensor_proxy", "payment_control": False,
                     "charger_control": False}
         session = data.get("latest_session") or {}
         return {"session_id": session.get("session_id"),
