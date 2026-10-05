@@ -349,6 +349,8 @@ class SessionBudgets:
         record = next((r for r in records if r and r["session_id"] == data["session_id"]), None)
         if record is None:
             raise WalletError("Session not found on the authorised recorder")
+        from .monthly_ownership import ensure_no_monthly_owner
+        ensure_no_monthly_owner(self.api, row["proxy_config_entry_id"] + "|" + data["session_id"])
         if not datetime.fromisoformat(row["accepted_at"]) <= datetime.fromisoformat(record["opened_at"]) < datetime.fromisoformat(row["terms"]["expires_at"]):
             raise WalletError("Session must open after consent and before expiry")
         binding = {"session_id": record["session_id"], "transaction_id": record["ocpp_transaction_id"]}

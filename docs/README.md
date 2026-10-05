@@ -10,6 +10,9 @@ an implemented control. The original no-budget mock documentation remains below.
 - **[Station-first implementation series](station-first-implementation.md):**
   approved 30,000 sat monthly driver workflow, coordinated PR dependencies and
   inactive accounting foundation. Not live monthly wallet authority.
+- **[Monthly authority, per-session collection](monthly-authority.md):** staged
+  signed consent and durable accounting. Each session settles separately; the
+  monthly limit is spending authority, not a monthly bill.
 
 - **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
   integration evidence and guarded Legacy Sigenergy / OCPP source selection.
