@@ -5,4 +5,6 @@ dl{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr)}
 dd{overflow-wrap:anywhere}
 #ask{margin-top:var(--s4)}
 #status.notice{display:block;margin:var(--s4) 0 0}
+#result{padding:0}
+#ask:disabled{opacity:1;background:var(--soft);color:var(--muted);border:1px solid var(--line)}
 @media(max-width:480px){header,main,footer{padding:var(--s4)}section{padding:var(--s4)}}
