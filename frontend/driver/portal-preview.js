@@ -32,8 +32,9 @@ const rows=Array.from({length:27},(_,i)=>({
 }));
 if(params.has("active")){
   Object.assign(rows[0],{ended_at:null,running_state:"Charging",import_kwh:0,export_kwh:.530,
+    ocpp:{available:true,status:"Charging",checked_at:new Date().toISOString()},
     import_cost_aud:0,export_credit_aud:.06,net_amount_aud:-.06,
-    meter_updated_at:new Date().toISOString(),satoshis_per_aud:"100",
+    meter_updated_at:new Date(Date.now()-(params.has("stalemeter")?3600000:0)).toISOString(),satoshis_per_aud:"100",
     transactions:[{id:"fixture-active",state:"waiting_for_session_end",direction:"operator_to_driver",amount_sats:null}]});
 }
 const operator=new PrivateKey(101),terms={

@@ -1,6 +1,6 @@
 import {WalletClient} from "@bsv/sdk";
 import {BrowserPairing} from "./pairing.js";
-import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
+import {signPortalLogin,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
 import {parseInvitation} from "./model.js";
 import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
@@ -13,7 +13,7 @@ import {pendingCreditJobs} from "./portal-credit-jobs.js";
 import {walletStatus,verifyReceivingWallet} from "./portal-wallet.js";
 import {MonthlySetup,cancelMonthly} from "./monthly-wallet.js";
 import {sessionAccount,formatRate,formatKwh} from "./account-projection.js";
-import {readinessView,allowanceRows,termsList,signedTermsRows,authorityText,grantText} from "./monthly-ui.js";
+import {readinessView,setupAction,allowanceRows,termsList,signedTermsRows,authorityText,grantText} from "./monthly-ui.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -236,6 +236,7 @@ function controls(){
     signout:{target:"portal-logout",enabled:!busy&&!framed&&!!identity,reason:"No wallet is signed in."},
     register:{enabled:!busy&&!framed&&!identity&&!!registrationUrl&&!station.monthly_enabled,run:()=>location.assign(registrationUrl)},
     monthly:{target:"monthly-authorise",enabled:monthlyActionEnabled(),
+      label:setupAction(monthly,{connected:monthlyConnected()}).label,
       reason:station.monthly_enabled?"Monthly charging is already set up, or another action is in progress.":"Monthly charging is not enabled at this station."},
   },{step:0,hint:monthlyActionEnabled()?"":  // The monthly panel explains its own action.
     identity?"":registrationUrl?"Review the budget on the next screen before approving.":"Wallet sign-in only. No spending approval."});
@@ -246,6 +247,7 @@ function controls(){
   document.querySelector(".journey-steps").hidden=true;
   document.querySelector("main").dataset.mode="portal";
   $("monthly-authorise").disabled=!monthlyActionEnabled();
+  paintReadiness();
   $("portal-title").textContent=identity?"Your charging":"Charge. Export. Settle.";
   $("portal-intro").textContent=identity?"Your station, current session and history in one place.":
     "Check this station's rates, authorise monthly charging once, then follow your sessions.";
@@ -326,7 +328,7 @@ function render(){
   $("portal-empty").hidden=sessions.length>0;$("portal-more").hidden=sessions.length>=total;
   $("portal-current").hidden=!sessions.length;
   if(sessions.length){
-    const current=sessions[0],summary=sessionSummary(current),provisional=provisionalSession(current);
+    const current=sessions[0],summary=sessionSummary(current),provisional=provisionalSession(current),account=sessionAccount(current);
     const payment=current.transactions.length===1?current.transactions[0]:null;
     $("portal-current-title").textContent=!current.ended_at?"Session in progress":
       payment?.state==="provider_confirmed"?payment.direction==="operator_to_driver"?
@@ -334,17 +336,17 @@ function render(){
       payment?.state==="provider_unconfirmed"?"Awaiting block confirmation":summary.status;
     $("portal-current-amount").textContent=provisional?provisional.amount:payment&&Number.isSafeInteger(payment.amount_sats)?
       `${payment.amount_sats} sat ${payment.direction==="operator_to_driver"?"to your wallet":"to the operator"}`:summary.payment;
-    $("portal-current-energy").textContent=`Energy Imported to EV: ${number(current.import_kwh," kWh")}. Energy Imported from EV: ${number(current.export_kwh," kWh")}.`;
+    $("portal-current-energy").textContent=`Energy Imported to EV: ${formatKwh(account.importKwh)}. Energy Imported from EV: ${formatKwh(account.exportKwh)}.`;
     $("portal-current-note").textContent=provisional?provisional.note:current.transactions.length?
       current.transactions.map(transactionStatus).join(". "):"No payment is recorded. Signing in does not collect this session.";
-    const account=sessionAccount(current);
     $("portal-current-eyebrow").textContent=account.live?"Current session":"Latest session";
     $("charging-ocpp").textContent=account.live?(account.ocppStatus||"Unavailable"):"Session ended";
     $("charging-import").textContent=formatKwh(account.importKwh);$("charging-export").textContent=formatKwh(account.exportKwh);
     $("charging-avg-buy").textContent=formatRate(account.averageBuy);$("charging-avg-sell").textContent=formatRate(account.averageSell);
     $("charging-net").textContent=account.netAud===null?"Unavailable":
       `${account.netAud<0?"Credit":account.netAud>0?"Charge":"Balance"} AUD ${Math.abs(account.netAud).toFixed(2)}`+
-      (account.provisionalSats!==null?` · ${account.provisionalSats} sat provisional`:"");
+      (account.provisionalSats!==null?` · ${account.provisionalSats} sat provisional`:
+        account.live?" · provisional":"");
   }
   $("portal-expiry").textContent=`Expires ${new Date(expires).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
   const list=$("portal-sessions");list.replaceChildren();
@@ -352,13 +354,13 @@ function render(){
     const box=node("details","","portal-session"),summary=node("summary","","portal-session-summary");
     box.open=expandedSessions.has(s.session_key);
     box.addEventListener("toggle",()=>{if(box.open)expandedSessions.add(s.session_key);else expandedSessions.delete(s.session_key);});
-    const overview=sessionSummary(s),date=new Date(s.opened_at||s.ended_at||"");
+    const overview=sessionSummary(s),account=sessionAccount(s),date=new Date(s.opened_at||s.ended_at||"");
     const shortDate=Number.isFinite(date.getTime())?date.toLocaleDateString("en-AU",{day:"2-digit",month:"2-digit"})+" "+
       date.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit",hour12:false}):"No date";
     const arrow=node("span","›","portal-chevron");arrow.setAttribute("aria-hidden","true");
     summary.append(arrow,node("span",shortDate,"portal-row-date"),
       node("span",overview.payment,"portal-row-payment"),
-      node("span",`${number(s.import_kwh)} in / ${number(s.export_kwh)} out kWh`,"portal-row-energy"),
+      node("span",`${number(account.importKwh)} in / ${number(account.exportKwh)} out kWh`,"portal-row-energy"),
       node("span",overview.status+(overview.warning?" !":""),"portal-row-status"));
     summary.setAttribute("aria-label",`${shortDate}, ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}. Session ${s.transaction_id||s.session_id}. Expand details.`);
     summary.title=`${s.transaction_id||s.session_id}: ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}`;
@@ -377,13 +379,13 @@ function render(){
     addRow("Transaction ID",s.transaction_id||"Unavailable","portal-reference");
     const provisional=provisionalSession(s);
     if(provisional){addRow("Provisional session amount",provisional.amount);addRow("Estimate basis",provisional.note);}
-    const buy=averageRate(s.import_cost_aud,s.import_kwh),sell=averageRate(s.export_credit_aud,s.export_kwh);
+    const buy=account.averageBuy,sell=account.averageSell;
     for(const [label,value] of [
-      ["Energy Imported to EV",number(s.import_kwh," kWh")],["Energy Imported from EV",number(s.export_kwh," kWh")],
+      ["Energy Imported to EV",number(account.importKwh," kWh")],["Energy Imported from EV",number(account.exportKwh," kWh")],
       ["Average buy price",buy===null?"Unavailable":`${buy.toFixed(4)} $/kWh`],
       ["Average sell price",sell===null?"Unavailable":`${sell.toFixed(4)} $/kWh`],
-      ["Net energy account",number(s.net_amount_aud," AUD")],
-      ["Average net price",averageNet(s)===null?"Unavailable":`${averageNet(s).toFixed(4)} $/kWh`]])
+      ["Net energy account",number(account.netAud,account.live?" AUD · provisional":" AUD")],
+      ["Average net price",account.averageNet===null?"Unavailable":`${account.averageNet.toFixed(4)} $/kWh`]])
       addRow(label,value);
     if(s.account_kind==="manual_energy_adjustment")addRow("Separate adjustment","5 kWh-equivalent monetary adjustment. Not measured session energy.","portal-warning");
     else if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
@@ -399,7 +401,9 @@ function render(){
       if(url){const a=node("a","View chain-provider record");a.href=url;a.target="_blank";a.rel="noopener noreferrer";addRow("Transaction",a);}
     }
     addRow("Session ID",s.session_id,"portal-reference");
-    addRow("Approval history",s.agreements.map(a=>`${a.state.replaceAll("_"," ")} · expires ${new Date(a.expires_at).toLocaleString()}`).join("; ")||"Original operator-credit routing");
+    addRow("Approval history",s.agreements.map(a=>a.authority_id?
+      `${a.state.replaceAll("_"," ")} · monthly authority`:
+      `${a.state.replaceAll("_"," ")} · expires ${new Date(a.expires_at).toLocaleString()}`).join("; ")||"Original operator-credit routing");
     box.append(table);list.append(box);
   }
   controls();
@@ -436,7 +440,22 @@ async function signIn(candidate){
   message("Signed in. Confirmed credits will be received automatically. No new spending approved.");
 }
 function monthlyActionEnabled(){
-  return !busy&&!framed&&station.monthly_enabled&&!monthly?.authority;
+  return !busy&&!framed&&station.monthly_enabled&&
+    setupAction(monthly,{connected:monthlyConnected()}).enabled;
+}
+function monthlyConnected(){
+  const can=method=>pairing?pairing.supportedMethods?.includes(method):typeof wallet?.[method]==="function";
+  return connectionState==="connected"&&!document.hidden&&Date.now()<expires&&
+    Date.now()-connectionCheckedAt<=60000&&can("createAction")&&can("signAction");
+}
+function paintReadiness(){
+  const view=readinessView(monthly,{walletConnected:monthlyConnected()});
+  $("monthly-readiness").hidden=!identity||!station.monthly_enabled;
+  $("monthly-readiness-title").textContent=view.title;
+  const items=$("monthly-readiness-items");items.replaceChildren();
+  for(const text of view.ready?
+    ["Wallet available for per-session collection. Ownership, final amount and remaining allowance are checked when each session ends. Keep the wallet connected."]:view.items)
+    items.append(node("li",text));
 }
 // Tabs: arrow keys, Home and End move between sections (automatic activation).
 const tabs=["station","charging","history"];
@@ -498,17 +517,13 @@ async function loadMonthly(){
   paintMonthly();
 }
 function paintMonthly(){
-  const enabled=station.monthly_enabled,status=monthly,view=readinessView(status);
+  const enabled=station.monthly_enabled,status=monthly;
   $("monthly-offer-note").textContent=!enabled?"Monthly charging is not enabled at this station yet. You can still sign in to see your sessions.":
-    !identity?"One action connects your wallet, signs you in, shows the exact terms to sign and sets up receiving.":
+    !identity?"One action connects your wallet, signs you in and shows the exact terms. Any missing wallet setup is reported separately.":
     status?.authority?.state==="active"?"Monthly charging is authorised for this wallet. Manage it in Wallet.":
     status?.authority?.state==="cancelled"?"Monthly charging was cancelled for this wallet.":
     "Review the terms above, then authorise. Your wallet may ask its own questions.";
-  $("monthly-readiness").hidden=!identity||!enabled;
-  $("monthly-readiness-title").textContent=view.title;
-  const items=$("monthly-readiness-items");items.replaceChildren();
-  for(const text of view.ready?["Sessions you own settle automatically after they end, within your allowance."]:view.items)
-    items.append(node("li",text));
+  paintReadiness();
   $("perm-authority").textContent=identity?authorityText(status):"Not signed in";
   $("perm-grant").textContent=identity&&enabled?grantText(status):"Not applicable";
   $("perm-receiving").textContent=!identity||!status?.enabled?"Not checked":
@@ -521,6 +536,7 @@ function paintMonthly(){
 }
 // Resolve only from the driver's explicit choice on the exact server terms.
 function askTerms(terms){
+  selectTab("station",false);
   list($("monthly-confirm-terms"),signedTermsRows(terms));
   $("monthly-confirm").hidden=false;$("monthly-confirm-title").focus();
   return new Promise(resolve=>{
@@ -543,6 +559,9 @@ const stepText={wallet:"Wallet connected.",sign_in:"Signed in.",authority:"Month
 $("monthly-authorise").onclick=()=>run(async()=>{
   tabChosen=true; // Keep the terms in view while sign-in completes mid-setup.
   const {candidate,supportedMethods}=setupWallet();
+  if(identity)await connectReceivingWallet(candidate,()=>{
+    if(document.hidden||!identity||Date.now()>=expires)throw Error("Reconnect your wallet.");
+  });
   const flow=new MonthlySetup({api,
     signIn:async w=>{await signIn(w);return identity;},
     syncReceipts:async()=>syncForSetup(),
@@ -551,7 +570,9 @@ $("monthly-authorise").onclick=()=>run(async()=>{
     assertActive:()=>{if(document.hidden)throw Error("The page was hidden. Nothing more was signed.");}});
   monthly=result.status;paintMonthly();
   tabChosen=true;selectTab("charging",false);
-  message(result.ready?"Monthly charging is ready. Sessions you own settle automatically after they end.":
+  const unavailable=result.steps.filter(s=>s.state==="unavailable");
+  message(unavailable.length?"Authority saved. Wallet setup support is not installed for all missing steps. Ask the operator to complete setup; no payment was attempted.":
+    result.ready&&monthlyConnected()?"Wallet ready for per-session collection while connected. Each session is checked again at closure.":
     result.missing.length?`Monthly setup saved. Still needed: ${readinessView({enabled:true,readiness:{missing:result.missing}}).items.join(" ")}`:
     "Monthly charging was not authorised. Nothing was signed or paid.");
 });

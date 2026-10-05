@@ -7,15 +7,33 @@ export const missingText={
   receiving_registration:"No receiving wallet is registered for operator credits.",
   wallet_receiving:"This wallet connection cannot receive credits. Open the page in a BSV wallet that can.",
   receipts_paused:"Receiving your confirmed credits paused. Use Retry receiving credits in Wallet.",
+  session_ownership_unavailable:"The operator must enable verified session matching.",
+  session_accounting_unavailable:"The operator must enable final session accounting.",
+  collection_service_unavailable:"Automatic collection is not available at this station. The operator must complete setup.",
+  allowance_exhausted:"Your monthly application allowance is used or reserved. No new charge can start.",
+  wallet_allowance_exhausted:"Your wallet's monthly allowance has no remaining capacity.",
+  authority_changed:"Your authority changed while checking. Refresh its status.",
+  wallet_connection:"Reconnect your wallet to make the signer available. History sign-in alone cannot collect payments.",
 };
 
-export function readinessView(status){
+export function readinessView(status,{walletConnected=false}={}){
   if(!status)return {ready:false,title:"Checking monthly charging",items:[]};
   if(!status.enabled)return {ready:false,title:"Monthly charging unavailable",items:[missingText.monthly_disabled]};
-  const missing=status.readiness?.missing||[];
+  const missing=[...(status.readiness?.missing||[])];
+  if(!walletConnected)missing.push("wallet_connection");
   const ready=status.readiness?.automatic_collection===true&&!missing.length;
   return {ready,title:ready?"Monthly charging ready":"Action needed before automatic payment",
     items:missing.map(code=>missingText[code]||"Monthly charging needs operator review.")};
+}
+
+export function setupAction(status,{connected=false}={}){
+  if(status?.authority?.state==="cancelled")return {enabled:false,label:"Monthly charging cancelled"};
+  if(!status?.authority)return {enabled:true,label:"Authorise monthly charging"};
+  if(!connected)return {enabled:true,label:"Reconnect wallet"};
+  const gaps=status.readiness?.missing||[];
+  if(gaps.some(k=>["receiving_registration","wallet_monthly_permission","wallet_receiving","receipts_paused"].includes(k)))
+    return {enabled:true,label:"Finish wallet setup"};
+  return {enabled:false,label:"Monthly authority saved"};
 }
 
 const sat=v=>Number.isSafeInteger(v)?`${v.toLocaleString("en-AU")} sat`:"Unavailable";
