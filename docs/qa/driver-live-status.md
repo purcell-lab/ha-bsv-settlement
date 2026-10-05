@@ -29,7 +29,7 @@ The normal multi-session path retains its existing automatic session handling. T
 - Observed the 15-second poll update import energy from 3.800 to 4.000 kWh, provisional charge from 89 to 94 sat and OCPP state from Charging to SuspendedEV, without interaction.
 - Unmatched reservation keeps current rates and owner-scoped energy visible while explaining that session confirmation is still pending.
 - Interrupted connection withholds prior totals and OCPP state as Unavailable. Mock claim/draft/sign/report/approval counters remained zero.
-- Full Python regression and GitHub CI are recorded in the PR checks.
+- Full local Python regression passed: 1,032 tests, three dependency warnings. GitHub CI is recorded in the PR checks.
 
 ## Release boundary
 

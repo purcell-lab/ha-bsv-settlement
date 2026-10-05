@@ -113,7 +113,7 @@ window.fetch=async(url,options)=>{
   if(body.action==="collection_status"&&mode==="closed")return Response.json({
     state:"collection_blocked",error:"Fictional preview stops before wallet drafting. No real payment."});
   if(body.action==="collection_status" || (mode==="unconfirmed"&&body.action==="reconcile_collection"))
-    return Response.json({state,quote,diagnostic,...(mode==="unconfirmed"?{txid:"a".repeat(64),confirmations:0}:{})});
+    return Response.json({state,...(["waiting_for_session_end","waiting_for_operator_binding"].includes(state)?{}:{quote}),diagnostic,...(mode==="unconfirmed"?{txid:"a".repeat(64),confirmations:0}:{})});
   if(body.action==="claim_collection" && state==="recovery_ready" && body.confirm_recovered_attempt===true){
     window.previewCalls.claims++;state="wallet_attempt_reserved";return Response.json({claimed:true});
   }
