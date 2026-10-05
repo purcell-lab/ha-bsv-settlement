@@ -10,6 +10,7 @@ status, request/accept a monthly challenge, and request/submit cancellation.
 Accounting transitions (bind, reserve, wallet_pending, uncertain, commit,
 release) are deliberately absent: a browser can never assert wallet spending.
 """
+import asyncio
 import copy
 from dataclasses import asdict, dataclass
 from urllib.parse import urlparse
@@ -49,6 +50,9 @@ class MonthlyPortal:
     service: MonthlyAuthorities
     station_ids: tuple
     policy_id: str
+    # Trusted, read-only runtime health adapter; never supplied by the browser.
+    # Must observe the actual executor/reconciler, not just configured consent.
+    collection_health: object = None
 
 
 def hostname(origin):
@@ -125,6 +129,17 @@ async def status(portal, api, identity):
     state = service.snapshot()
     aid, row = _own(state, identity)
     missing = []
+    if not callable(service.resolve_session):
+        missing.append("session_ownership_unavailable")
+    if not callable(service.resolve_record):
+        missing.append("session_accounting_unavailable")
+    try:
+        health = await asyncio.wait_for(portal.collection_health(identity), timeout=3)
+        if (not isinstance(health, dict) or health.get("ready") is not True
+                or not 0 <= (service._now() - timestamp(health["checked_at"])).total_seconds() <= 30):
+            raise ValueError()
+    except Exception:
+        missing.append("collection_service_unavailable")
     result = {"enabled": True, "revision": state["revision"], "station_ids": list(portal.station_ids),
               "monthly_limit_sats": 30_000, "authority": None, "allowance": None,
               "native_grant": {"state": "not_applicable"}, "receiving": receiving(api, identity)}
@@ -152,15 +167,23 @@ async def status(portal, api, identity):
             missing.append("monthly_authority")
         elif summary["blocked"]:
             missing.append("allowance_review")
+        elif summary["remaining_sats"] <= 0:
+            missing.append("allowance_exhausted")
         if not ledger.cancelled:
             try:
                 grant = await service.observe_grant(aid)
                 result["native_grant"] = {"state": "verified", **grant}
+                if grant["remaining_sats"] <= 0:
+                    missing.append("wallet_allowance_exhausted")
             except Exception:  # Any adapter failure is missing evidence, never readiness.
                 result["native_grant"] = {"state": "unverified"}
                 missing.append("wallet_monthly_permission")
     if not result["receiving"]["registered"]:
         missing.append("receiving_registration")
+    # Grant/health adapters await external observations. Never return an old
+    # "active/ready" snapshot after cancellation or another ledger mutation.
+    if service.snapshot()["revision"] != state["revision"]:
+        missing.append("authority_changed")
     result["readiness"] = {"automatic_collection": not missing, "missing": missing}
     return result
 

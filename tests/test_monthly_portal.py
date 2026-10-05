@@ -22,6 +22,8 @@ pytestmark = pytest.mark.asyncio
 POLICY = WalletPeriodPolicy("fixture-utc", "fictional-wallet-1", "UTC",
                            "verified_spend_commit", "all_driver_paid_wallet_debits",
                            "offline-fixture-only")
+NO_RUNTIME = ["session_ownership_unavailable", "session_accounting_unavailable",
+              "collection_service_unavailable"]
 
 
 def activate(hass, api, coord, *, origin="charging.example.com", grant=True):
@@ -107,7 +109,7 @@ async def test_one_authority_status_projection_and_reused_challenge(tmp_path):
         code, status = await call(client, view, cookie, "monthly_status")
         assert code == 200 and status["enabled"] and status["authority"] is None
         assert status["receiving"] == {"registered": True, "routes_new_credits": True}
-        assert status["readiness"] == {"automatic_collection": False, "missing": ["monthly_authority"]}
+        assert status["readiness"] == {"automatic_collection": False, "missing": NO_RUNTIME + ["monthly_authority"]}
         _, first = await call(client, view, cookie, "monthly_challenge", revision=status["revision"])
         _, again = await call(client, view, cookie, "monthly_challenge", revision=first["revision"])
         assert again["authority_id"] == first["authority_id"]  # No storage growth per click.
@@ -124,7 +126,7 @@ async def test_one_authority_status_projection_and_reused_challenge(tmp_path):
         assert status["authority"]["state"] == "active"
         assert status["allowance"]["limit_sats"] == 30_000 and status["allowance"]["remaining_sats"] == 30_000
         assert status["native_grant"]["state"] == "verified" and status["native_grant"]["remaining_sats"] == 29_000
-        assert status["readiness"] == {"automatic_collection": True, "missing": []}
+        assert status["readiness"] == {"automatic_collection": False, "missing": NO_RUNTIME}
         for forbidden in ("proof", "signature", "nonce", "evidence_ref", "bindings", "ledger"):
             assert forbidden not in json.dumps(status)
         code, body = await call(client, view, cookie, "monthly_challenge", revision=status["revision"])
@@ -140,7 +142,7 @@ async def test_honest_readiness_without_native_grant_evidence(tmp_path):
         _, status = await call(client, view, cookie, "monthly_status")
         assert status["authority"]["state"] == "active"
         assert status["native_grant"] == {"state": "unverified"}
-        assert status["readiness"] == {"automatic_collection": False, "missing": ["wallet_monthly_permission"]}
+        assert status["readiness"] == {"automatic_collection": False, "missing": NO_RUNTIME + ["wallet_monthly_permission"]}
     finally:
         await client.close()
 

@@ -95,7 +95,9 @@ const conflict=e=>e?.status===409&&e?.code==="revision_conflict";
  * proof-of-control login; syncReceipts(wallet,identity) imports existing credits.
  */
 export class MonthlySetup{
-  constructor({api,signIn,syncReceipts,onStep=()=>{}}){Object.assign(this,{api,signIn,syncReceipts,onStep});}
+  constructor({api,signIn,syncReceipts,setupAdapters={},onStep=()=>{}}){
+    Object.assign(this,{api,signIn,syncReceipts,setupAdapters,onStep});
+  }
   step(id,state,detail=""){this.steps.push({id,state,detail});this.onStep(id,state,detail);}
   async run({wallet,supportedMethods=null,identity=null,hostname,confirmTerms,assertActive=()=>{}}){
     this.steps=[];
@@ -132,6 +134,30 @@ export class MonthlySetup{
       this.step("authority","done");
       status=await this.api("monthly_status");
       assertActive();
+    }
+    // Resume missing steps only. Adapters must be reviewed for the exact wallet
+    // and origin. Their return values NEVER establish server-verified readiness.
+    for(const [id,needed] of [
+      ["receiving_registration",!status.receiving?.registered],
+      ["wallet_monthly_permission",status.native_grant?.state!=="verified"],
+    ]){
+      if(!needed)continue;
+      const adapter=this.setupAdapters[id];
+      if(typeof adapter!=="function"){
+        this.step(id,"unavailable","Setup support is not installed. Ask the operator; saved authority is unchanged.");
+        continue;
+      }
+      assertActive();
+      try{
+        await adapter({wallet,identity,status,assertActive});
+        assertActive();
+        status=await this.api("monthly_status");
+        assertActive();
+      }catch(error){
+        assertActive();
+        this.step(id,"paused",error.message);
+        missing.add(id);
+      }
     }
     if(caps.canReceive){
       await this.syncReceipts(wallet,identity);
