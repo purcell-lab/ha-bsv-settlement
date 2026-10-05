@@ -44,6 +44,11 @@ or silently merging it.
 S3 status: transport and orchestrator staged on `feat/station-monthly-wallet-setup`;
 see [monthly wallet setup](monthly-wallet-setup.md). Still off at runtime.
 
+S4 status: Station · My charging · History interface staged on `feat/station-first-interface`
+([QA](qa/station-first-interface.md)). S5 status: failure matrix, migration, rollback and gated
+runbook staged on `feat/station-monthly-release` ([release](monthly-release.md)). Native
+acceptance and production adapters remain open; monthly charging stays disabled.
+
 ## Approved interaction contract
 
 Public station information comes before wallet setup: recognised station and

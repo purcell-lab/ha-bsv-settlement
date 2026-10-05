@@ -337,6 +337,27 @@ class MonthlyAuthorities:
         text(grant["evidence_ref"])
         return grant, month
 
+    async def prune_challenges(self, *, expected_revision):
+        """Drop unused challenges past their acceptance window.
+
+        Used challenges are retained as consent evidence; restore cross-checks
+        them against their authority. An unused, expired challenge can never be
+        accepted, so removing it changes no authority, ledger or binding.
+        """
+        async with self.coordinator.lock:
+            state = self._state()
+            now = self._now()
+            stale = [aid for aid, c in state["challenges"].items()
+                     if not c["used"] and now >= timestamp(c["terms"]["accept_before"])]
+            if not stale:
+                if type(expected_revision) is not int or expected_revision != state["revision"]:
+                    raise WalletError("Monthly ledger revision conflict; reload without retrying payment")
+                return {"pruned": 0, "revision": state["revision"]}
+            for aid in stale:
+                del state["challenges"][aid]
+            revision = await self._persist(state, expected_revision)
+            return {"pruned": len(stale), "revision": revision}
+
     async def observe_grant(self, authority_id):
         """Read-only native grant observation for status. Never persisted or trusted later."""
         row = self._state()["authorities"][authority_id]
