@@ -124,6 +124,9 @@ def history(api, identity):
                 "import_kwh": record.get("import_kwh"), "export_kwh": record.get("export_kwh"),
                 "import_cost_aud": record.get("import_cost_aud"), "export_credit_aud": record.get("export_credit_aud"),
                 "net_amount_aud": record.get("net_cost_aud"),
+                "meter_updated_at": record.get("as_of") or (
+                    (getattr(proxy, "data", None) or {}).get("updated_at") if proxy else None),
+                "satoshis_per_aud": None,
                 "quality_flags": copy.deepcopy(record.get("quality_flags", [])),
                 "agreements": [], "transactions": []}
         return result[key]
@@ -188,6 +191,25 @@ def history(api, identity):
             public | (public.get("receipt") or {}))
         transaction(target, item, review["direction"], "adjustment:" + review["review_id"],
                     recipient["budget_id"], account)
+    for target in result.values():
+        if target["ended_at"]:
+            continue
+        # Use this session's frozen receiving route first, matching the operator
+        # card. Never use the latest driver or a different session's FX rate.
+        route = api.ongoing_credits.routes.get("ongoing:" + target["session_key"])
+        if (route and route["recipient"]["budget_id"] in rows
+                and route["recipient"].get("driver_identity") == identity):
+            target["satoshis_per_aud"] = route.get("satoshis_per_aud")
+        else:
+            rates = {
+                str(row["terms"].get("satoshis_per_aud"))
+                for row in rows.values()
+                if row["proxy_config_entry_id"] + "|" + str(api.collections.session_id(row))
+                == target["session_key"]
+            }
+            # Multiple historical approvals must not lead to a guessed rate.
+            if len(rates) == 1:
+                target["satoshis_per_aud"] = next(iter(rates))
     return sorted(result.values(), key=lambda s: (s["opened_at"] or s["ended_at"] or "", s["session_key"]), reverse=True)
 
 

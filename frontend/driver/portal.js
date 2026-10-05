@@ -1,6 +1,6 @@
 import {WalletClient} from "@bsv/sdk";
 import {BrowserPairing} from "./pairing.js";
-import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary,compactIdentity} from "./portal-model.js";
+import {signPortalLogin,averageNet,averageRate,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
 import {parseInvitation} from "./model.js";
 import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
@@ -240,16 +240,16 @@ function render(){
   $("portal-empty").hidden=sessions.length>0;$("portal-more").hidden=sessions.length>=total;
   $("portal-current").hidden=!sessions.length;
   if(sessions.length){
-    const current=sessions[0],summary=sessionSummary(current);
+    const current=sessions[0],summary=sessionSummary(current),provisional=provisionalSession(current);
     const payment=current.transactions.length===1?current.transactions[0]:null;
     $("portal-current-title").textContent=!current.ended_at?"Session in progress":
       payment?.state==="provider_confirmed"?payment.direction==="operator_to_driver"?
         receiptReported(payment)?"Credit received":"Credit confirmed":"Payment confirmed":
       payment?.state==="provider_unconfirmed"?"Awaiting block confirmation":summary.status;
-    $("portal-current-amount").textContent=payment&&Number.isSafeInteger(payment.amount_sats)?
+    $("portal-current-amount").textContent=provisional?provisional.amount:payment&&Number.isSafeInteger(payment.amount_sats)?
       `${payment.amount_sats} sat ${payment.direction==="operator_to_driver"?"to your wallet":"to the operator"}`:summary.payment;
     $("portal-current-energy").textContent=`Energy Imported to EV: ${number(current.import_kwh," kWh")}. Energy Imported from EV: ${number(current.export_kwh," kWh")}.`;
-    $("portal-current-note").textContent=current.transactions.length?
+    $("portal-current-note").textContent=provisional?provisional.note:current.transactions.length?
       current.transactions.map(transactionStatus).join(". "):"No payment is recorded. Signing in does not collect this session.";
   }
   $("portal-expiry").textContent=`Expires ${new Date(expires).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
@@ -281,6 +281,8 @@ function render(){
     addRow("Opened",s.opened_at?new Date(s.opened_at).toLocaleString():"Unavailable");
     addRow("Ended",s.ended_at?new Date(s.ended_at).toLocaleString():"Not recorded");
     addRow("Transaction ID",s.transaction_id||"Unavailable","portal-reference");
+    const provisional=provisionalSession(s);
+    if(provisional){addRow("Provisional session amount",provisional.amount);addRow("Estimate basis",provisional.note);}
     const buy=averageRate(s.import_cost_aud,s.import_kwh),sell=averageRate(s.export_credit_aud,s.export_kwh);
     for(const [label,value] of [
       ["Energy Imported to EV",number(s.import_kwh," kWh")],["Energy Imported from EV",number(s.export_kwh," kWh")],
@@ -292,8 +294,9 @@ function render(){
     if(s.account_kind==="manual_energy_adjustment")addRow("Separate adjustment","5 kWh-equivalent monetary adjustment. Not measured session energy.","portal-warning");
     else if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
     if(s.closure)addRow("Account",s.closure.state.replaceAll("_"," "));
-    if(!s.transactions.length)addRow("Payment","No recorded payment. Sign-in does not collect this session.");
-    for(const t of s.transactions){
+    if(provisional)addRow("Payment","Not created. Session is still in progress.");
+    else if(!s.transactions.length)addRow("Payment","No recorded payment. Sign-in does not collect this session.");
+    for(const t of provisional?[]:s.transactions){
       addRow(t.direction==="operator_to_driver"?"Credit to driver":"Payment to operator",
         Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded","portal-payment-heading");
       addRow("Settlement status",transactionStatus(t));
@@ -409,6 +412,8 @@ try{if(!framed){await load();message("History sign-in restored. Wallet connectio
 catch{clearPrivate();}controls();
 void syncCredits();
 setInterval(()=>{if(identity&&!busy&&!framed&&!document.hidden)void run(()=>load());},30000);
+// Do not leave an old provisional value looking live when history refresh fails.
+setInterval(()=>{if(identity&&!document.hidden)render();},15000);
 if(framed)message("Open the driver portal directly in your browser to sign in.");
 void registration();
 setInterval(()=>void registration(),30000);
