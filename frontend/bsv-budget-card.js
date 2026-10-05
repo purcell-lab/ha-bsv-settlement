@@ -13,6 +13,8 @@ class BSVBudgetCard extends HTMLElement {
       <p id="ongoing-notice" class="notice" hidden></p>
       <ol class="steps"><li id="step1">1 · Invite</li><li id="step2">2 · Approve</li><li id="step3">3 · Match session</li></ol>
       <div id="current" class="notice" hidden><strong id="state-title"></strong><span id="next-step"></span></div>
+      <div class="actions"><button id="bind" class="primary" hidden>Confirm this session</button><button id="refresh" hidden>Check approval</button></div>
+      <p id="session" class="note" style="margin-top:12px"></p>
       <p id="status" class="note" role="status" aria-live="polite"></p>
       <div class="section">
         <h3>Public registration</h3>
@@ -30,8 +32,6 @@ class BSVBudgetCard extends HTMLElement {
         <div class="actions"><button id="copy" class="primary">Copy driver link</button><a id="open-link" class="button" target="_blank" rel="noopener noreferrer">Open driver page</a></div>
         <p class="note">The QR closes when approval is received, expires or is revoked. Save your driver link for session updates and receipts.</p>
       </div>
-      <div class="actions"><button id="bind" class="primary" hidden>Confirm driver and match session</button><button id="refresh" hidden>Check approval</button></div>
-      <p id="session" class="note" style="margin-top:12px"></p>
       <details id="create-panel" open><summary>Create a driver invitation</summary>
         <form id="create-form">
         <label>Use this approval for<select id="scope"><option value="multi">Multiple future sessions, up to seven days (recommended)</option><option value="next">The next session only (operator matching required)</option><option id="current-option" value="current" disabled>The current open session only</option></select></label>
@@ -184,6 +184,7 @@ class BSVBudgetCard extends HTMLElement {
     this.$("rate").textContent=`${h.states[this.config.rate_entity]?.state||"Unavailable"} sat per AUD. This is the demonstration conversion rate.`;
     if(b){
       this.$("state-title").textContent=stateLabel(b.state);
+      if(accepted&&!bound)this.$("state-title").textContent="Driver has approved. Confirm this session";
       this.$("next-step").textContent=!accepted?(b.state==="awaiting_driver_consent"?"Ask the driver to open their private link in BSV Browser and approve.":"This approval is not active. Create a fresh invitation for a future session."):!bound?"Driver approved. Confirm the correct open session below.":b.credit_destination?"Session matched and receiving wallet registered. Final account and payment checks still apply.":"Session matched. Ask the driver to reconnect before session end to register their receiving wallet.";
       this.$("lost-link").textContent=this.linkBudget===b.terms.budget_id?"Your pending private link is shown above.":awaitingApproval(b)?"This older invitation's link cannot be recovered automatically. Use the original saved link, or explicitly revoke it before creating a replacement.":"No approval QR is needed. Do not pay or reapprove an already-settled session.";
       if(multi&&accepted)this.$("next-step").textContent=b.multi_session?

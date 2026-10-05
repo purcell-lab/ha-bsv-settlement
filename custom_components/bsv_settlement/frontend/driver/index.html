@@ -66,7 +66,28 @@
           <div class="price-grid"><div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="import-price">Unavailable</strong></div><div><span title="Sell (Export/ V2G) rate">Sell / V2G export</span><strong id="export-price">Unavailable</strong></div></div>
           <p id="price-time" class="small"></p><p id="price-warning" class="small"></p>
         </div>
-        <div id="energy-summary" class="notice" hidden></div>
+        <div id="energy-summary" class="live-account" hidden>
+          <p><span>OCPP charging status: </span><strong id="session-ocpp-status">Unavailable</strong></p>
+          <p id="session-ocpp-note" class="small"></p>
+          <p id="session-net-label" class="small">Provisional session balance</p>
+          <p id="session-net-sats" class="live-sats">Unavailable</p>
+          <p id="session-net-aud" class="small"></p>
+          <p class="small">Estimate only; network fees excluded. Actual payment and confirmation appear in settlement.</p>
+          <span id="session-authority-badge" class="badge">Checking settlement readiness</span>
+          <dl>
+            <dt>Energy Imported to EV</dt><dd><span id="session-import-total">Unavailable</span><br><span class="small">Average <span id="session-import-average">Unavailable</span></span></dd>
+            <dt>Energy Imported from EV</dt><dd><span id="session-export-total">Unavailable</span><br><span class="small">Average <span id="session-export-average">Unavailable</span></span></dd>
+            <dt>Started</dt><dd id="session-live-started">Not checked</dd>
+            <dt>Session reference</dt><dd id="session-live-reference">No reference</dd>
+          </dl>
+          <p class="small">Energy-weighted session averages in AUD, not current live prices. Negative rates retain their sign. Network fees excluded; zero energy has no average price.</p>
+          <p id="session-energy-note" class="small"></p>
+          <details><summary>Full session reference and meter notes</summary>
+            <p id="session-live-full-reference" class="mono"></p>
+            <p class="small">Energy totals use the existing Sigenergy session recorder. The session reference is a proxy ID, not the charger-issued OCPP transaction ID.</p>
+            <p id="session-live-quality" class="small"></p>
+          </details>
+        </div>
         <p id="wallet-direction-note" class="small"></p>
         <details id="rate-details"><summary>How charging and export affect your wallet</summary>
           <p><strong>Buy (Import/ EV Charging) rate:</strong> your wallet is debited for energy imported to the EV, except when this rate is negative. A negative rate credits your wallet.</p>

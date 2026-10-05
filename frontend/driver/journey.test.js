@@ -46,6 +46,11 @@ test("waiver is not a refund and is not a payment",()=>{
 test("active session guidance retains connected-wallet requirement",()=>{
  assert.match(sessionJourney({accepted:true}).hint,/page and wallet available/);
 });
+test("unbound approval explicitly waits for operator rather than implying ready to charge",()=>{
+ const j=sessionJourney({accepted:true,state:"waiting_for_operator_binding"});
+ assert.equal(j.step,0);assert.equal(j.title,"Budget approved");
+ assert.match(j.hint,/operator to confirm/);assert.match(j.hint,/do not need to approve again/);
+});
 test("unknown or failed collection stays visibly paused",()=>{
  assert.match(sessionJourney({accepted:true,failure:true,ended:true}).hint,/paused for safety/);
 });

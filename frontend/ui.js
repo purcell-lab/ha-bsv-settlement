@@ -113,6 +113,17 @@ export function sessionStatus(s,health,now=Date.now()) {
     detail:`${multi.multi_session.remaining_sats} sat remaining of ${multi.multi_session.max_total_sats} sat total including fees. Keep the driver wallet available; final account checks still apply.`,
     target:"drivers"};
   if(!a){
+    const approved=(health.driver_approvals||[]).filter(a=>!a.session_id&&a.approved&&a.version===2&&
+      a.state==="spending_authorised_wallet_permission_required"&&Date.parse(a.expires_at)>now&&
+      a.session_mode==="next_session_reservation"&&a.match_candidate_session_id===s.session_id);
+    if(!s.ended_at&&approved.length===1)return {
+      label:"Driver has approved. Confirm this session",tone:"warn",
+      detail:"The budget is signed but not yet matched to this session. Confirm the driver below; do not ask them to approve again.",
+      target:"drivers",matchBudgetId:approved[0].budget_id};
+    if(!s.ended_at&&approved.length>1)return {
+      label:"Approved budgets need review",tone:"warn",
+      detail:"More than one signed budget could match. Open driver setup and select the correct driver; no automatic selection is allowed.",
+      target:"drivers"};
     const pending=health.driver_approvals?.some(a=>a.session_id===s.session_id&&a.state==="awaiting_driver_consent"&&Date.parse(a.expires_at)>now);
     return {label:pending?"Awaiting consent":s.ended_at?"Review needed":"Driver approval needed",tone:"warn",detail:pending?"The driver must approve this session's private invitation.":s.ended_at?"Review this completed account to request consent, waive your charge or close a zero balance. Do not reuse a previous approval.":"Invite this driver and confirm this session before it ends.",target:s.ended_at?"payments":"drivers"};
   }

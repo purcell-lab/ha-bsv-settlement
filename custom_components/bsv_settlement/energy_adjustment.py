@@ -137,3 +137,42 @@ def credit_item(api, credit_id):
     if not item or item.get("budget_id") != credit_id:
         raise WalletError("Adjustment credit unavailable")
     return review, item
+
+
+async def pay(reviews, data, user_id):
+    """One administrator click, one attempt. Never turn a retry into a new send.
+
+    The coordinator serialises service calls. Existing manual/uncertain accounts
+    are returned for reconciliation, not silently authorised by this shortcut.
+    Driver debits remain requests: receiving registration is not spending consent.
+    """
+    if not user_id or data.get("confirm_mainnet_payment") is not True:
+        raise WalletError("Explicit administrator mainnet payment authorisation is required")
+    existing = set(reviews.api.saved["session_reviews"])
+    result = await prepare(reviews, data, user_id)
+    review = reviews.get(result["review_id"])
+    if review["review_id"] in existing:
+        return reviews.public(review)
+    review["one_click_authorised_at"] = now().isoformat()
+    review["one_click_authorised_by"] = user_id
+    review["one_click_total_limit_sats"] = MAX_TOTAL
+    await reviews.save()  # Durable intent before any funding lookup or signature.
+    exact = {k: review[k] for k in
+             ("review_id", "terms_hash", "recipient_address", "amount_sats")}
+    try:
+        await reviews.approve(exact | {
+            "confirm_account_review": True, "confirm_driver_details": True}, user_id)
+        # Record the actual consent source, not a claim that a review screen was seen.
+        review["identity_verification"] = "registered_wallet_verified_and_operator_one_click"
+        await reviews.save()
+        if review["direction"] == "driver_to_operator":
+            return reviews.public(review)
+        result = await reviews.prepare_adjustment_credit(exact)
+        draft = result["credit_draft"]
+        return await reviews.broadcast_credit(exact | {
+            "draft_id": draft["draft_id"], "fee_sats": draft["fee_sats"],
+            "confirm_mainnet_payment": True}, user_id)
+    except Exception:
+        review["one_click_stopped"] = True
+        await reviews.save()
+        raise

@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {sessionStatus,num,esc,provisionalSats,provisionalDisplay} from "./ui.js";
 import {qualityFlags,warningMessage} from "./quality.js";
+test("approved reservation needs matching, not repeated driver consent",()=>{
+ const now=Date.now(),session={session_id:"active",opened_at:new Date(now-1000).toISOString(),net_cost_aud:1};
+ const approval={budget_id:"budget",approved:true,version:2,session_mode:"next_session_reservation",
+  state:"spending_authorised_wallet_permission_required",match_candidate_session_id:"active",
+  expires_at:new Date(now+60000).toISOString()};
+ const status=sessionStatus(session,{driver_approvals:[approval]},now);
+ assert.equal(status.label,"Driver has approved. Confirm this session");assert.equal(status.matchBudgetId,"budget");
+ for(const changed of [{state:"revoked"},{match_candidate_session_id:"other"},{expires_at:"2000-01-01"}])
+  assert.equal(sessionStatus(session,{driver_approvals:[{...approval,...changed}]},now).matchBudgetId,undefined);
+ assert.equal(sessionStatus({...session,ended_at:"now"},{driver_approvals:[approval]},now).matchBudgetId,undefined);
+ assert.equal(sessionStatus(session,{driver_approvals:[approval,{...approval,budget_id:"other"}]},now).matchBudgetId,undefined);
+});
 test("provisional sat amounts use exact half-up rounding and fixed session rates",()=>{
  assert.equal(provisionalSats({net_cost_aud:"-0.38"},{},{state:"100"}).sats,38);
  assert.equal(provisionalSats({net_cost_aud:"0.29"},{},{state:"50"}).sats,15);

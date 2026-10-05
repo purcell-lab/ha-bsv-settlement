@@ -36,8 +36,8 @@ export function sessionJourney({accepted, state, ended, credit, imported, failur
   if (ended) return {step: 2, title: credit ? "Your credit is being processed" : "Finish your payment",
     hint: credit ? "The operator sends eligible credits automatically. Wallet receipt acceptance is a separate step." :
       "Keep this page and your wallet available. Any wallet payment prompts still need your approval."};
-  if (state === "waiting_for_operator_binding") return {step: 1, title: "Budget authorised",
-    hint: "Waiting for the operator to match your session. Use the charger or vehicle controls to start; this page does not control charging."};
+  if (state === "waiting_for_operator_binding") return {step: 0, title: "Budget approved",
+    hint: "Waiting for the operator to confirm your session. You do not need to approve again. Payment collection is not ready until the session is matched. This page does not control charging."};
   return {step: 1, title: "Your charging session", hint: "Keep this page and wallet available for automatic collection when the session ends. Use the charger or vehicle controls to stop."};
 }
 
@@ -54,7 +54,11 @@ export function simplifySessionLayout() {
   document.querySelector(".driver-toolbar").after(content);
   const account = document.createElement("details");
   account.id = "approved-terms";
-  account.innerHTML = "<summary>Approved budget and rates</summary>";
+  account.innerHTML = "<summary>Approved budget and terms</summary>";
+  const livePanel=document.createElement("section");
+  livePanel.id="live-session-panel";
+  livePanel.innerHTML="<h2>Rates and session energy</h2>";
+  livePanel.append($("prices"),$("energy-summary"),$("wallet-direction-note"));
   const support = document.createElement("details");
   support.className = "driver-support";
   support.innerHTML = "<summary>Session details and links</summary>";
@@ -73,9 +77,9 @@ export function simplifySessionLayout() {
   content.append($("terms"), $("wallet-section"), document.querySelector(".journey-primary"),
     $("approval-action"), $("status"), $("connection-status"), $("collection-section"), fullTerms, account, older, support,
     document.querySelector(".journey-more"));
+  content.prepend(livePanel);
   document.querySelector(".layout").remove();
-  $("collection-section").querySelector(".section-head").after($("energy-summary"));
-  $("energy-summary").after($("credit-status"));
+  $("collection-section").querySelector(".section-head").after($("credit-status"));
   document.querySelector(".energy-flow").hidden = true;
   $("status").classList.add("driver-feedback");
   return {update({accepted, receiptOnly, step}) {
@@ -84,8 +88,9 @@ export function simplifySessionLayout() {
       if (folded) account.append($("terms"), $("wallet-section"));
       else content.prepend($("terms"), $("wallet-section"));
     }
-    const rateParent=folded&&step===1?$("collection-section"):$("terms");
-    if($("prices").parentElement!==rateParent)rateParent.append($("prices"),$("wallet-direction-note"));
+    // Rates and metering are independent of payment state or collapsed terms.
+    content.prepend(livePanel);
+    livePanel.hidden=$("terms").hidden;
     account.hidden = !folded;
     if(fullTerms.parentElement!==(folded?account:content)){
       if(folded)account.append(fullTerms);else $("collection-section").after(fullTerms);

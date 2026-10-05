@@ -163,3 +163,68 @@ async def test_services_reject_context_free_automation(tmp_path):
         await hass.services.async_call("bsv_settlement", "prepare_energy_adjustment",
             data | {"config_entry_id": api.entry.entry_id}, blocking=True, context=Context())
     assert not api.saved["session_reviews"]
+
+
+@pytest.mark.parametrize("direction,price,credit", [
+    ("export", "0.25", True), ("import", "-0.25", True),
+    ("import", "0.25", False), ("export", "-0.25", False)])
+async def test_one_click_sends_credit_or_issues_debit_request(tmp_path, direction, price, credit):
+    _, api, proxy, _, _, data = await setup(tmp_path, price)
+    data |= {"energy_direction": direction, "confirm_mainnet_payment": True}
+    metering, budgets = copy.deepcopy(proxy.data), copy.deepcopy(api.saved["session_budgets"])
+    result = await api.reviews.execute("pay_energy_adjustment", data, "admin")
+    assert result["state"] == ("credit_submitted" if credit else "awaiting_driver_payment")
+    assert result["amount_sats"] == 125
+    assert result["identity_verification"] == "registered_wallet_verified_and_operator_one_click"
+    assert "one_click_authorised_by" not in result
+    for retry in (data, data | {"request_id": str(uuid4())}):
+        again = await api.reviews.execute("pay_energy_adjustment", retry, "admin")
+        assert again["review_id"] == result["review_id"]
+    assert len(api.chain.posts) == int(credit)
+    assert proxy.data == metering and api.saved["session_budgets"] == budgets
+    assert not api.saved.get("driver_collections")
+
+
+async def test_one_click_never_adopts_existing_manual_review(tmp_path):
+    _, api, _, _, _, data = await setup(tmp_path)
+    original = await api.reviews.execute("prepare_energy_adjustment", data, "admin")
+    result = await api.reviews.execute("pay_energy_adjustment", data | {
+        "request_id": str(uuid4()), "confirm_mainnet_payment": True}, "admin")
+    assert result["review_id"] == original["review_id"]
+    assert result["state"] == "awaiting_account_approval"
+    assert not api.chain.posts
+
+
+async def test_one_click_failed_attempt_cannot_auto_resume_and_retains_total_cap(tmp_path):
+    _, api, _, _, _, data = await setup(tmp_path, "1.99")
+    data["confirm_mainnet_payment"] = True
+    with pytest.raises(WalletError, match="1000"):
+        await api.reviews.execute("pay_energy_adjustment", data, "admin")
+    result = await api.reviews.execute("pay_energy_adjustment", data, "admin")
+    assert result["one_click_stopped"] is True
+    assert result["state"] == "credit_review_approved"
+    assert not api.chain.posts
+
+
+async def test_one_click_authorisation_and_context_required(tmp_path):
+    hass, api, _, _, _, data = await setup(tmp_path)
+    with pytest.raises(WalletError, match="authorisation"):
+        await api.reviews.execute("pay_energy_adjustment", data, "admin")
+    await async_setup(hass, {})
+    with pytest.raises(HomeAssistantError, match="administrator"):
+        await hass.services.async_call("bsv_settlement", "pay_energy_adjustment",
+            data | {"config_entry_id": api.entry.entry_id, "confirm_mainnet_payment": True},
+            blocking=True, context=Context())
+    assert not api.saved["session_reviews"] and not api.chain.posts
+
+
+async def test_one_click_replay_survives_restart(tmp_path):
+    hass, api, _, _, _, data = await setup(tmp_path)
+    data["confirm_mainnet_payment"] = True
+    result = await api.reviews.execute("pay_energy_adjustment", data, "admin")
+    restored = MainnetWalletAPI(hass, api.entry)
+    await restored.load()
+    restored.chain = api.chain
+    again = await restored.reviews.execute("pay_energy_adjustment", data, "admin")
+    assert again["review_id"] == result["review_id"]
+    assert len(api.chain.posts) == 1

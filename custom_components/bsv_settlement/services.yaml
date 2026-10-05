@@ -1,3 +1,36 @@
+pay_energy_adjustment:
+  name: Pay separate 5 kWh adjustment
+  description: REAL MAINNET FUNDS. Administrator click authorises a separate 5 kWh adjustment at the current valid tariff to the current verified driver. Operator credits send immediately with a fresh fee quote within 1000 sat total. Driver debits issue a manual payment request, never consume charging consent. Existing or uncertain adjustments return their status without another attempt.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        text:
+    proxy_config_entry_id:
+      required: true
+      selector:
+        text:
+    conversion_rate_entity:
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    energy_direction:
+      required: true
+      selector:
+        select:
+          options:
+            - import
+            - export
+    request_id:
+      description: Stable UUID. Reuse after a lost response; never generate a replacement to retry an uncertain payment.
+      required: true
+      selector:
+        text:
+    confirm_mainnet_payment:
+      required: true
+      selector:
+        boolean:
 prepare_energy_adjustment:
   name: Prepare separate 5 kWh adjustment
   description: Administrator only. Freeze the current registered driver and current live tariff for a separate real-value 5 kWh adjustment. Does not change metered sessions, consume charging consent, sign or send money. Negative prices reverse direction.

@@ -44,7 +44,7 @@ const receipt={...rows[0].transactions[0],session_id:rows[0].session_id,transact
   recipient_address:address,remittance:terms.credit_receiving,sender_identity:terms.operator_identity,
   proof:{txOrId:tx.id("hex"),index:0,nodes:[],target:"11".repeat(32)},
   block:{hash:"11".repeat(32),height:800000,merkleroot:tx.id("hex")}};
-if(params.has("sync")||params.has("report")){
+if(params.has("sync")||params.has("report")||params.has("automatic")){
   Object.assign(rows[0].transactions[0],{txid:receipt.txid,wallet_receipt_status:"not_recorded",wallet_imported_at:null});
 }
 wallet.getNetwork=async()=>({network:"mainnet"});

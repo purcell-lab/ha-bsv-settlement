@@ -115,7 +115,7 @@ class SessionReviews:
         result = copy.deepcopy(review)
         # Private HA/user identifiers and raw signing material are never returned.
         for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash",
-                    "driver_payment_raw"):
+                    "driver_payment_raw", "one_click_authorised_by"):
             result.pop(key, None)
         if review.get("credit_draft_id"):
             payment = self.api.saved["payments"].get(review["credit_draft_id"])
@@ -425,6 +425,7 @@ class SessionReviews:
         if not user_id:
             raise WalletError("An explicit administrator context is required")
         handlers = {
+            "pay_energy_adjustment": lambda: self.pay_adjustment(data, user_id),
             "prepare_energy_adjustment": lambda: self.prepare_adjustment(data, user_id),
             "prepare_adjustment_credit": lambda: self.prepare_adjustment_credit(data),
             "prepare_session_review": lambda: self.prepare(data, user_id),
@@ -441,3 +442,7 @@ class SessionReviews:
     async def prepare_adjustment(self, data, user_id):
         from .energy_adjustment import prepare
         return await prepare(self, data, user_id)
+
+    async def pay_adjustment(self, data, user_id):
+        from .energy_adjustment import pay
+        return await pay(self, data, user_id)

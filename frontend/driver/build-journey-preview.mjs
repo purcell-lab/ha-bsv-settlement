@@ -19,3 +19,12 @@ for(const [entry,dir,define] of [
   for(const name of ["dm-sans-latin-wght-normal.woff2","DM-SANS-LICENSE.txt"])
     await copyFile(`../../custom_components/bsv_settlement/frontend/driver/${name}`,`${dir}/${name}`);
 }
+const operator=`${root}/operator`;
+await mkdir(operator,{recursive:true});
+for(const name of ["index.html","preview.js","operator-card.js","budget-card.js","session-review-card.js",
+  "dm-sans-latin-wght-normal.woff2","DM-SANS-LICENSE.txt"])
+  await copyFile(`../../preview/${name}`,`${operator}/${name}`);
+await build({entryPoints:["../bsv-operator-card.js"],bundle:true,format:"esm",minify:true,
+  outfile:`${operator}/operator-card.js`,define:{localStorage:"window.previewAdjustmentStorage"}});
+const operatorHtml=await readFile(`${operator}/index.html`,"utf8");
+await writeFile(`${operator}/index.html`,operatorHtml.replace("./driver-preview.html","../session/index.html?scenario=active"));

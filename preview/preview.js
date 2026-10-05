@@ -1,6 +1,9 @@
 import "./operator-card.js";
 import "./budget-card.js";
 import "./session-review-card.js";
+// Preview only: in-memory request IDs for the sandboxed, no-network fixture.
+const requestIds=new Map();
+window.previewAdjustmentStorage={getItem:key=>requestIds.get(key),setItem:(key,value)=>requestIds.set(key,value)};
 const $=s=>document.querySelector(s);
 const ongoingOption=document.createElement("option");ongoingOption.value="ongoing";ongoingOption.textContent="Ongoing credits";$("#scenario").append(ongoingOption);
 const debitOption=document.createElement("option");debitOption.value="debit";debitOption.textContent="Driver payment due";$("#scenario").append(debitOption);
@@ -23,6 +26,14 @@ window.previewCalls=[];
 const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d})=>{
   window.previewCalls.push({service,data:structuredClone(d)});
   $("#notice").textContent=`Preview only: ${service.replaceAll("_"," ")}. No live call was made.`;
+  if(service==="pay_energy_adjustment"){
+    window.adjustmentFixtures ||= {};
+    window.adjustmentFixtures[d.request_id] ||= {review_id:d.request_id,
+      direction:d.energy_direction==="export"?"operator_to_driver":"driver_to_operator",
+      state:d.energy_direction==="export"?"credit_submitted":"awaiting_driver_payment",
+      amount_sats:d.energy_direction==="export"?41:62};
+    return {response:window.adjustmentFixtures[d.request_id]};
+  }
   if(service==="prepare_session_closure"){
     if(!["closure","zero"].includes($("#scenario").value))throw Error("Preview: existing credit or payment requires reconciliation. Select a completed-account scenario.");
     return {response:{closed:!!closedRecord,state:closedRecord?.state||"data_review_required",reason:closedRecord?.reason,
@@ -99,6 +110,7 @@ function state(){
  const price=(value)=>({state:String(value),attributes:{unit_of_measurement:"$/kWh",estimate:false,
    start_time:new Date(Date.now()-60000).toISOString(),end_time:new Date(Date.now()+240000).toISOString()}});
  hass.states["sensor.buy"]=price(0.1234);hass.states["sensor.sell"]=price(0.0826);
+ hass.states["sensor.rate"].attributes={unit_of_measurement:"sat/AUD"};
  hass.states["sensor.proxy"].attributes.source_entities={import_price:"sensor.buy",export_price:"sensor.sell"};
  if(s==="fee-aware"){
    hass.states["sensor.wallet"].attributes.automatic_credit={
