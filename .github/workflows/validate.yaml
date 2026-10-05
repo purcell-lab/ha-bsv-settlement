@@ -57,7 +57,7 @@ jobs:
         working-directory: frontend/driver
       - run: npm test && npm run build
         working-directory: frontend/driver
-      - run: git diff --exit-code -- custom_components/bsv_settlement/frontend/driver/app.bundle.js
+      - run: git diff --exit-code -- custom_components/bsv_settlement/frontend/driver
 
   operator:
     name: Operator UX tests and reproducible cards

@@ -1,3 +1,21 @@
+configure_grouped_wallet_test:
+  name: Configure native wallet authorisation test
+  description: Administrator only. Opt in to a 30,000 sat monthly spending request in the shared external host manifest. This covers the whole host, not just charging. Does not grant authority, enable monthly settlement, sign payments or import receipts. Disabling withdraws the request but does not revoke a wallet permission.
+  fields:
+    enabled:
+      required: true
+      selector:
+        boolean:
+    origin:
+      description: Exact configured external HTTPS origin, without a trailing slash or path.
+      example: https://charging.example
+      selector:
+        text:
+    confirm_shared_origin:
+      description: Required when enabling. Confirm that all applications on this external origin share its wallet permission scope.
+      default: false
+      selector:
+        boolean:
 pay_energy_adjustment:
   name: Pay separate 5 kWh adjustment
   description: REAL MAINNET FUNDS. Administrator click authorises a separate 5 kWh adjustment at the current valid tariff to the current verified driver. Operator credits send immediately with a fresh fee quote within 1000 sat total. Driver debits issue a manual payment request, never consume charging consent. Existing or uncertain adjustments return their status without another attempt.

@@ -1,0 +1,8 @@
+header,main,footer{max-width:760px}
+.test-limit{font-size:var(--text-xl);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;margin:var(--s6) 0}
+.test-limit span{font-size:var(--text-sm);font-weight:500;color:var(--muted)}
+dl{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr)}
+dd{overflow-wrap:anywhere}
+#ask{margin-top:var(--s4)}
+#status.notice{display:block;margin:var(--s4) 0 0}
+@media(max-width:480px){header,main,footer{padding:var(--s4)}section{padding:var(--s4)}}
