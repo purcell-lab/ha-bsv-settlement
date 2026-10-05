@@ -117,6 +117,10 @@ class SessionBudgets:
                 "state": self.public(row)["state"], "version": t["version"],
                 "approved": bool(row.get("receipt")), "expires_at": t["expires_at"],
                 "created_at": t["created_at"],
+                "accepted_at": row.get("accepted_at"),
+                "session_mode": t.get("session_mode"),
+                "max_total_sats": t["max_total_sats"],
+                "match_candidate_session_id": self.match_candidate(row),
                 "satoshis_per_aud": t["satoshis_per_aud"],
                 "receiving_registered_at": (row.get("credit_destination") or {}).get("registered_at"),
                 "credit_terms": bool(t.get("credit_receiving")),
@@ -126,6 +130,27 @@ class SessionBudgets:
                 from .weekly import summary
                 rows[-1]["multi_session"] = summary(self.api, row)
         return rows
+
+    def match_candidate(self, row):
+        """Read-only UI hint, never authority or automatic session selection."""
+        t = row["terms"]
+        if (t.get("session_mode") != "next_session_reservation"
+                or row.get("binding") or not row.get("receipt")
+                or self.public(row)["state"] != SPENDING_STATE):
+            return None
+        proxy = self.api.hass.data.get(DOMAIN, {}).get(row["proxy_config_entry_id"])
+        if proxy is None or proxy.mode != "sensor_proxy":
+            return None
+        record = (proxy.data or {}).get("latest_session")
+        if not record or record.get("ended_at"):
+            return None
+        try:
+            eligible = (datetime.fromisoformat(row["accepted_at"])
+                        <= datetime.fromisoformat(record["opened_at"])
+                        < datetime.fromisoformat(t["expires_at"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return record["session_id"] if eligible else None
 
     def public(self, row):
         result = copy.deepcopy(row)
@@ -203,22 +228,39 @@ class SessionBudgets:
         session_id = self.api.collections.session_id(row)
         proxy = self.api.hass.data.get(DOMAIN, {}).get(row["proxy_config_entry_id"])
         data = getattr(proxy, "data", None) or {}
+        # An unbound reservation or aggregate mandate must not reveal an
+        # arbitrary latest driver's session. A fixed receiving route provides
+        # read-only ownership evidence, not permission to collect a charge.
+        ongoing = self.api.ongoing_credits.driver_rows(row)
+        session_basis = "signed_session" if session_id else None
+        latest = data.get("latest_session")
+        if (not session_id and row.get("receipt") and latest
+                and any(r.get("session_id") == latest.get("session_id") for r in ongoing)):
+            session_id = latest["session_id"]
+            session_basis = "registered_receiving_route"
         record = next((s for s in [data.get("latest_session"), data.get("previous_session"),
                                   *getattr(proxy, "archive", [])]
                        if s and s.get("session_id") == session_id), None)
         session = ({k: copy.deepcopy(record.get(k)) for k in (
-            "session_id", "running_state", "ended_at", "import_kwh", "export_kwh", "net_cost_aud")}
+            "session_id", "ocpp_transaction_id", "opened_at", "energy_started_at", "running_state",
+            "ended_at", "import_kwh", "export_kwh", "import_cost_aud",
+            "export_credit_aud", "net_cost_aud", "quality_flags")}
             if record and not data.get("issues") else None)
         closure = self.api.saved.get("closed_sessions", {}).get(
             row["proxy_config_entry_id"] + "|" + session_id) if session_id else None
         from .weekly import weekly_terms, summary
+        from .driver_live import ocpp_display
         return {"invitation": copy.deepcopy(row["invitation"]), "state": self.public(row)["state"],
                 "multi_session": summary(self.api,row) if weekly_terms(row["terms"]) else None,
                 "closure": ({k: copy.deepcopy(closure.get(k)) for k in (
                     "state", "amount_sats", "reason", "received_funds")} if closure else None),
                 "prices": self.prices(row),
                 "session": session,
-                "ongoing_credits": self.api.ongoing_credits.driver_rows(row),
+                "session_basis": session_basis,
+                "session_updated_at": data.get("updated_at") if session else None,
+                "session_checked_at": now().isoformat(),
+                "ocpp": ocpp_display(self.api, row["proxy_config_entry_id"], record if session else None),
+                "ongoing_credits": ongoing,
                 "ongoing_credit_enabled": bool(self.api.ongoing_credits.policy.get("enabled")
                     and self.api.auto_credits.policy.get("enabled")),
                 "driver_identity": (row.get("receipt") or {}).get("driver_identity"),

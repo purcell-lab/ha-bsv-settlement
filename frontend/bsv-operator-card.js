@@ -1,6 +1,7 @@
 import {esc,num,stamp,short,styles,sessionStatus,energyMetrics,currentPrice,provisionalDisplay} from "./ui.js";
 import {awaitingApproval,approvalUrl,drawApprovalQR,pendingForSession} from "./approval-qr.js";
 import {warningMessage} from "./quality.js";
+import {confirmSessionMatch} from "./session-match.js";
 class BSVOperatorCard extends HTMLElement{
   setConfig(c){this.config=c;if(!this.shadowRoot)this.attachShadow({mode:"open"});this.render();}
   set hass(h){this._hass=h;this.render();}
@@ -40,7 +41,8 @@ class BSVOperatorCard extends HTMLElement{
       ${unavailable?`<p class="notice">Session data is unavailable. Do not infer a completed payment from an old reading.</p>`:`
       <div class="notice"><strong>${esc(summary.label)}</strong>${esc(summary.detail)}</div>
       ${warningMessage(s?.quality_flags)?`<p class="notice" style="margin-top:12px" role="note"><strong>Metering warning · settlement not blocked by this flag</strong>${esc(warningMessage(s.quality_flags))} Consent, valid amounts, complete pricing and payment safety checks still apply.</p>`:""}
-      <div class="actions">${link(summary.target==="payments"?settlementPath:summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${link("wallet","View funds")}</div>
+      <div class="actions">${summary.matchBudgetId?`<button id="match-session" class="primary" ${this.matchBusy||!h.user?.is_admin?"disabled":""}>Confirm this session</button>`:link(summary.target==="payments"?settlementPath:summary.target,summary.target==="payments"?"View settlement":summary.target==="wallet"?"Check wallet":"Set up driver",true)}${summary.matchBudgetId?link("drivers","Driver setup"):""}${link("wallet","View funds")}</div>
+      <p id="match-feedback" class="note" role="status">${esc(this.matchMessage||"")}</p>
       <section id="approval-qr" class="section" hidden aria-label="Driver approval"></section>
       ${s?`<div class="section"><div class="row"><div><p class="note">${esc(estimate.label)}</p><p class="amount">${esc(estimate.value)}</p>${estimate.reason?`<p class="note" role="status">${esc(estimate.reason)}</p>`:""}<p class="note">AUD ${num(s.net_cost_aud===null||s.net_cost_aud===undefined||s.net_cost_aud===""?null:Math.abs(Number(s.net_cost_aud)),2)} · ${estimate.rate===null?"Conversion unavailable":`${num(estimate.rate,2)} sat/AUD (${estimate.fixed?"session rate":"current indicative rate"})`}</p><p class="note">Estimate only; network fees excluded. Actual payment and confirmation appear in settlement.</p></div><span class="badge ${summary.tone}">${esc(summary.label)}</span></div>
       <dl><dt>Energy Imported to EV</dt><dd>${num(energy.toEV.kwh,2)} kWh<br><span class="note">Average ${num(energy.toEV.average,4)} $/kWh</span></dd><dt>Energy Imported from EV</dt><dd>${num(energy.fromEV.kwh,2)} kWh<br><span class="note">Average ${num(energy.fromEV.average,4)} $/kWh</span></dd><dt>${s.ended_at?"Ended":"Started"}</dt><dd>${esc(stamp(s.ended_at||s.energy_started_at||s.opened_at))}</dd><dt>Session reference</dt><dd>${esc(short(s.ocpp_transaction_id))}</dd></dl>
@@ -56,6 +58,20 @@ class BSVOperatorCard extends HTMLElement{
       proxy&&!["unknown","unavailable"].includes(proxy.state)&&!(proxy.attributes?.issues||[]).length?
       pendingForSession(sessions[0],health):null;
     if(pending)this.loadApprovalQR(pending.budget_id,signature);
+    const match=this.shadowRoot.getElementById("match-session");
+    if(match)match.onclick=async()=>{
+      if(this.matchBusy)return;
+      const selected=sessions[0],choice=sessionStatus(selected,health);
+      if(!choice.matchBudgetId)return;
+      this.matchBusy=true;match.disabled=true;
+      try{
+        const result=await confirmSessionMatch(()=>this._hass,c,choice.matchBudgetId,selected.session_id,
+          text=>confirm(text));
+        this.matchMessage=result.cancelled?"Session matching cancelled. No change made.":
+          "Driver confirmed and session matched. Keep the driver page and wallet available for settlement.";
+      }catch(e){this.matchMessage=e.message||"Matching failed. Refresh driver setup; do not create another approval.";}
+      finally{this.matchBusy=false;this.signature=null;this.render();}
+    };
     for(const d of this.shadowRoot.querySelectorAll("details"))if(opened.includes(d.querySelector("summary")?.textContent))d.open=true;
     const button=this.shadowRoot.getElementById("refresh");
     if(button)button.onclick=async()=>{

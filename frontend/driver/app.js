@@ -13,6 +13,7 @@ import {warningMessage} from "../quality.js";
 import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
 import {mountDriverToolbar,qrText} from "./navigation.js";
 import {sessionJourney,simplifySessionLayout} from "./journey.js";
+import {liveSessionView} from "./session-live.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
 function drawApprovalQR(holder,url){
@@ -40,6 +41,24 @@ $("open-private-link").onclick=()=>{
 };
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
 let liveSession=null;
+let sessionCheckedAt=null,sessionUpdatedAt=null,sessionBasis=null,sessionReadFailed=false,liveOcpp=null;
+function paintLiveSession(){
+  const v=liveSessionView(liveSession,{checkedAt:sessionCheckedAt,updatedAt:sessionUpdatedAt,
+    basis:sessionBasis,failed:sessionReadFailed,ocpp:liveOcpp,conversionRate:checked?.terms.satoshis_per_aud});
+  $("energy-summary").hidden=!checked;
+  for(const [id,value] of [["session-import-total",v.imported],["session-export-total",v.exported],
+    ["session-energy-note",v.note],["session-net-label",v.amountLabel],
+    ["session-net-sats",v.satsValue],["session-net-aud",v.audValue],
+    ["session-import-average",v.importAverage],["session-export-average",v.exportAverage],
+    ["session-live-started",v.started],["session-live-reference",v.reference],
+    ["session-live-full-reference",v.fullReference],["session-live-quality",v.quality],
+    ["session-ocpp-status",v.ocppStatus],["session-ocpp-note",v.ocppNote]])$(id).textContent=value;
+  $("session-authority-badge").textContent=sessionReadFailed?"Status not updated":
+    collectionState==="waiting_for_operator_binding"?"Budget approved · session confirmation needed":
+    collectionState==="waiting_for_session_end"?"Driver collection approved":
+    !accepted?"Driver approval needed":collectionState?
+      (collectionMessages[collectionState]||collectionState.replaceAll("_"," ")):"Checking settlement readiness";
+}
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set();
@@ -284,7 +303,7 @@ function controls() {
   $("receive-ongoing").classList.add("toolbar-managed");
   toolbar.update({
     connect:{target:"resume-collection",enabled:!$("resume-collection").disabled&&!$("resume-collection").hidden&&
-      !["broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState),
+      !["waiting_for_operator_binding","broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState),
       label:collectionState==="recovery_ready"?"Review and resume payment":liveSession?.ended_at?"Reconnect to finish payment":"Reconnect wallet",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
     pair:{target:"pairing-connect",enabled:!$("pairing-section").hidden&&!$("pairing-connect").disabled,reason:"Load a valid private invitation, or finish the active wallet action."},
     approve:{target:"approve",primary:true,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
@@ -295,6 +314,7 @@ function controls() {
     report:{target:"retry-collection",primary:true},
   },{step:journey.step,title:journey.title,unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
   simpleLayout.update({accepted,receiptOnly,step:journey.step});
+  paintLiveSession();
   $("approval-action").classList.add("toolbar-managed");
   $("credit-status").hidden=!accepted||creditRegistered||!!checked?.terms.closed_session_review;
   $("driver-help-contact").textContent=checked?.terms.operator_contact?`Need help? ${checked.terms.operator_contact}`:"Need help? Contact your charging operator.";
@@ -314,7 +334,7 @@ async function api(action, extra={}) {
   return result;
 }
 function paintPrices() {
-  $("prices").hidden = !capability || !!checked?.terms.closed_session_review;
+  $("prices").hidden = !capability;
   for (const [key,id] of [["import","import-price"],["export","export-price"]]) {
     const p=live?.[key];
     $(id).textContent = p?.available ? `${Number(p.aud_per_kwh).toFixed(4)} $/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
@@ -323,6 +343,7 @@ function paintPrices() {
     ? `Rates checked ${new Date(live.checked_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. They may change during your session.`
     : "Waiting for current buy and sell rates.";
   $("price-warning").textContent = pricesValid() ? "Indicative now, not a fixed tariff. The signed rule uses each interval's price." :
+    accepted?"Current prices are unavailable or stale. Your saved approval is unchanged; final pricing checks still apply.":
     "Prices are unavailable or stale. Approval is paused until current prices return.";
   $("price-warning").hidden=!!pricesValid();
   $("wallet-direction-note").textContent=pricesValid()&&live?.import&&live?.export?
@@ -412,8 +433,10 @@ async function refresh(initial=false) {
     creditEnabled=result.automatic_credit_enabled;creditRegistered=result.credit_destination_registered;
     const s=result.session;
     liveSession=s;
-    $("energy-summary").hidden=!s;
-    if(s)$("energy-summary").textContent=`${s.ended_at?"Session ended":"Session in progress"} · Energy Imported to EV: ${s.import_kwh ?? "unavailable"} kWh · Energy Imported from EV: ${s.export_kwh ?? "unavailable"} kWh${s.net_cost_aud!==null&&s.net_cost_aud!==undefined ? ` · Provisional ${Number(s.net_cost_aud)<0?"credit":"charge"} AUD ${Math.abs(Number(s.net_cost_aud)).toFixed(2)}`:""}`;
+    sessionCheckedAt=result.session_checked_at||new Date().toISOString();
+    sessionUpdatedAt=result.session_updated_at;sessionBasis=result.session_basis;sessionReadFailed=false;
+    liveOcpp=result.ocpp;
+    paintLiveSession();
     $("credit-status").textContent=creditRegistered ?
       "Receiving wallet registered. Eligible net credits are paid automatically by the operator, even if you close this page. Reopen to import the confirmed credit into your wallet." :
       "Receiving wallet is not registered. Automatic credits are not ready for this session.";
@@ -432,6 +455,7 @@ async function refresh(initial=false) {
       "Review the completed account, metering warnings and fee limits before approving payment. Your wallet may ask for permission.":
       "Review the operator, current prices and budget, then select Authorise EV charging budget. Your wallet may ask for permission.");
   } catch(e) {
+    sessionReadFailed=true;paintLiveSession();
     live=null;paintPrices();
     $("connection-status").hidden=false;
     $("connection-status").textContent="Connection interrupted. Session and payment state are not updated. "+(e.message||"Try again later.");
@@ -745,10 +769,10 @@ setInterval(()=>void refreshPublicInvitation(),5000);
 let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
 function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";$("theme").setAttribute("aria-label",`Switch to ${theme==="dark"?"light":"dark"} mode`);}
 $("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
-setInterval(()=>{paintPrices();controls();},1000);
+setInterval(()=>{paintPrices();paintLiveSession();controls();},1000);
 // Covers late wallet injection and credits which confirm while this page stays open.
 // A failed/declined attempt is latched until an explicit manual retry or page reopen.
 setInterval(()=>void syncConfirmedReceipts(),3000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void syncConfirmedReceipts();});
-setInterval(()=>{if(capability&&!framed&&!busy&&!collectionBusy)refresh();},30000);
+setInterval(()=>{if(capability&&!framed&&!busy&&!collectionBusy)refresh();},15000);
 controls();

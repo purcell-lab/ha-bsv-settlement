@@ -1,4 +1,9 @@
 @font-face{font-family:"DM Sans";src:url("./dm-sans-latin-wght-normal.woff2") format("woff2");font-weight:100 1000;font-display:swap}
+.live-account{border-top:1px solid var(--line);padding-top:var(--s3);margin-top:var(--s4)}
+.live-sats{font-size:2rem;font-weight:700;color:var(--ink);line-height:1.2;margin:var(--s2) 0 var(--s4);font-variant-numeric:tabular-nums}
+.live-account .badge{display:inline-block;max-width:100%;margin:var(--s2) 0;overflow-wrap:anywhere}
+.live-account dl{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:var(--s4)}
+#live-session-panel h2{font-size:var(--text-lg)}
 .toolbar-managed{display:none!important}
 .driver-toolbar{margin-bottom:20px}
 .driver-modes{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px}

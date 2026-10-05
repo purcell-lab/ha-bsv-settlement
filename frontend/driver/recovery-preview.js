@@ -20,7 +20,7 @@ banner.innerHTML=`<p>Design preview. Fictional sessions, no real payments.</p><d
 <option value="ongoing">Reviewed collection with a separate ongoing session</option>
 <option value="reservation">Unbound future reservation with ongoing credits</option>
 <option value="offline">Status connection interrupted</option></select>
-<p class="small">Changing the scenario reloads this fixture only. The real page polls every 30 seconds.</p>
+<p class="small">Changing the scenario reloads this fixture only. The real page polls every 15 seconds.</p>
 <p><a href="../index.html">Sign-in preview</a></p></details>`;
 document.querySelector("main").append(banner);
 const mode=new URLSearchParams(location.search).get("scenario")||"unconfirmed";
@@ -93,12 +93,16 @@ window.fetch=async(url,options)=>{
       closure:mode==="waived"?{state:"waived",amount_sats:89,reason:"Operator waived the charge"}:null,
       driver_identity:unsignedMode&&!closedApproved?null:identity,automatic_credit_enabled:false,credit_destination_registered:mode!=="closed",
       binding:null,ongoing_credit_enabled:true,
+      session_checked_at:new Date().toISOString(),session_updated_at:new Date().toISOString(),
+      session_basis:mode==="reservation"?"registered_receiving_route":"signed_session",
+      ocpp:{available:mode==="active"||mode==="reservation",status:window.previewOcppStatus||"Charging",checked_at:new Date().toISOString(),
+        reason:"Current OCPP connector state. Separate from payment status and energy direction."},
       ongoing_credits:["recovery","closed","waived","approval","active","confirmed","unknown"].includes(mode)?[]:[{
         credit_id:"fictional-ongoing-credit",session_id:"fictional-other-session",
         transaction_id:"other-session-reference",state:"waiting_for_session_end",
         recipient_address:terms.operator_address,
       }],
-      session:mode==="closed"?{...closedAccount,net_cost_aud:"0.05"}:{...account,ended_at:["active","approval"].includes(mode)?null:account.ended_at,import_kwh:3.8,export_kwh:0.2,net_cost_aud:"0.89"},
+      session:mode==="closed"?{...closedAccount,net_cost_aud:"0.05"}:{...account,opened_at:new Date(Date.now()-600000).toISOString(),ended_at:["active","approval","reservation"].includes(mode)?null:account.ended_at,import_kwh:3.8,export_kwh:0.2,import_cost_aud:.95,export_credit_aud:.06,net_cost_aud:"0.89",...(window.previewEnergyOverride||{})},
       prices:{valid:!["closed","stale"].includes(mode),checked_at:new Date().toISOString(),
         import:{...p,aud_per_kwh:"0.25"},export:{...p,aud_per_kwh:"0.12"}}});
   }
