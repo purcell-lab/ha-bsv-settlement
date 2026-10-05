@@ -49,3 +49,13 @@ Use only offline fixtures and mocks. Never sign, broadcast or operate a real cha
 ## Release boundary
 
 Prepare a reviewable PR and an isolated preview. Do not merge, install, restart Home Assistant, alter approvals or exercise real-value settlement without the user's next deployment instruction. The preview is not evidence of compatibility with a live mobile wallet; that remains a post-install check.
+
+## Verified offline results
+
+Driver tests: 110 passed. Operator tests: 76 passed. The focused HTTP/portal Python tests passed 30 tests. A full local Python run passed 1,027 tests with one generated-file parity failure; rebuilding the distributed assets corrected that failure and its targeted rerun passed. GitHub CI repeats the full Python suite.
+
+Browser checks at 375 px and 1280 px found no page errors or horizontal overflow in the tested states. Light/dark display and 200% zoom were checked. Combined authorisation saved exactly one mock approval and created no payment draft for an open session. Held, uncertain, unconfirmed and expired states offered no new payment/approval action. Declined wallet permission left an explicit error and zero saved approvals.
+
+The history fixture loaded 27 records through pagination, expanded session rows, refreshed and signed out without granting spending permission. Receipt import/reporting was tested both normally and with an interrupted report: recovery kept the import count at one and retried only the acknowledgement. Private-session and public-registration QR text remained selectable, with the clipboard fallback exercised.
+
+Real mobile pairing and real-value settlement were not exercised. The preview clearly identifies fictional data and blocks external wallet/payment requests.

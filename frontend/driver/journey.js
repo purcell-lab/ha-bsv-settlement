@@ -84,6 +84,8 @@ export function simplifySessionLayout() {
       if (folded) account.append($("terms"), $("wallet-section"));
       else content.prepend($("terms"), $("wallet-section"));
     }
+    const rateParent=folded&&step===1?$("collection-section"):$("terms");
+    if($("prices").parentElement!==rateParent)rateParent.append($("prices"),$("wallet-direction-note"));
     account.hidden = !folded;
     if(fullTerms.parentElement!==(folded?account:content)){
       if(folded)account.append(fullTerms);else $("collection-section").after(fullTerms);
