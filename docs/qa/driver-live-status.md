@@ -49,3 +49,18 @@ The later user request adds two immediate-action 5 kWh buttons to Status, with A
 - These checks do not establish that the user's actual BSV Browser is connected. No live HA services, funds or registration changes were used for this addition.
 
 Installation must update both frontend and backend and refresh the operator-card resource cache marker. The recorder sensor now supplies its exact nonsecret config entry ID, so the existing overview configuration does not need a guessed recorder identifier.
+
+## Automatic credit receipt on portal sign-in
+
+The user explicitly rejected selecting sessions to receive money. The proposed session-opening controls were removed before commit. No new capability-recovery endpoint or expanded sign-in scope is included.
+
+While the portal is visible, authenticated and connected to the same wallet, it now scans all owner-filtered history pages and imports every provider-confirmed, unaccepted operator-to-driver receipt. It checks again every 30 seconds and when the page becomes visible. No session selection or Sync click is needed. Wallet permission prompts can still require approval.
+
+Driver charges, unconfirmed payments and uncertain submissions are not imported or retried. A disconnected browser does not probe local wallet transports automatically. A failed or declined wallet action pauses automatic prompts and exposes a single retry action. Receipt acceptance and operator reporting remain separate; an acknowledgement retry uses the in-page import cache rather than importing again.
+
+Validation:
+- 125 driver tests passed, including history beyond the first 25 sessions, exact wallet matching, duplicate rows and absent-wallet gating.
+- 40 portal and receipt-acknowledgement backend tests passed. The backend and login scope are unchanged.
+- Mobile mock browser: one wallet sign-in caused one receipt import and one acceptance report, with no session selection. Both history pages were checked and no horizontal overflow occurred.
+- Simulated reporting interruption: initial import count 1, report attempts 1; after the explicit retry, import count remained 1 and report attempts became 2.
+- No live receipt was imported and no live funds were sent. PR #76 remains staged under the user's instruction.
