@@ -162,3 +162,26 @@ select{font:inherit;max-width:100%;width:100%;min-height:44px;background:var(--p
 #portal-status:empty{display:none}
 @media(max-width:420px){.journey-steps li>span{display:inline-block}.journey-steps li{font-size:var(--text-xs)}.journey-steps{gap:var(--s1)}}
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+/* Station-first portal (S4) */
+.station-nav{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s3);border-bottom:1px solid var(--line);margin:0 0 var(--s4);flex-wrap:wrap}
+.station-tabs{display:flex;gap:var(--s1);min-width:0}
+.station-tabs [role=tab]{margin:0;min-height:44px;padding:var(--s2) var(--s4);border:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0;background:transparent;color:var(--muted);font-weight:600}
+.station-tabs [role=tab][aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);background:var(--soft)}
+.station-tabs [role=tab]:focus-visible,.wallet-button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wallet-button{margin:0 0 var(--s2);min-height:44px}
+.wallet-drawer{border:1px solid var(--line);border-radius:8px;padding:var(--s4);margin:0 0 var(--s4);background:var(--paper)}
+.wallet-drawer h3{font-size:var(--text-sm);margin:var(--s4) 0 var(--s2)}
+.terms-list{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--s2) var(--s3);margin:var(--s3) 0}
+.terms-list dt{color:var(--muted);font-size:var(--text-sm)}.terms-list dd{margin:0;overflow-wrap:anywhere}
+.metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);margin:var(--s4) 0}
+.metric-grid>div{background:var(--soft);border-radius:8px;padding:var(--s3)}
+.metric-grid dt{font-size:var(--text-sm);color:var(--muted)}.metric-grid dd{margin:var(--s1) 0 0;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.confirm-panel{border:2px solid var(--accent);border-radius:8px;padding:var(--s4);margin:var(--s4) 0}
+.confirm-panel h3:focus,#monthly-cancel-title:focus,#wallet-drawer-title:focus{outline:none}
+#monthly-readiness ul{padding-left:20px}#monthly-readiness li{margin:var(--s2) 0}
+.rate-help{margin:var(--s3) 0}
+[role=tabpanel]:focus-visible{outline:2px dashed var(--line);outline-offset:4px}
+@media(max-width:720px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.terms-list{grid-template-columns:1fr}.terms-list dd{margin-bottom:var(--s2)}
+  .station-tabs{width:100%}.station-tabs [role=tab]{flex:1;padding:var(--s2)}.wallet-button{width:100%}}
+section[role=tabpanel]{padding:0;background:transparent;border:0;border-radius:0;margin-bottom:0}
+.terms-list dd{text-align:left}

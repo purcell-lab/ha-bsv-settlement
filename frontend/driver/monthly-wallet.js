@@ -69,7 +69,11 @@ export async function walletCapabilities(wallet,{supportedMethods=null,timeoutMs
   try{
     return await Promise.race([(async()=>{
       if(!wallet||!can("getPublicKey")||!can("createSignature"))throw Error("Wallet APIs are unavailable in this browser.");
-      if(can("isAuthenticated")&&!(await wallet.isAuthenticated({}))?.authenticated){
+      let locked=false;
+      // Some substrates behind WalletClient lack the lock query: then the
+      // identity request below is the wallet's own unlock gate.
+      if(can("isAuthenticated"))try{locked=!(await wallet.isAuthenticated({}))?.authenticated;}catch{locked=false;}
+      if(locked){
         assertActive();
         if(!can("waitForAuthentication"))throw Error("Unlock your wallet, then try again.");
         await wallet.waitForAuthentication({});
@@ -160,15 +164,17 @@ export class MonthlySetup{
       }
     }
     if(caps.canReceive){
-      await this.syncReceipts(wallet,identity);
+      const sync=await this.syncReceipts(wallet,identity);
       assertActive();
-      this.step("receipts","done");
+      // A paused sync is reported, never shown as received.
+      if(sync?.paused){missing.add("receipts_paused");this.step("receipts","paused",sync.reason||"Receiving credits paused.");}
+      else this.step("receipts","done");
     }else{missing.add("wallet_receiving");this.step("receipts","missing","This wallet connection cannot receive credits.");}
     if(status.native_grant?.state!=="verified")this.step("wallet_permission","missing",
       "The wallet's monthly spending permission is not verified. Payments will ask in the wallet each time, or wait.");
     else this.step("wallet_permission","done");
     // Readiness is the server's verified answer, narrowed by local capability.
-    const ready=status.readiness?.automatic_collection===true&&caps.canReceive;
+    const ready=status.readiness?.automatic_collection===true&&caps.canReceive&&!missing.size;
     return {...result(status),ready};
   }
 }

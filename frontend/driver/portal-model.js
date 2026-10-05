@@ -1,5 +1,6 @@
 import {KeyDeriver,Signature} from "@bsv/sdk";
 import {bytes,hex,canonical} from "./model.js";
+import {provisionalSats} from "../ui.js";
 export const loginProtocol=[2,"ev portal login"];
 export const loginScope="read_own_charging_sessions_and_sync_existing_credit_receipts";
 export function compactIdentity(identity){
@@ -42,9 +43,32 @@ export function transactionStatus(t){
   return ({provider_unconfirmed:"Awaiting block confirmation",submitted:"Submitted · awaiting confirmation",
     broadcast_unknown:"Submission uncertain · do not retry payment",waived:"Waived",
     wallet_attempt_reserved:"Held for review",waiting_for_session_end:"Session in progress",
-    no_operator_credit:"No operator credit due"})[t.state]||String(t.state||"Review required").replaceAll("_"," ");
+    no_operator_credit:"No operator credit due",
+    monthly_reserved:"Session amount reserved within allowance. No payment confirmed.",
+    reservation_released:"Unused reservation released. Not a payment.",
+    wallet_spend_recorded:"Wallet spending recorded. Provider confirmation is not recorded."})[t.state]||String(t.state||"Review required").replaceAll("_"," ");
 }
-export function sessionSummary(s){
+export function provisionalSession(s,now=Date.now()){
+  // A provisional account is not a payment. Never replace a submitted/final
+  // transaction, or manufacture a number from missing pricing or a stale meter.
+  if(s.ended_at!==null||s.closure||(s.transactions||[]).some(t=>
+    t.txid||Number.isSafeInteger(t.amount_sats)||!["waiting_for_session_end","automatic_credit_pending"].includes(t.state)))return null;
+  const checked=Date.parse(s.meter_updated_at),net=s.net_amount_aud;
+  const fresh=Number.isFinite(checked)&&now-checked>=-5000&&now-checked<=120000;
+  const valid=fresh&&
+    ["number","string"].includes(typeof net)&&String(net).trim()!==""&&Number.isFinite(Number(net));
+  const sats=valid?provisionalSats({net_cost_aud:net},{},{state:s.satoshis_per_aud}).sats:null;
+  if(sats===null)return {payment:"Provisional amount unavailable",amount:"Provisional amount unavailable",
+    note:!fresh?"Waiting for a fresh meter update. No payment requested.":
+      "Waiting for valid session pricing and its conversion rate. No payment requested."};
+  const direction=Number(net)<0?"credit":Number(net)>0?"charge":"balance";
+  return {payment:`Provisional ${direction} ${sats} sat`,
+    amount:`Provisional ${direction}${direction==="balance"?"":" to you"}: ${sats} sat`,
+    note:`AUD ${Math.abs(Number(net)).toFixed(2)} · ${s.satoshis_per_aud} sat/AUD (session rate). Network fees excluded. Amount can change until the session closes. Not a payment request.`};
+}
+export function sessionSummary(s,now=Date.now()){
+  const provisional=provisionalSession(s,now);
+  if(provisional)return {payment:provisional.payment,status:"Active",warning:!!s.quality_flags?.length};
   const rows=s.transactions||[];
   let payment="No payment",status=s.ended_at?"Recorded":"Active";
   if(s.closure?.state?.includes("waiv"))status="Waived";

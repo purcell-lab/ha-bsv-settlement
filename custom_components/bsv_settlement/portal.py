@@ -118,12 +118,17 @@ def history(api, identity):
             proxy = api.hass.data.get(DOMAIN, {}).get(proxy_id)
             records = api.ongoing_credits.records(proxy) if proxy else []
             record = next((r for r in records if r.get("session_id") == sid), {})
+            from .driver_live import ocpp_display
             result[key] = {"session_key": key, "session_id": sid,
                 "transaction_id": record.get("ocpp_transaction_id"), "opened_at": record.get("opened_at"),
                 "ended_at": record.get("ended_at"), "running_state": record.get("running_state"),
+                "ocpp": ocpp_display(api, proxy_id, record),
                 "import_kwh": record.get("import_kwh"), "export_kwh": record.get("export_kwh"),
                 "import_cost_aud": record.get("import_cost_aud"), "export_credit_aud": record.get("export_credit_aud"),
                 "net_amount_aud": record.get("net_cost_aud"),
+                "meter_updated_at": record.get("as_of") or (
+                    (getattr(proxy, "data", None) or {}).get("updated_at") if proxy else None),
+                "satoshis_per_aud": None,
                 "quality_flags": copy.deepcopy(record.get("quality_flags", [])),
                 "agreements": [], "transactions": []}
         return result[key]
@@ -188,6 +193,60 @@ def history(api, identity):
             public | (public.get("receipt") or {}))
         transaction(target, item, review["direction"], "adjustment:" + review["review_id"],
                     recipient["budget_id"], account)
+    from .monthly_projection import owned_accounts
+    for binding, ledger in owned_accounts(api, identity):
+        proxy_id, sid = binding["account_key"].split("|", 1)
+        target = session(proxy_id, sid)
+        target["authority_kind"] = "monthly"
+        target["transaction_id"] = binding["transaction_id"]
+        target["opened_at"] = binding["opened_at"]
+        target["satoshis_per_aud"] = binding["satoshis_per_aud"]
+        target["agreements"].append({"authority_id": binding["authority_id"],
+                                     "state": "cancelled" if ledger.cancelled else "active",
+                                     "expires_at": None})
+        final = binding["final_account"]
+        if final is not None:
+            account = final["account"]
+            for field in ("import_kwh", "export_kwh", "net_amount_aud", "ended_at",
+                          "import_cost_aud", "export_credit_aud", "quality_flags"):
+                if field in account:
+                    target[field] = copy.deepcopy(account[field])
+        for attempt in ledger.attempts:
+            if attempt.account_id != binding["account_key"]:
+                continue
+            # Accounting commit is not provider confirmation. No txid, receipt,
+            # or chain result is inferred from an opaque evidence reference.
+            debit = final["debit_sats"] if final else None
+            target["transactions"].append({
+                "id": "monthly:" + attempt.attempt_id, "direction": "driver_to_operator",
+                "state": {"committed": "wallet_spend_recorded", "reserved": "monthly_reserved",
+                          "wallet_pending": "wallet_attempt_reserved", "uncertain": "broadcast_unknown",
+                          "released": "reservation_released"}[attempt.state],
+                "amount_sats": debit, "fee_sats": attempt.spent_sats - debit
+                if attempt.state == "committed" and debit is not None else None,
+                "txid": None, "confirmations": None, "wallet_receipt_status": None,
+                "wallet_imported_at": None, "receiving_budget_id": None})
+    for target in result.values():
+        if target.get("authority_kind") == "monthly":
+            continue
+        if target["ended_at"]:
+            continue
+        # Use this session's frozen receiving route first, matching the operator
+        # card. Never use the latest driver or a different session's FX rate.
+        route = api.ongoing_credits.routes.get("ongoing:" + target["session_key"])
+        if (route and route["recipient"]["budget_id"] in rows
+                and route["recipient"].get("driver_identity") == identity):
+            target["satoshis_per_aud"] = route.get("satoshis_per_aud")
+        else:
+            rates = {
+                str(row["terms"].get("satoshis_per_aud"))
+                for row in rows.values()
+                if row["proxy_config_entry_id"] + "|" + str(api.collections.session_id(row))
+                == target["session_key"]
+            }
+            # Multiple historical approvals must not lead to a guessed rate.
+            if len(rates) == 1:
+                target["satoshis_per_aud"] = next(iter(rates))
     return sorted(result.values(), key=lambda s: (s["opened_at"] or s["ended_at"] or "", s["session_key"]), reverse=True)
 
 
@@ -261,7 +320,7 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
-                              "credit_receipt", "acknowledge_credit_receipt", *monthly_portal.ACTIONS):
+                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -270,6 +329,8 @@ class DriverPortalView(HomeAssistantView):
             coord = coords[0]
             if action == "prices":
                 return web.json_response(current_prices(coord.api), headers=HEADERS)
+            if action == "station":
+                return web.json_response(monthly_portal.public_station(self.hass, coord, origin), headers=HEADERS)
             token = request.cookies.get(COOKIE, "")
             key = sha(token)
             item = state.sessions.get(key)

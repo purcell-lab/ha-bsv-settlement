@@ -70,6 +70,15 @@ def configured(hass, coord, origin):
     return portal
 
 
+def public_station(hass, coord, origin):
+    """Public station facts only: no driver, session, ledger or private link data."""
+    portal = configured(hass, coord, origin)
+    if portal is None:
+        return {"monthly_enabled": False, "station_ids": []}
+    return {"monthly_enabled": True, "station_ids": list(portal.station_ids),
+            "operator_identity": coord.api.identity["public_key"], "monthly_limit_sats": 30_000}
+
+
 def _refusal(exc):
     text = str(exc)
     for needle, code in (("revision conflict", "revision_conflict"),

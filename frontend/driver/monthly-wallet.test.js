@@ -238,3 +238,19 @@ test("challenge validation accepts Python isoformat microseconds and rejects exp
   assert.equal(checkMonthlyChallenge(challenge,{hostname:HOST,identity,stations:["station-1"],now}).authority_id,"x");
   assert.throws(()=>checkMonthlyChallenge(challenge,{hostname:HOST,identity,stations:["station-1"],now:now+600200}));
 });
+
+test("a paused receipt sync is reported as missing, not received",async()=>{
+  const wallet=fixtureWallet("full"),identity=await identityOf(wallet),server=fakeServer();
+  const flow=new MonthlySetup({api:server.api(identity),signIn:async()=>identity,
+    syncReceipts:async()=>({paused:true,reason:"Wallet closed"})});
+  const out=await flow.run({wallet,identity,hostname:HOST,confirmTerms:async()=>true});
+  assert.equal(out.ready,false);assert.ok(out.missing.includes("receipts_paused"));
+  assert.equal(out.steps.find(s=>s.id==="receipts").state,"paused");
+});
+
+test("a substrate without the lock query still proceeds through the identity gate",async()=>{
+  const wallet=fixtureWallet("full");
+  wallet.isAuthenticated=async()=>{throw TypeError("this.CWI.isAuthenticated is not a function");};
+  const caps=await walletCapabilities(wallet);
+  assert.equal(caps.network,"mainnet");assert.equal(wallet.calls.getPublicKey,1);
+});

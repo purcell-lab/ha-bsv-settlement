@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {PrivateKey,ProtoWallet} from "@bsv/sdk";
 import {canonical} from "./model.js";
-import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity} from "./portal-model.js";
+import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
 import {priceCard} from "./portal-prices.js";
 const priceNow=Date.parse("2026-10-04T00:00:00Z");
 const currentRate={available:true,estimate:false,aud_per_kwh:"0.285",
@@ -87,4 +87,31 @@ test("compact rows never invent totals, payments or settlement success",()=>{
   assert.equal(sessionSummary({transactions:[{},{}]}).payment,"2 payments");
   assert.equal(sessionSummary({transactions:[{direction:"driver_to_operator"}]}).payment,"Pay amount unknown");
   assert.equal(sessionSummary({transactions:[{state:"broadcast_unknown"}]}).status,"Review");
+});
+const activeSession=()=>({ended_at:null,net_amount_aud:-.06,satoshis_per_aud:"100",
+  meter_updated_at:new Date(priceNow).toISOString(),
+  transactions:[{state:"waiting_for_session_end",direction:"operator_to_driver"}]});
+test("open session uses provisional account, not a nonexistent payment amount",()=>{
+  const s=activeSession();
+  assert.equal(provisionalSession(s,priceNow).amount,"Provisional credit to you: 6 sat");
+  assert.equal(sessionSummary(s,priceNow).payment,"Provisional credit 6 sat");
+  assert.match(provisionalSession(s,priceNow).note,/Not a payment request/);
+  s.net_amount_aud=.065;
+  assert.equal(provisionalSession(s,priceNow).amount,"Provisional charge to you: 7 sat");
+  s.net_amount_aud=0;
+  assert.equal(provisionalSession(s,priceNow).amount,"Provisional balance: 0 sat");
+});
+test("missing amount, FX and stale data never become fabricated zero or payment",()=>{
+  for(const patch of [{net_amount_aud:null},{net_amount_aud:""},{net_amount_aud:true},
+    {satoshis_per_aud:null},{satoshis_per_aud:0},{satoshis_per_aud:"NaN"},
+    {meter_updated_at:"bad"},{meter_updated_at:new Date(priceNow-120001).toISOString()},
+    {meter_updated_at:new Date(priceNow+5001).toISOString()}])
+    assert.equal(provisionalSession({...activeSession(),...patch},priceNow).payment,"Provisional amount unavailable");
+});
+test("final or uncertain payment facts are never replaced by provisional estimates",()=>{
+  for(const patch of [{ended_at:"2026-10-04"},{closure:{state:"waived"}},
+    {transactions:[{state:"provider_confirmed",amount_sats:12}]},
+    {transactions:[{state:"broadcast_unknown"}]},
+    {transactions:[{state:"waiting_for_session_end",txid:"a".repeat(64)}]}])
+    assert.equal(provisionalSession({...activeSession(),...patch},priceNow),null);
 });

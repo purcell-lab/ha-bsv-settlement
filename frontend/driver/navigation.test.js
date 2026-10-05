@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {driverActions} from "./navigation.js";
 test("both driver modes retain guarded actions without a six-button feature menu",()=>{
- assert.deepEqual(driverActions.map(([id])=>id),["connect","pair","approve","refresh","sync","signout","save","report","register"]);
+ assert.deepEqual(driverActions.map(([id])=>id),["connect","pair","approve","refresh","sync","signout","save","report","register","monthly"]);
  assert.equal(driverActions.find(([id])=>id==="approve")[1],"Authorise EV charging budget");
  const portal=readFileSync(new URL("./portal.js",import.meta.url),"utf8");
  const session=readFileSync(new URL("./app.js",import.meta.url),"utf8");
