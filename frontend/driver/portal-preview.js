@@ -52,6 +52,9 @@ wallet.internalizeAction=async()=>{window.portalPreviewWallet.imports++;return {
 wallet.createAction=wallet.signAction=async()=>{throw Error("Forbidden payment in offline preview");};
 let failedReport=false;
 window.fetch=async(url,options)=>{
+  if(url==="/api/bsv_settlement/driver"&&JSON.parse(options.body).action==="public_invitation")
+    return Response.json(params.has("registration")?{state:"available",
+      public_link_fragment:"#join=11111111-2222-4333-8444-555555555555&key="+"x".repeat(43)}:{state:"unavailable"});
   if(url!=="/api/bsv_settlement/portal")throw Error("Offline preview: network disabled");
   const data=JSON.parse(options.body);window.portalPreviewCalls.push(data.action);
   const response=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json"}});
@@ -94,8 +97,8 @@ window.fetch=async(url,options)=>{
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
 const previewNav=document.createElement("p");
-previewNav.innerHTML='<a href="../owner-actions.html">Owner credits preview</a> · <a href="../recovery/index.html?scenario=closed">Session page preview</a>';
+previewNav.innerHTML='<a href="./session/index.html?scenario=approval">Try budget approval</a> · <a href="./session/index.html?scenario=active">Charging</a> · <a href="./session/index.html?scenario=unconfirmed">Settlement</a>';
 banner.append(previewNav);
 banner.style.cssText="max-width:1012px;width:calc(100% - 32px);margin:16px auto";
-document.querySelector("header").after(banner);
 await import("./portal.js");
+document.querySelector("main").append(banner);

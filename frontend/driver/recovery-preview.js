@@ -2,9 +2,17 @@
 import { PrivateKey, ProtoWallet } from "@bsv/sdk";
 import { canonical, bytes, hash, paymentAuthority, spendingScope } from "./model.js";
 const banner=document.createElement("section");
-banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or payment. All requests stay in this simulated page.</p>
+banner.className="preview-controls";
+banner.innerHTML=`<p>Design preview. Fictional sessions, no real payments.</p><details><summary>Try another state</summary>
 <label for="preview-mode">Collection scenario</label>
 <select id="preview-mode" style="font:inherit;padding:10px;width:100%">
+<option value="approval">New session: approve budget</option>
+<option value="active">Charging in progress</option>
+<option value="confirmed">Payment confirmed</option>
+<option value="unknown">Broadcast uncertain</option>
+<option value="stale">Rates unavailable</option>
+<option value="expired">Approval expired</option>
+<option value="decline">Wallet permission declined</option>
 <option value="held">Interrupted wallet draft</option>
 <option value="fee">Draft exceeds an existing 10 sat fee cap</option>
 <option value="unconfirmed">Awaiting block confirmation</option>
@@ -13,8 +21,8 @@ banner.innerHTML=`<h2>Fictional recovery preview</h2><p>No real wallet or paymen
 <option value="reservation">Unbound future reservation with ongoing credits</option>
 <option value="offline">Status connection interrupted</option></select>
 <p class="small">Changing the scenario reloads this fixture only. The real page polls every 30 seconds.</p>
-<p><a href="../owner-actions.html">Owner credits preview</a> · <a href="../portal/index.html">Driver portal preview</a></p>`;
-document.querySelector("main").prepend(banner);
+<p><a href="../index.html">Sign-in preview</a></p></details>`;
+document.querySelector("main").append(banner);
 const mode=new URLSearchParams(location.search).get("scenario")||"unconfirmed";
 const select=document.getElementById("preview-mode");select.value=mode;
 const closedOption=document.createElement("option");closedOption.value="closed";closedOption.textContent="Completed account: fresh consent";select.append(closedOption);select.value=mode;
@@ -33,6 +41,8 @@ const terms={
   import_price_entity:"sensor.demo_import",export_price_entity:"sensor.demo_export",
   created_at:new Date().toISOString(),expires_at:new Date(Date.now()+3600000).toISOString(),scope:spendingScope,
 };
+if(mode==="expired"){terms.created_at=new Date(Date.now()-3600000).toISOString();terms.expires_at=new Date(Date.now()-60000).toISOString();}
+const unsignedMode=["closed","approval","stale","expired","decline"].includes(mode);
 const closedAccount={session_id:terms.session_id,ocpp_transaction_id:terms.transaction_id,currency:"AUD",
   ended_at:new Date(Date.now()-60000).toISOString(),net_cost_aud_unrounded:"0.05",net_amount_aud:"0.05",
   import_kwh:"1.94",export_kwh:"0",quality_flags:["import:energy_without_matching_state"]};
@@ -52,18 +62,21 @@ const quotePayload=canonical({version:1,network:"BSV mainnet",budget_id:terms.bu
   max_total_sats:1000,max_fee_sats:10,satoshis_per_aud:"100",expires_at:terms.expires_at,
   amount_sats:89,account,recovery_generation:1,created_at:terms.created_at});
 const quote={payload:quotePayload,hash:await hash(quotePayload),signature:operator.sign(bytes(quotePayload)).toDER("hex")};
-let state=mode==="unconfirmed"?"provider_unconfirmed":mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
+let state=mode==="active"||mode==="approval"?"waiting_for_session_end":mode==="confirmed"?"provider_confirmed":mode==="unknown"?"broadcast_unknown":mode==="unconfirmed"?"provider_unconfirmed":mode==="waived"?"waived":mode==="reservation"?"waiting_for_operator_binding":
   ["recovery","ongoing"].includes(mode)?"recovery_ready":"wallet_attempt_reserved",reads=0;
 let diagnostic=state!=="wallet_attempt_reserved"?null:{
   event_id:"11111111-2222-4333-8444-555555555555",stage:"create_draft",code:"network_request_failed"};
 if(mode==="fee")diagnostic={event_id:"11111111-2222-4333-8444-555555555555",
   stage:"inspect_draft",code:"validation_failed",reason:"fee_limit_exceeded",
   details:{payment_sats:89,fee_sats:38,fee_cap_sats:10,total_debit_sats:127,total_cap_sats:1000}};
-window.previewCalls={claims:0,drafts:0,signs:0,reports:0};
+window.previewCalls={claims:0,drafts:0,signs:0,reports:0,approvals:0};
 let closedApproved=false;
 window.CWI={
   getVersion:async()=>({version:"fictional-preview"}),
-  getPublicKey:driver.getPublicKey.bind(driver),createSignature:driver.createSignature.bind(driver),
+  getPublicKey:driver.getPublicKey.bind(driver),createSignature:async args=>{
+    if(mode==="decline")throw Error("Wallet permission declined.");
+    return driver.createSignature(args);
+  },
   getNetwork:async()=>({network:"mainnet"}),
   createAction:async()=>{window.previewCalls.drafts++;throw new TypeError("Failed to fetch");},
   signAction:async()=>{window.previewCalls.signs++;throw Error("No signing in preview");},
@@ -76,21 +89,21 @@ window.fetch=async(url,options)=>{
     if(mode==="offline" && reads++>0)throw new TypeError("Failed to fetch");
     const p={available:true,start:new Date(Date.now()-60000).toISOString(),
       end:new Date(Date.now()+3600000).toISOString(),estimate:false};
-    return Response.json({invitation,state:mode==="waived"?"charge_waived":mode==="closed"&&!closedApproved?"awaiting_driver_consent":"spending_authorised_wallet_permission_required",
+    return Response.json({invitation,state:mode==="waived"?"charge_waived":unsignedMode&&!closedApproved?"awaiting_driver_consent":"spending_authorised_wallet_permission_required",
       closure:mode==="waived"?{state:"waived",amount_sats:89,reason:"Operator waived the charge"}:null,
-      driver_identity:mode==="closed"&&!closedApproved?null:identity,automatic_credit_enabled:false,credit_destination_registered:mode!=="closed",
+      driver_identity:unsignedMode&&!closedApproved?null:identity,automatic_credit_enabled:false,credit_destination_registered:mode!=="closed",
       binding:null,ongoing_credit_enabled:true,
-      ongoing_credits:["recovery","closed","waived"].includes(mode)?[]:[{
+      ongoing_credits:["recovery","closed","waived","approval","active","confirmed","unknown"].includes(mode)?[]:[{
         credit_id:"fictional-ongoing-credit",session_id:"fictional-other-session",
         transaction_id:"other-session-reference",state:"waiting_for_session_end",
         recipient_address:terms.operator_address,
       }],
-      session:mode==="closed"?{...closedAccount,net_cost_aud:"0.05"}:{...account,import_kwh:3.8,export_kwh:0.2,net_cost_aud:"0.89"},
-      prices:{valid:mode!=="closed",checked_at:new Date().toISOString(),
+      session:mode==="closed"?{...closedAccount,net_cost_aud:"0.05"}:{...account,ended_at:["active","approval"].includes(mode)?null:account.ended_at,import_kwh:3.8,export_kwh:0.2,net_cost_aud:"0.89"},
+      prices:{valid:!["closed","stale"].includes(mode),checked_at:new Date().toISOString(),
         import:{...p,aud_per_kwh:"0.25"},export:{...p,aud_per_kwh:"0.12"}}});
   }
-  if(body.action==="approve"&&mode==="closed"){
-    closedApproved=true;return Response.json({state:"spending_authorised_wallet_permission_required",
+  if(body.action==="approve"&&["closed","approval"].includes(mode)){
+    window.previewCalls.approvals++;closedApproved=true;return Response.json({state:"spending_authorised_wallet_permission_required",
       driver_identity:identity,automatic_credit_enabled:false,credit_destination_registered:false});
   }
   if(body.action==="collection_status"&&mode==="closed")return Response.json({

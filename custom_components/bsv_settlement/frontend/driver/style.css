@@ -77,3 +77,72 @@ details{border-top:1px solid var(--line);margin-top:var(--s5);padding-top:var(--
 .portal-price-note{font-size:var(--text-xs);margin:var(--s2) 0}
 .energy-flow{gap:12px}.energy-flow li{align-items:center;position:relative;border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:16px 12px}.energy-flow li.done{border-color:var(--accent)}.energy-flow svg{width:32px;height:32px;flex:none;color:var(--accent);stroke-width:1.6}.energy-flow b,.energy-flow small{display:block}.energy-flow b{font-size:var(--text-sm);font-weight:600;color:var(--ink)}.energy-flow small{font-size:var(--text-xs);margin-top:4px}.icon-heading,.wallet-heading{display:flex;align-items:center;gap:10px}.icon-heading svg,.wallet-heading svg{width:24px;height:24px;color:var(--accent);flex:none}.wallet-heading{margin-bottom:12px}.wallet-heading .eyebrow{margin:0}#public-enrolment{padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--line)}
 @media(max-width:560px){.energy-flow{gap:8px}.energy-flow li{flex-direction:column;align-items:flex-start;padding:12px 9px;gap:10px}.energy-flow svg{width:30px;height:30px}.energy-flow b{font-size:.8rem}.energy-flow small{font-size:.73rem}}
+/* A guided driver journey, not a wallet administration console. */
+header,main,footer{max-width:760px}
+main{padding-top:var(--s8)}
+.intro{margin-bottom:var(--s6)}
+.journey-steps{display:flex;list-style:none;padding:0;margin:0 0 var(--s6);gap:var(--s3)}
+.journey-steps li{flex:1;font-size:var(--text-xs);color:var(--muted);border-top:2px solid var(--line);padding-top:var(--s3)}
+.journey-steps li>span{display:inline-block;margin-right:var(--s2);font-weight:700}
+.journey-steps [aria-current=step],.journey-steps .complete{border-color:var(--accent);color:var(--accent)}
+.journey-steps [aria-current=step]{font-weight:700}
+.driver-toolbar{margin:0}
+.journey-primary{margin:var(--s4) 0 var(--s6)}
+#driver-next-hint:empty{display:none}
+#driver-next-action button{min-height:52px;font-size:var(--text-base)}
+.journey-more,.driver-support,#approved-terms,#other-credit-details,.portal-recovery{
+  padding:0;margin:var(--s4) 0;border:0;border-top:1px solid var(--line);border-radius:0}
+.journey-more summary,.driver-support summary{padding:var(--s4) 0}
+.driver-action-grid{grid-template-columns:1fr;gap:var(--s2)}
+.driver-action-grid button{text-align:left}
+.driver-modes{margin:var(--s4) 0 0;border:0;padding:0}
+.driver-modes>*{padding:var(--s3) 0}
+.driver-modes>[aria-disabled=true],.driver-modes>[aria-current=page]{display:none}
+.simple-session-content>section{border-radius:12px}
+#terms{margin-bottom:var(--s3)}
+#terms .section-head{margin:0}
+#wallet-section{margin-bottom:0}
+#wallet-section .amount{margin-bottom:var(--s3)}
+#wallet-section dl{margin:var(--s3) 0}
+#approval-terms{font-size:var(--text-sm);margin-bottom:0}
+#action-note{display:none}
+.driver-feedback{padding:0;background:none;border:0;font-size:var(--text-sm)}
+#status.driver-feedback:not(.error){display:none}
+#status.driver-feedback.error{padding:var(--s4);border:1px solid var(--error);margin:var(--s4) 0}
+#collection-section>.actions:has(button:not([hidden]):not(.toolbar-managed)){margin:var(--s4) 0}
+#collection-section>.actions:not(:has(button:not([hidden]):not(.toolbar-managed))){display:none}
+#collection-status{font-size:var(--text-sm)}
+#settlement-detail{display:none}
+#pairing-section,#private-link-section,#result{margin:var(--s3) 0;padding:var(--s4);border-radius:8px}
+#pairing-section p,#private-link-section p{font-size:var(--text-sm)}
+#approved-terms>section{border:0;padding:var(--s4) 0;margin:0;background:transparent}
+#portal-signin{padding:var(--s5)}
+#portal-signin>.actions,#portal-account .portal-wallet-actions{margin:0}
+#portal-account{border:0;background:none;padding:0;margin:var(--s4) 0}
+#portal-account .portal-prices,#portal-account .portal-price-note{display:none}
+#portal-current{margin-bottom:var(--s4)}
+#portal-current-amount{margin:var(--s3) 0;font-variant-numeric:tabular-nums}
+#portal-current-energy{font-size:var(--text-sm)}
+#portal-wallet-details{margin-bottom:var(--s4)}
+#portal-registration-qr-details{margin-bottom:var(--s5)}
+#driver-help-contact{margin:var(--s6) 0}
+#portal-history{padding:var(--s5)}
+select{font:inherit;max-width:100%;width:100%;min-height:44px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:var(--s2)}
+@media(max-width:420px){header,main,footer{padding:var(--s4)}.brand{font-size:var(--text-sm)}.price-grid span{font-size:var(--text-xs)}.journey-steps{gap:var(--s2)}.journey-steps li>span{display:block;margin-bottom:var(--s1)}}
+#terms .eyebrow,#terms .badge,#contact{display:none}
+#operator-name{font-size:var(--text-base)}
+#terms .price-grid{margin-top:var(--s3)}
+#price-time,#wallet-direction-note,#price-warning{font-size:var(--text-xs);margin:var(--s2) 0 0}
+#wallet-section .amount strong{font-size:var(--text-xl)}
+#wallet-section .amount{margin-bottom:var(--s2)}
+#budget-summary,#fee-summary{font-size:var(--text-xs);margin:var(--s2) 0}
+#wallet-section .wallet-heading{margin-bottom:var(--s2)}
+#wallet-section #action-note{display:none}
+#full-approval-terms{margin:var(--s3) 0 var(--s5);padding:0;border-top:1px solid var(--line)}
+#full-approval-terms h3{font-size:var(--text-sm);margin:var(--s5) 0 var(--s2)}
+#full-approval-terms p{font-size:var(--text-sm)}
+#status:not(.error){display:none}
+#status.error{padding:var(--s4);border:1px solid var(--error);border-radius:8px;margin:var(--s4) 0}
+.preview-controls{margin:var(--s8) 0 0;padding:var(--s3);font-size:var(--text-xs);border-radius:6px}
+.preview-controls p{font-size:var(--text-xs);margin:var(--s1) 0}
+.preview-controls details{margin:var(--s2) 0 0}
