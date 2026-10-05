@@ -9,10 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     name: Python and Home Assistant tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,7 +37,7 @@ jobs:
 
   hacs:
     name: HACS repository validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Validate custom integration
         uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
@@ -43,7 +47,7 @@ jobs:
 
   driver:
     name: Driver wallet consent tests and reproducible bundle
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,12 +63,12 @@ jobs:
 
   operator:
     name: Operator UX tests and reproducible cards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci && npm test && npm run build
