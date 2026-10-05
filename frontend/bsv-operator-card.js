@@ -78,6 +78,9 @@ class BSVOperatorCard extends HTMLElement{
           const id=adjustmentRequest(localStorage,`${ids.config_entry_id}:${ids.proxy_config_entry_id}:${ids.conversion_rate_entity}`,
             direction,this.adjustmentDirection===direction&&adjustmentFinished(this.adjustmentResult));
           this.adjustmentDirection=direction;
+          // A failed NEW payment must not retain an older terminal result and
+          // accidentally rotate the UUID again on its next retry.
+          this.adjustmentResult=null;
           this.adjustmentResult=await payAdjustment(this._hass,c,direction,id);
           this.adjustmentMessage="";
         }catch(e){this.adjustmentMessage=`${e.message||"Payment status unavailable"}. Check settlement before retrying; no automatic retry will occur.`;}
