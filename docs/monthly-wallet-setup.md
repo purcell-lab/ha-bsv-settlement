@@ -37,10 +37,20 @@ gets `revision_conflict` instead of overwriting newer state.
 `readiness.automatic_collection` is true only when all hold:
 
 - an active, uncancelled monthly authority for this identity;
-- the allowance for the current wallet month is not blocked;
+- the allowance for the current wallet month is not blocked or exhausted;
 - the native grant adapter returned fresh, matching evidence (any adapter
   failure reads `unverified`);
-- a verified receiving registration exists for this identity.
+- the native grant has positive remaining allowance;
+- verified session ownership and closed-account adapters are installed;
+- a trusted read-only `MonthlyPortal.collection_health(identity)` adapter observes
+  the actual executor/reconciler and returns `ready: true` with a `checked_at`
+  timestamp no older than 30 seconds (not a static configuration flag);
+- a verified receiving registration exists for this identity;
+- the ledger revision is unchanged after asynchronous observations.
+
+This server result is necessary, not sufficient: S4 must also require a currently
+verified wallet connection. A specific session still needs enough remaining
+allowance for its amount plus fees, exact ownership and final accounting.
 
 Otherwise `readiness.missing` names each gap: `monthly_authority`,
 `allowance_review`, `wallet_monthly_permission`, `receiving_registration`.
@@ -67,6 +77,19 @@ runs only if still missing, so a returning driver sees no new signature prompt:
 
 `cancelMonthly` signs the cancellation payload after checking it names this
 authority and identity, and reports native revocation exactly as the server does.
+
+### Resuming partial setup
+
+`MonthlySetup` accepts optional reviewed `setupAdapters` for
+`receiving_registration` and `wallet_monthly_permission`. It calls only missing
+steps, then re-reads server status; adapter return values are never proof of
+registration or spending permission. Re-running skips an existing mandate and
+never resets its allowance. Missing adapters are reported explicitly as operator
+setup work, not silently treated as completed.
+
+No production setup adapter is shipped in this slice. S4 exposes a resume/check
+action for partial setup and an honest explanation when station support is not
+installed. Native acquisition and receiving registration remain activation gates.
 
 The orchestrator is not imported by the shipped page in S3; the bundle is
 unchanged. S4 wires it into the Station · My charging · History interface.
