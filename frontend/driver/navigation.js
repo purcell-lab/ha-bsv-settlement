@@ -11,6 +11,7 @@ export function mountDriverToolbar(mode){
   const bar=document.createElement("div");bar.className="driver-toolbar";
   bar.setAttribute("aria-label","Driver navigation and actions");
   bar.innerHTML=`<ol class="journey-steps" aria-label="Charging journey">${renderSteps(0)}</ol>
+    <p id="driver-journey-announcement" class="visually-hidden" role="status" aria-live="polite"></p>
     <div class="journey-primary"><p id="driver-next-hint" class="small"></p><div id="driver-next-action"></div>
       <p id="driver-action-unavailable" class="small" role="status" hidden></p></div>
     <details class="journey-more"><summary>Wallet options and help</summary>
@@ -54,6 +55,8 @@ export function mountDriverToolbar(mode){
     note.hidden=!!primary||!journey.unavailable;note.textContent=journey.unavailable||"";
     document.getElementById("driver-next-hint").textContent=journey.hint||"";
     const step=journey.step??0;
+    const announcement=document.getElementById("driver-journey-announcement");
+    if(announcement.textContent!==(journey.title||""))announcement.textContent=journey.title||"";
     if(bar.dataset.step!==String(step)){
       bar.querySelector(".journey-steps").innerHTML=renderSteps(step);bar.dataset.step=String(step);
     }

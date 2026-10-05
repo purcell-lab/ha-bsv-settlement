@@ -57,7 +57,7 @@ export function simplifySessionLayout() {
   account.innerHTML = "<summary>Approved budget and rates</summary>";
   const support = document.createElement("details");
   support.className = "driver-support";
-  support.innerHTML = "<summary>Connection help and session details</summary>";
+  support.innerHTML = "<summary>Session details and links</summary>";
   for (const id of ["pairing-section", "private-link-section", "session-reference", "result", "load-section"]) support.append($(id));
   const fullTerms=document.createElement("details");
   fullTerms.id="full-approval-terms";fullTerms.innerHTML="<summary>Full approval terms and pricing</summary>";

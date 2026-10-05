@@ -293,7 +293,7 @@ function controls() {
     signout:{enabled:false,reason:"This is a private-link session, not a portal login. Closing it does not revoke spending approval."},
     save:{target:"retry",primary:true},
     report:{target:"retry-collection",primary:true},
-  },{step:journey.step,unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
+  },{step:journey.step,title:journey.title,unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
   simpleLayout.update({accepted,receiptOnly,step:journey.step});
   $("approval-action").classList.add("toolbar-managed");
   $("credit-status").hidden=!accepted||creditRegistered||!!checked?.terms.closed_session_review;
@@ -317,7 +317,7 @@ function paintPrices() {
   $("prices").hidden = !capability || !!checked?.terms.closed_session_review;
   for (const [key,id] of [["import","import-price"],["export","export-price"]]) {
     const p=live?.[key];
-    $(id).textContent = p?.available ? `${(Number(p.aud_per_kwh)*100).toFixed(2)} c/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
+    $(id).textContent = p?.available ? `${Number(p.aud_per_kwh).toFixed(4)} $/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
   }
   $("price-time").textContent = live?.checked_at
     ? `Rates checked ${new Date(live.checked_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. They may change during your session.`
