@@ -28,3 +28,12 @@ This is not an ownership verifier. Existing bound metadata must come from the du
 ## Verification limits
 
 Tests use fictional retained records around the real adapter and existing `account_snapshot` rules. They cover history rotation, ambiguous copies, wrong station/transaction, stale/replaced recorders, failed refresh, invalid pricing, open accounts and copy isolation. They do not establish native wallet capability, physical vehicle ownership or live settlement.
+
+## BSV Browser decision
+
+The operator selected BSV Browser and authorised merging/deploying the open
+PRs on 6 October 2026. That changes the deployment scope, not permission to
+fake native grants or move pilot funds. The reviewed native API exposes
+per-session payment methods but no monthly permission request/query/revoke
+bridge. See [BSV Browser acceptance and the explicit architecture options](bsv-browser-acceptance.md).
+A3–A6 are therefore incomplete, not implicitly satisfied by A1/A2 deployment.

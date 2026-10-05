@@ -47,4 +47,5 @@ review changed artifacts before committing a feature, then rerun validation.
 Automated tests use fictional wallets and in-process HA instances. They are
 not native BSV Browser acceptance, chain verification, physical ownership
 evidence or authorisation to move funds. Native acceptance remains a separately
-recorded gate in `monthly-release.md`.
+recorded gate in `monthly-release.md`. The primary-device checklist and current
+interface blocker are in [BSV Browser acceptance](bsv-browser-acceptance.md).
