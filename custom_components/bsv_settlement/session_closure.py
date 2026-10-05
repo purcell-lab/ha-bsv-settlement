@@ -14,6 +14,8 @@ FINAL = {"waived", "closed_zero"}
 
 
 def ensure_open(api, key):
+    from .monthly_ownership import ensure_no_monthly_owner
+    ensure_no_monthly_owner(api, key)
     if api.saved.get("closed_sessions", {}).get(key, {}).get("state") in FINAL:
         raise WalletError("This account is closed without payment. Do not collect or credit it automatically")
 
@@ -73,6 +75,8 @@ class ClosedSessions:
         # quality error may be hidden by either a consent or waiver action.
         account = reviewed_snapshot(record, set(flags) & ACCEPTABLE)
         key = data["proxy_config_entry_id"] + "|" + data["session_id"]
+        from .monthly_ownership import ensure_no_monthly_owner
+        ensure_no_monthly_owner(api, key)
         final = api.saved.get("closed_sessions", {}).get(key)
         if final:
             return {"state": final["state"], "session_id": data["session_id"],

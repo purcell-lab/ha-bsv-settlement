@@ -5,6 +5,10 @@ The driver spending limit is **30,000 sat each calendar month, including
 driver-paid fees**, recurring until cancelled. This is a design and development
 decision, not live financial authority.
 
+**Collection is per session, not monthly.** Each closed session settles its own
+final net account. The monthly allowance only limits cumulative driver spending
+and fees; it does not delay payment or combine sessions into a monthly bill.
+
 ## One coordinated delivery
 
 Use one parent issue and sequential reviewable PRs. Each PR carries its slice ID,
@@ -15,6 +19,10 @@ activation into production.
 The S1 foundation is deliberately not imported by runtime code. The existing
 session/weekly authority, operator-credit policy, conversion sensor, recipients
 and driver page remain unchanged.
+
+S2 adds the [internal signed-authority and durable-ledger service](monthly-authority.md)
+plus shared ownership exclusions. It is not constructed by runtime setup and has
+no public endpoint. Native wallet and physical ownership adapters remain required.
 
 | Slice | Proposed PR title | Base and code ownership | Completion evidence |
 |---|---|---|---|

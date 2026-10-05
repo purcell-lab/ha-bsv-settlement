@@ -35,6 +35,8 @@ def initial_session(api, proxy_id, sid, rate, maximum):
     if datetime.fromisoformat(record["opened_at"]) > now():
         raise WalletError("Current session start is in the future")
     key = proxy_id + "|" + sid
+    from .monthly_ownership import ensure_no_monthly_owner
+    ensure_no_monthly_owner(api, key)
     if any(key in api.saved.get(index, {}) for index in (
             "driver_collection_index", "automatic_credit_index",
             "session_review_index", "closed_sessions")):
@@ -226,6 +228,8 @@ async def ticket(api, parent, session_id):
     if decimal(account["net_amount_aud"]) <= 0:
         raise WalletError("This account is not a driver charge; use the separate credit or zero-balance flow")
     key = parent["proxy_config_entry_id"] + "|" + session_id
+    from .monthly_ownership import ensure_no_monthly_owner
+    ensure_no_monthly_owner(api, key)
     if (key in api.saved["driver_collection_index"] or key in api.saved["automatic_credit_index"]
             or key in api.saved.get("session_review_index", {}) or key in api.saved.get("closed_sessions", {})):
         raise WalletError("An existing settlement record owns this session")

@@ -124,6 +124,8 @@ class OngoingCredits(AutomaticCredits):
 
     async def assign(self, record, recipient, persist=True):
         route_id = "ongoing:" + self.policy["proxy_config_entry_id"] + "|" + record["session_id"]
+        from .monthly_ownership import ensure_no_monthly_owner
+        ensure_no_monthly_owner(self.api, route_id.removeprefix("ongoing:"))
         if route_id in self.routes:
             return self.routes[route_id]
         state = self.api.hass.states.get(self.policy["conversion_rate_entity"])
@@ -208,6 +210,10 @@ class OngoingCredits(AutomaticCredits):
                 if (proxy.data or {}).get("issues"):
                     raise WalletError("Resolve recorder issues before assigning a recipient")
                 for record in self.records(proxy):
+                    from .monthly_ownership import monthly_owner
+                    account_key = self.policy["proxy_config_entry_id"] + "|" + record["session_id"]
+                    if monthly_owner(self.api, account_key) is not None:
+                        continue  # Retain the monthly owner; do not assign a legacy recipient.
                     opened = datetime.fromisoformat(record["opened_at"])
                     if opened < datetime.fromisoformat(self.policy["enabled_at"]):
                         continue  # Only the explicitly assigned initial session is retrospective.
