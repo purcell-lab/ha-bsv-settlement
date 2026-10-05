@@ -49,6 +49,7 @@ class RetainedSessionAccounts:
             raise WalletError("Authoritative session recorder refresh failed") from None
         # A coordinator can retain stale data after a failed refresh.
         if (self.hass.data.get(DOMAIN, {}).get(entry) is not recorder
+                or getattr(recorder, "mode", None) != "sensor_proxy"
                 or getattr(recorder, "last_update_success", False) is not True):
             raise WalletError("Authoritative session recorder is stale or replaced")
         data = recorder.data
@@ -56,6 +57,13 @@ class RetainedSessionAccounts:
         if (not isinstance(data, dict) or data.get("issues")
                 or not isinstance(archive, list)):
             raise WalletError("Authoritative session history is unavailable")
+        try:
+            now = self.clock()
+            age = (now - timestamp(data.get("updated_at"))).total_seconds()
+            if not 0 <= age <= 30:
+                raise ValueError()
+        except (TypeError, ValueError, WalletError):
+            raise WalletError("Authoritative recorder observation is not fresh") from None
         candidates = [data.get("latest_session"), data.get("previous_session"), *archive]
         matches = [copy.deepcopy(row) for row in candidates
                    if isinstance(row, dict) and row.get("session_id") == session_id]
@@ -67,7 +75,7 @@ class RetainedSessionAccounts:
             account = account_snapshot(record)
             if (account["ocpp_transaction_id"] != expected_tx
                     or account["opened_at"] != expected_open
-                    or not timestamp(expected_open) < timestamp(account["ended_at"]) <= self.clock()):
+                    or not timestamp(expected_open) < timestamp(account["ended_at"]) <= now):
                 raise WalletError("Retained session does not match its immutable binding")
             accounts.append(account)
         if len({digest(account) for account in accounts}) != 1:
