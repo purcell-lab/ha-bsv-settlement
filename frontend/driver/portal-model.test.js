@@ -73,7 +73,7 @@ test("compact session rows distinguish payment direction and receipt acceptance"
   const s={ended_at:"2026-10-04",transactions:[{direction:"operator_to_driver",amount_sats:119,state:"provider_confirmed"}]};
   assert.deepEqual(sessionSummary(s),{payment:"Credit 119 sat",status:"Receipt due",warning:false});
   Object.assign(s.transactions[0],{wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-04T00:00:00Z"});
-  assert.equal(sessionSummary(s).status,"Synced");
+  assert.equal(sessionSummary(s).status,"Received");
   s.transactions[0].direction="driver_to_operator";
   assert.equal(sessionSummary(s).payment,"Pay 119 sat");
   assert.equal(sessionSummary(s).status,"Confirmed");
