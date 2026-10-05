@@ -8,7 +8,7 @@ This follows deployed S1–S5 under [issue #79](https://github.com/purcell-lab/h
 |---|---|---|
 | A1 | Exact retained HA account adapter | [PR #85](https://github.com/purcell-lab/ha-bsv-settlement/pull/85), staged and internal only; no startup wiring |
 | A2 | Read-only wallet compatibility probe and pinned-source findings | Implemented in this stacked slice; see [native evidence](wallet-native-evidence.md); does not grant or verify spending authority |
-| A3 | Reviewed native period/grant bridge and missing-only receiving setup | Requires evidence from the actual supported wallet/version and a trusted transport; no browser self-attestation |
+| A3 | Standard grouped request, reviewed native grant evidence and missing-only receiving setup | Opt-in request diagnostic implemented; actual device acceptance and trusted evidence remain required |
 | A4 | Verified physical session ownership and explicit current-session inclusion | Requires reviewed station/connector ownership evidence; never infer ownership from latest login |
 | A5 | Exactly-once per-session execution, reconciliation, credit/zero routes | Requires A3/A4; uncertain attempts retain operation IDs and never cause replacement signing |
 | A6 | Native device matrix and gated pilot | Separate approval, amounts/recipients/fees and activation review |
@@ -34,6 +34,9 @@ Tests use fictional retained records around the real adapter and existing `accou
 The operator selected BSV Browser and authorised merging/deploying the open
 PRs on 6 October 2026. That changes the deployment scope, not permission to
 fake native grants or move pilot funds. The reviewed native API exposes
-per-session payment methods but no monthly permission request/query/revoke
-bridge. See [BSV Browser acceptance and the explicit architecture options](bsv-browser-acceptance.md).
+per-session payment methods and can request a native budget through the
+BRC-73/BRC-116 root manifest. It does not expose a direct grant query/revoke
+bridge. Request acquisition and trustworthy evidence are separate tasks.
+See [BSV Browser acceptance](bsv-browser-acceptance.md) and the
+[opt-in grouped test](grouped-wallet-test.md).
 A3–A6 are therefore incomplete, not implicitly satisfied by A1/A2 deployment.

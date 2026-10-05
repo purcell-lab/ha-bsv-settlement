@@ -26,7 +26,7 @@ def plan(suite):
         (["npm", "test"], "frontend/driver"),
         (["npm", "run", "build"], "frontend/driver"),
         (["git", "diff", "--exit-code", "--",
-          "custom_components/bsv_settlement/frontend/driver/app.bundle.js"], "."),
+          "custom_components/bsv_settlement/frontend/driver"], "."),
     ]
     operator = [
         (["npm", "test"], "frontend"),

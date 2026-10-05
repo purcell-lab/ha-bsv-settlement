@@ -37,6 +37,8 @@ async def async_setup(hass, config):
         hass.http.register_view(DriverBudgetView(hass))
         from .portal import DriverPortalView
         hass.http.register_view(DriverPortalView(hass))
+        from .grouped_wallet_test import install as install_grouped_wallet_test
+        await install_grouped_wallet_test(hass)
         from homeassistant.const import EVENT_HOMEASSISTANT_STOP
         from .pairing import KEY, PairingHub, PairingDiscoveryView, PairingSocketView
         hub = hass.data[KEY] = PairingHub(hass)

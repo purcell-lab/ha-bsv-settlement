@@ -25,7 +25,18 @@ declares application version 1.6.3. This does not identify the installed phone a
   version from the app's About/settings separately; do not equate an SDK wallet
   version with application version.
 
-## Architecture decision still required
+## Native grouped request and separate evidence gap
+
+[BRC-73](https://bsv.brc.dev/wallet/0073) and
+[BRC-116](https://bsv.brc.dev/wallet/0116) define root-manifest grouped
+permissions, including spending authorisation. The absence of a direct CWI
+permission-management method does NOT prevent requesting a native budget.
+An explicit `waitForAuthentication` call can trigger the wallet permission
+manager's manifest flow, including when the wallet is already authenticated.
+
+The opt-in [grouped-authorisation test](grouped-wallet-test.md) publishes
+the 30,000 sat request through HA's public manifest extension API. It changes
+neither monthly settlement readiness nor the existing payment routes.
 
 The current monthly design requires trusted server-observable native grant
 evidence. The reviewed BSV Browser page interface cannot provide that evidence.
@@ -34,7 +45,8 @@ is substituted for it. Monthly runtime stays disabled.
 
 Two explicit options exist:
 
-1. **Retain the current design:** implement and review a wallet-side grant
+1. **Retain the current design:** use the standard grouped request, then
+   implement and review a wallet-side grant evidence
    bridge, including origin/identity binding, freshness, remaining limit,
    native period, fee treatment and revocation. Obtain the wallet maintainer's
    agreement before claiming this will be supported.
@@ -59,7 +71,8 @@ grant or assume that the latest signed-in driver owns a physical session.
 | Origin and identity | Correct original wallet, verified site origin, rejected wrong wallet | Phone pending |
 | Existing receipts | Import only existing provider-confirmed credits; preserve original txids | Phone pending for this release |
 | Per-session debit | Exact reviewed amount/recipient/fee, no duplicate on reload | Separate real-value approval required |
-| Native monthly grant | Supported trusted request/query/revoke transport | Blocked by interface/design gap above |
+| Native monthly request | Root manifest and explicit authentication call | Isolated diagnostic implemented; native phone acceptance pending |
+| Native monthly evidence | Trusted grant/query/revoke transport | Still unresolved; authentication is not grant evidence |
 | Ownership | Exact physical station/connector/session evidence; wrong-driver refusal | Not implemented |
 | Restart/uncertainty | Durable operation ID, no replacement signing after timeout | Existing regression coverage; new executor pending |
 

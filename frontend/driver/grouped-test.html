@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>Wallet authorisation test | BSV Settlement</title><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./grouped-test.css"></head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="Two-way energy"><path d="M4 11h23l-6-6M28 21H5l6 6" fill="none" stroke="currentColor" stroke-width="2.5"/></svg><span>BSV Settlement</span></div><button id="theme" class="secondary small-button" aria-label="Switch colour theme">Dark</button></header>
+<main id="main">
+<div class="intro"><p class="eyebrow">BSV BROWSER · CONTROLLED TEST</p><h1>Ask your wallet once.</h1><p>Test the native monthly allowance prompt. This page does not settle a charging session.</p></div>
+<section aria-labelledby="terms-title"><h2 id="terms-title">Review the request</h2>
+<p class="test-limit">30,000 <span>sat per calendar month</span></p>
+<dl><dt>Application origin</dt><dd id="origin" class="mono">Checking…</dd><dt>Scope</dt><dd>The whole host, not only the charging page</dd><dt>Purpose</dt><dd>EV charging payments and network fees</dd></dl>
+<p class="small">You control approval in BSV Browser. A persistent permission may involve a wallet-managed token transaction and fee. Review any fee prompt before accepting.</p>
+<button id="ask" class="wide" disabled>Ask BSV Browser</button>
+<p id="status" class="notice" role="status" aria-live="polite">Checking the operator's test configuration…</p>
+</section>
+<section aria-labelledby="result-title"><h2 id="result-title">What this test proves</h2>
+<p id="result">Nothing is requested until you press the button. No wallet identity, signature, receipt or charging payment is requested by this page.</p>
+<p class="small">Even if authentication succeeds, check that the wallet shows a <strong>30,000 sat monthly allowance</strong> for this host. An existing smaller allowance may not be upgraded automatically.</p>
+<details><summary>If there is no prompt</summary><p>Check the existing allowance in BSV Browser's application permissions. Record the app version and the amount shown. Do not delete or replace an existing permission just to repeat this test.</p><p>A timeout does not cancel a native wallet prompt. Check the wallet before reloading; this page never retries automatically.</p></details>
+</section>
+<p class="small"><a href="./index.html">Return to charging</a> (normal portal behaviour may reconnect the wallet and receive existing credits).</p>
+</main><footer>Diagnostic only. Monthly settlement remains disabled.</footer>
+<script type="module" src="./grouped-test.bundle.js"></script>
+</body></html>

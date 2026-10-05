@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --outfile=../../custom_components/bsv_settlement/frontend/driver/app.bundle.js",
+    "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --outfile=../../custom_components/bsv_settlement/frontend/driver/app.bundle.js && esbuild grouped-page.js --bundle --format=esm --minify --outfile=../../custom_components/bsv_settlement/frontend/driver/grouped-test.bundle.js && cp grouped-test.html grouped-test.css ../../custom_components/bsv_settlement/frontend/driver/",
     "test": "node --test *.test.js"
   },
   "dependencies": {

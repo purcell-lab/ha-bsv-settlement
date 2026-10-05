@@ -347,10 +347,15 @@ async def test_wrong_driver_output_amount_address_and_old_transaction_rejected(t
 
 
 @pytest.mark.asyncio
-async def test_frontend_registered_once_and_hacs_bundle_matches():
+async def test_frontend_registered_once_and_hacs_bundle_matches(monkeypatch):
     from pathlib import Path
     import yaml
     from custom_components.bsv_settlement.const import SERVICES
+    from custom_components.bsv_settlement import grouped_wallet_test
+    # This narrow fixture has no HA storage/config/auth. The diagnostic's real
+    # service registration and administrator boundary are tested separately.
+    install_test = AsyncMock()
+    monkeypatch.setattr(grouped_wallet_test, "install", install_test)
     root = Path(__file__).resolve().parents[1]
     package = root / "custom_components/bsv_settlement"
     assert (package / "frontend/session-review-card.js").read_bytes() == (
@@ -363,3 +368,4 @@ async def test_frontend_registered_once_and_hacs_bundle_matches():
     await async_setup(hass, {})
     await async_setup(hass, {})
     assert hass.http.async_register_static_paths.await_count == 1
+    install_test.assert_awaited_once_with(hass)
