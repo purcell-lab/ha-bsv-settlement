@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --outfile=../../custom_components/bsv_settlement/frontend/driver/app.bundle.js",
-    "test": "node --test model.test.js collection.test.js credit.test.js view.test.js pairing.test.js private-link.test.js receipt-sync.test.js portal-model.test.js navigation.test.js journey.test.js session-live.test.js wallet-connection.test.js portal-credit-jobs.test.js portal-wallet.test.js monthly-wallet.test.js station.test.js"
+    "test": "node --test model.test.js collection.test.js credit.test.js view.test.js pairing.test.js private-link.test.js receipt-sync.test.js portal-model.test.js navigation.test.js journey.test.js session-live.test.js wallet-connection.test.js portal-credit-jobs.test.js portal-wallet.test.js monthly-wallet.test.js station.test.js wallet-evidence.test.js"
   },
   "dependencies": {
     "@bsv/sdk": "2.0.13",

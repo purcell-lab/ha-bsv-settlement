@@ -6,8 +6,8 @@ This follows deployed S1–S5 under [issue #79](https://github.com/purcell-lab/h
 
 | Slice | Deliverable | Status / prerequisite |
 |---|---|---|
-| A1 | Exact retained HA account adapter | Implemented here, internal only; no startup wiring |
-| A2 | Read-only wallet compatibility probe and pinned-source findings | Next stacked PR; does not grant or verify spending authority |
+| A1 | Exact retained HA account adapter | [PR #85](https://github.com/purcell-lab/ha-bsv-settlement/pull/85), staged and internal only; no startup wiring |
+| A2 | Read-only wallet compatibility probe and pinned-source findings | Implemented in this stacked slice; see [native evidence](wallet-native-evidence.md); does not grant or verify spending authority |
 | A3 | Reviewed native period/grant bridge and missing-only receiving setup | Requires evidence from the actual supported wallet/version and a trusted transport; no browser self-attestation |
 | A4 | Verified physical session ownership and explicit current-session inclusion | Requires reviewed station/connector ownership evidence; never infer ownership from latest login |
 | A5 | Exactly-once per-session execution, reconciliation, credit/zero routes | Requires A3/A4; uncertain attempts retain operation IDs and never cause replacement signing |
