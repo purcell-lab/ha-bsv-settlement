@@ -16,7 +16,8 @@ pytestmark = pytest.mark.asyncio
 def fixture():
     record = session()
     recorder = SimpleNamespace(mode="sensor_proxy", last_update_success=True,
-        data={"latest_session": record, "previous_session": None, "issues": []},
+        data={"latest_session": record, "previous_session": None, "issues": [],
+              "updated_at": "2026-10-06T00:00:00+00:00"},
         archive=[], async_request_refresh=AsyncMock())
     hass = SimpleNamespace(data={"bsv_settlement": {"recorder": recorder}})
     binding = dict(account_key="recorder|session-1", station_id="station",
@@ -127,7 +128,8 @@ async def test_real_monthly_reservation_freezes_retained_account():
     binding = svc.snapshot()["bindings"]["proxy|session"]
     record = await svc.resolve_record(binding)
     recorder = SimpleNamespace(mode="sensor_proxy", last_update_success=True,
-        data={"latest_session": record, "previous_session": None, "issues": []},
+        data={"latest_session": record, "previous_session": None, "issues": [],
+              "updated_at": clock[0].isoformat()},
         archive=[], async_request_refresh=AsyncMock())
     hass = SimpleNamespace(data={"bsv_settlement": {"proxy": recorder}})
     svc.resolve_record = RetainedSessionAccounts(hass, {"station-1": "proxy"},
@@ -139,3 +141,12 @@ async def test_real_monthly_reservation_freezes_retained_account():
     record["net_cost_aud_unrounded"] = "2"
     with pytest.raises(WalletError, match="Frozen"):
         await svc._account(svc.snapshot()["bindings"]["proxy|session"])
+
+
+@pytest.mark.parametrize("updated", [None, "invalid", "2026-10-06T00:00:00",
+    "2026-10-05T23:59:29+00:00", "2026-10-06T00:00:01+00:00"])
+async def test_successful_refresh_cannot_mask_stale_or_future_data(updated):
+    adapter, recorder, binding = fixture()
+    recorder.data["updated_at"] = updated
+    with pytest.raises(WalletError, match="not fresh"):
+        await adapter(binding)

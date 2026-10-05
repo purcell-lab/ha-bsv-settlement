@@ -19,7 +19,7 @@ The 30,000 sat monthly limit includes driver-paid fees. Collection remains one f
 
 `RetainedSessionAccounts(hass, stations)` supplies the `resolve_record` callable for `MonthlyAuthorities`. The station-to-recorder mapping is reviewed operator configuration, never a browser payload.
 
-It refreshes the exact loaded `sensor_proxy` recorder, requires successful refresh and no source issues, then searches latest, previous and retained history for the exact session. It verifies the frozen transaction and opening timestamp, closed-account pricing/quality requirements and end time. Missing, conflicting or stale accounts fail closed; no newer session is substituted.
+It refreshes the exact loaded `sensor_proxy` recorder, requires successful refresh, an observation timestamp no more than 30 seconds old and no source issues, then searches latest, previous and retained history for the exact session. A debounced refresh cannot make a stale or future-dated snapshot count as fresh. It verifies the frozen transaction and opening timestamp, closed-account pricing/quality requirements and end time. Missing, conflicting or stale accounts fail closed; no newer session is substituted.
 
 Returned records are deep copies. Positive, negative and zero accounts retain their original amounts; selecting a debit, credit or zero route remains the caller's responsibility. Existing monthly debit logic still rejects credit/zero accounts.
 
