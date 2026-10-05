@@ -6,7 +6,15 @@ const wallet=new ProtoWallet(new PrivateKey(19)),params=new URLSearchParams(loca
 window.CWI=wallet;
 window.portalPreviewCalls=[];
 window.portalPreviewWallet={imports:0,acks:0};
-let signedIn=false;
+let signedIn=params.has("restored");
+if(params.has("restored")){
+  // A history cookie is present; the injected wallet arrives only after the
+  // explicit reconnect gesture. It must not be treated as already connected.
+  window.CWI=undefined;
+  document.addEventListener("click",event=>{
+    if(event.target.id==="portal-reconnect")window.CWI=wallet;
+  },true);
+}
 const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
 const rows=Array.from({length:27},(_,i)=>({
   session_key:`fixture|session-${i}`,session_id:`sigen-proxy-fictional-${i}`,
@@ -48,6 +56,7 @@ if(params.has("sync")||params.has("report")||params.has("automatic")){
   Object.assign(rows[0].transactions[0],{txid:receipt.txid,wallet_receipt_status:"not_recorded",wallet_imported_at:null});
 }
 wallet.getNetwork=async()=>({network:"mainnet"});
+if(params.has("wrongwallet"))wallet.getNetwork=async()=>({network:"testnet"});
 wallet.internalizeAction=async()=>{window.portalPreviewWallet.imports++;return {accepted:true};};
 wallet.createAction=wallet.signAction=async()=>{throw Error("Forbidden payment in offline preview");};
 let failedReport=false;

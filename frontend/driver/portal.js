@@ -10,6 +10,7 @@ import {mountDriverToolbar,qrText} from "./navigation.js";
 import {publicEnrolmentUrl} from "./private-link.js";
 import {ReceiptSync} from "./receipt-sync.js";
 import {pendingCreditJobs} from "./portal-credit-jobs.js";
+import {walletStatus,verifyReceivingWallet} from "./portal-wallet.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -34,8 +35,13 @@ ${priceCards("signin")}
 <p class="small">The code expires after two minutes. Keep this page open. Saved connections cannot restore an expired code; create a fresh one here.</p></section>
 <section id="portal-account" hidden aria-label="Verified wallet">
 <div class="portal-wallet-toolbar">
-<div class="portal-wallet-heading"><h2>Signed in</h2><span id="portal-identity-short" class="mono" aria-label="Wallet identity preview"></span></div>
+<div class="portal-wallet-heading"><h2>History signed in</h2><span id="portal-identity-short" class="mono" aria-label="Wallet identity preview"></span></div>
 <div class="portal-wallet-actions"><button id="portal-refresh" class="secondary" aria-label="Refresh session history">Refresh</button><button id="portal-sync" aria-label="Retry receiving all confirmed credits">Retry receiving credits</button><button id="portal-logout" class="secondary">Sign out</button></div>
+</div>
+<div id="portal-connection" class="portal-connection" aria-label="Wallet connection">
+<p id="portal-connection-state" role="status" aria-live="polite"></p>
+<p id="portal-connection-note" class="small"></p>
+<button id="portal-reconnect" class="wide">Reconnect wallet</button>
 </div>
 ${priceCards("account")}
 <details id="portal-wallet-details"><summary>Wallet details <span id="portal-expiry"></span></summary>
@@ -62,6 +68,24 @@ let registrationUrl=null;
 const imports=new Map();
 const expandedSessions=new Set();
 let syncGeneration=null;
+let connectionState="unverified",connectionCheckedAt=null;
+function connection(state){
+  connectionState=state;
+  connectionCheckedAt=state==="connected"?Date.now():null;
+}
+async function connectReceivingWallet(candidate,assertActive){
+  connection("checking");controls();
+  const before=generation;
+  try{
+    if(pairing&&(!pairing.supportedMethods?.includes("getNetwork")||!pairing.supportedMethods?.includes("internalizeAction")))
+      throw Error("This paired wallet cannot receive verified credits. Open the portal inside a compatible BSV wallet.");
+    const verified=await verifyReceivingWallet(candidate,identity,assertActive);
+    wallet=verified;connection("connected");return verified;
+  }catch(error){
+    if(before===generation){wallet=null;connection("unavailable");receiptSync.paused=true;}
+    throw error;
+  }finally{controls();}
+}
 const assertSyncActive=()=>{
   if(generation!==syncGeneration||!identity||Date.now()>=expires||document.hidden||framed)
     throw Error("Private access or wallet visibility changed. Reconnect to receive credits.");
@@ -70,11 +94,8 @@ const receiptSync=new ReceiptSync({
   connect:async({automatic})=>{
     assertSyncActive();
     const candidate=wallet||new WalletClient(automatic?"window.CWI":window.CWI?"window.CWI":"auto");
-    const actual=(await candidate.getPublicKey({identityKey:true})).publicKey;
-    assertSyncActive();
-    if(pairing&&(!pairing.supportedMethods?.includes("getNetwork")||!pairing.supportedMethods?.includes("internalizeAction")))
-      throw Error("This paired wallet cannot receive verified credits. Open the portal inside a compatible BSV wallet.");
-    return {wallet:candidate,identity:actual};
+    await connectReceivingWallet(candidate,assertSyncActive);
+    return {wallet:candidate,identity};
   },
   importReceipt:async(candidate,{row,session},driver)=>{
     assertSyncActive();
@@ -117,6 +138,14 @@ async function syncCredits(manual=false){
   }finally{busy=false;controls();}
 }
 function controls(){
+  const status=walletStatus(connectionState,receiptSync.paused);
+  $("portal-connection-state").textContent=status.title;
+  $("portal-connection").dataset.state=connectionState;
+  $("portal-connection-note").textContent=status.note+(connectionCheckedAt
+    ?` Connection checked ${new Date(connectionCheckedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}.`:"");
+  $("portal-reconnect").textContent=status.action;
+  $("portal-reconnect").disabled=status.disabled||busy||framed||!identity;
+  $("portal-reconnect").classList.toggle("secondary",connectionState==="connected"&&!receiptSync.paused);
   for(const id of ["portal-login","portal-pair","portal-refresh","portal-sync","portal-logout","portal-more","portal-open"])
     $(id).disabled=busy||framed;
   $("portal-sync").disabled=busy||framed||!identity;
@@ -191,6 +220,7 @@ async function refreshPrices(){
 function clearPrivate(){
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
+  connection("unverified");
   receiptSync.paused=false;receiptSync.completed.clear();
   expandedSessions.clear();
   $("portal-sessions").replaceChildren();$("portal-identity").textContent="";
@@ -302,8 +332,24 @@ async function signIn(candidate){
   if(result.identity!==proof.identity)throw Error("Sign-in identity mismatch.");
   wallet=candidate;identity=result.identity;imports.clear();await load();
   receiptSync.paused=false;receiptSync.completed.clear();
+  await connectReceivingWallet(candidate,()=>{
+    if(before!==generation||!identity||Date.now()>=expires||document.hidden)throw Error("Sign-in changed. Reconnect your wallet.");
+  });
   message("Signed in. Confirmed credits will be received automatically. No new spending approved.");
 }
+$("portal-reconnect").onclick=()=>{
+  if(connectionState==="connected"&&receiptSync.paused){void syncCredits(true);return;}
+  void run(async()=>{
+    const before=generation,expected=identity;
+    const candidate=wallet||new WalletClient(window.CWI?"window.CWI":"auto");
+    await connectReceivingWallet(candidate,()=>{
+      if(before!==generation||identity!==expected||!identity||Date.now()>=expires||document.hidden)
+        throw Error("Private access changed. Sign in again before reconnecting.");
+    });
+    receiptSync.paused=false;
+    message("Wallet connected. Checking confirmed credits automatically. No new spending approved.");
+  });
+};
 $("portal-login").onclick=()=>run(()=>signIn(new WalletClient(window.CWI?"window.CWI":"auto")));
 $("portal-refresh").onclick=()=>run(async()=>{await load();await refreshPrices();});
 $("portal-more").onclick=()=>run(()=>load(true));
@@ -325,7 +371,7 @@ $("portal-pair").onclick=()=>run(async()=>{
       $("portal-uri").value=pairing.uri;
     }
     if(state==="paired")void run(()=>signIn(pairing.wallet));
-    if(state==="disconnected"){wallet=null;message("Pairing ended. Your private history remains available until sign-out or expiry; create a fresh code for wallet actions.");}
+    if(state==="disconnected"){wallet=null;connection("unavailable");message("Pairing ended. Your history is still signed in. Reconnect your wallet to receive credits.");}
     controls();
   }});
   await pairing.start();
@@ -350,13 +396,16 @@ let theme=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
 function paintTheme(){document.documentElement.dataset.theme=theme;$("theme").textContent=theme==="dark"?"Light":"Dark";}
 $("theme").onclick=()=>{theme=theme==="dark"?"light":"dark";paintTheme();};paintTheme();
 window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
-document.addEventListener("visibilitychange",()=>{paintPrices();if(!document.hidden){void refreshPrices();void syncCredits();}});
+document.addEventListener("visibilitychange",()=>{paintPrices();if(!document.hidden){
+  if(!busy&&!receiptSync.running){connection("unverified");controls();}
+  void refreshPrices();void syncCredits();
+}});
 setInterval(()=>void refreshPrices(),60000);
 setInterval(paintPrices,1000); // Expire displayed data even if a fetch is stalled.
 void refreshPrices(); // No wallet prompt, cookie creation or private history required.
 setInterval(()=>{if(identity&&Date.now()>=expires){clearPrivate();message("Private access expired. Sign in again.");}},1000);
 // Restore authenticated history only; auto-receive requires an available wallet.
-try{if(!framed){await load();message("Private history restored. Connected wallets receive confirmed credits automatically.");}}
+try{if(!framed){await load();message("History sign-in restored. Wallet connection is checked separately below.");}}
 catch{clearPrivate();}controls();
 void syncCredits();
 setInterval(()=>{if(identity&&!busy&&!framed&&!document.hidden)void run(()=>load());},30000);
