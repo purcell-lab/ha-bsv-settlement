@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {sessionAccount,operatorRecord} from "./account-projection.js";
-import {readinessView,allowanceRows,termsList,authorityText,grantText} from "./monthly-ui.js";
+import {readinessView,setupAction,allowanceRows,termsList,authorityText,grantText} from "./monthly-ui.js";
 import {energyMetrics,provisionalDisplay,provisionalSats} from "../ui.js";
 
 const NOW=Date.parse("2026-10-05T12:00:00Z");
 const open={session_id:"s",session_key:"p|s",ended_at:null,running_state:"Charging",import_kwh:0,export_kwh:.53,
+  ocpp:{available:true,status:"Charging",checked_at:new Date(NOW).toISOString()},
   import_cost_aud:0,export_credit_aud:.06,net_amount_aud:-.06,meter_updated_at:new Date(NOW-10000).toISOString(),
   satoshis_per_aud:"100",quality_flags:[],transactions:[{id:"c",state:"waiting_for_session_end",direction:"operator_to_driver",amount_sats:null}]};
 
@@ -28,6 +29,7 @@ test("stale meter or missing rate never looks like zero or a payment",()=>{
   for(const s of [{...open,meter_updated_at:new Date(NOW-600000).toISOString()},{...open,satoshis_per_aud:null},{...open,net_amount_aud:null}]){
     const a=sessionAccount(s,NOW);
     assert.equal(a.provisionalSats,null);assert.notEqual(a.outcome,"payment");
+    assert.equal(a.netAud,null);assert.equal(a.estimateState,"unavailable");
   }
 });
 
@@ -42,9 +44,26 @@ test("payments keep provider confirmation and wallet acceptance separate",()=>{
 test("readiness lists every gap and is never ready without server evidence",()=>{
   assert.deepEqual(readinessView({enabled:false}).ready,false);
   const view=readinessView({enabled:true,readiness:{automatic_collection:false,missing:["wallet_monthly_permission","receiving_registration"]}});
-  assert.equal(view.ready,false);assert.equal(view.items.length,2);assert.match(view.items[0],/not verified/);
-  assert.equal(readinessView({enabled:true,readiness:{automatic_collection:true,missing:[]}}).ready,true);
+  assert.equal(view.ready,false);assert.equal(view.items.length,3);assert.match(view.items[0],/not verified/);
+  const ready={enabled:true,readiness:{automatic_collection:true,missing:[]}};
+  assert.equal(readinessView(ready).ready,false);
+  assert.equal(readinessView(ready,{walletConnected:true}).ready,true);
   assert.equal(readinessView({enabled:true,readiness:{automatic_collection:true,missing:["x"]}}).ready,false);
+});
+
+test("setup action resumes only missing steps and does not reauthorise cancelled consent",()=>{
+  const partial={authority:{state:"active"},readiness:{missing:["receiving_registration"]}};
+  assert.deepEqual(setupAction(partial,{connected:true}),{enabled:true,label:"Finish wallet setup"});
+  assert.equal(setupAction(partial).label,"Reconnect wallet");
+  assert.equal(setupAction({authority:{state:"cancelled"}}).enabled,false);
+  assert.equal(setupAction({authority:{state:"active"},readiness:{missing:[]}},{connected:true}).enabled,false);
+});
+
+test("OCPP is not inferred from Sigen running state and expires independently",()=>{
+  assert.equal(sessionAccount({...open,running_state:"Discharging"},NOW).ocppStatus,"Charging");
+  assert.equal(sessionAccount({...open,ocpp:null},NOW).ocppStatus,null);
+  assert.equal(sessionAccount({...open,ocpp:{...open.ocpp,checked_at:new Date(NOW-61000).toISOString()}},NOW).ocppStatus,null);
+  assert.equal(sessionAccount({...open,ended_at:new Date(NOW).toISOString()},NOW).ocppStatus,null);
 });
 
 test("allowance rows show limit, spent, reserved and remaining without arithmetic",()=>{

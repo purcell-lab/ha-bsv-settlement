@@ -99,6 +99,35 @@ test("returning driver: only missing steps run, no new signature",async()=>{
   assert.deepEqual(out.steps.filter(s=>s.state==="skipped").map(s=>s.id),["sign_in","authority"]);
 });
 
+test("partial setup resumes reviewed adapters without re-signing or trusting their return",async()=>{
+  const wallet=fixtureWallet("full"),identity=await identityOf(wallet),server=fakeServer({grant:false,receiving:false});
+  await setup(server,identity).flow.run({wallet,identity,hostname:HOST,confirmTerms:async()=>true});
+  const before=wallet.calls.createSignature,authority=server.authority.authority_id,steps=[];
+  const flow=new MonthlySetup({api:server.api(identity),signIn:async()=>identity,syncReceipts:async()=>{},
+    setupAdapters:{
+      receiving_registration:async()=>{steps.push("receiving");return {registered:true};},
+      wallet_monthly_permission:async()=>{steps.push("permission");return {verified:true};},
+    }});
+  const out=await flow.run({wallet,identity,hostname:HOST,confirmTerms:async()=>{throw Error("must not re-sign");}});
+  assert.deepEqual(steps,["receiving","permission"]);
+  assert.equal(wallet.calls.createSignature,before);
+  assert.equal(server.authority.authority_id,authority);
+  assert.equal(out.ready,false); // Adapter assertions cannot replace server verification.
+  assert.ok(out.missing.includes("receiving_registration"));
+  assert.ok(out.missing.includes("wallet_monthly_permission"));
+});
+
+test("missing setup adapters are explicit and permit later retry",async()=>{
+  const wallet=fixtureWallet("full"),identity=await identityOf(wallet),server=fakeServer({grant:false,receiving:false});
+  const {flow}=setup(server,identity);
+  for(let i=0;i<2;i++){
+    const out=await flow.run({wallet,identity,hostname:HOST,confirmTerms:async()=>true});
+    assert.equal(out.ready,false);
+    assert.equal(out.steps.filter(s=>s.state==="unavailable").length,2);
+  }
+  assert.equal(wallet.calls.createSignature,1);
+});
+
 test("missing native grant evidence or receiving registration is never reported ready",async()=>{
   for(const [opts,missing] of [[{grant:false},"wallet_monthly_permission"],[{receiving:false},"receiving_registration"]]){
     const wallet=fixtureWallet("full"),identity=await identityOf(wallet),server=fakeServer(opts);

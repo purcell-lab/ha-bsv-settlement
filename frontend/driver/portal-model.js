@@ -43,7 +43,10 @@ export function transactionStatus(t){
   return ({provider_unconfirmed:"Awaiting block confirmation",submitted:"Submitted · awaiting confirmation",
     broadcast_unknown:"Submission uncertain · do not retry payment",waived:"Waived",
     wallet_attempt_reserved:"Held for review",waiting_for_session_end:"Session in progress",
-    no_operator_credit:"No operator credit due"})[t.state]||String(t.state||"Review required").replaceAll("_"," ");
+    no_operator_credit:"No operator credit due",
+    monthly_reserved:"Session amount reserved within allowance. No payment confirmed.",
+    reservation_released:"Unused reservation released. Not a payment.",
+    wallet_spend_recorded:"Wallet spending recorded. Provider confirmation is not recorded."})[t.state]||String(t.state||"Review required").replaceAll("_"," ");
 }
 export function provisionalSession(s,now=Date.now()){
   // A provisional account is not a payment. Never replace a submitted/final

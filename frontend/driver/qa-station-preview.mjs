@@ -80,8 +80,40 @@ for(const [q,name] of [["monthly=off","off"],["monthly=new","new"]]){
   await p.click("#portal-login");await p.waitForTimeout(1200);
   check("unverified: not ready",!/^Monthly charging ready/.test(await p.textContent("#monthly-readiness-title")),await p.textContent("#monthly-readiness-title"));
   check("unverified: explains wallet permission",/not verified/.test(await p.textContent("#monthly-readiness-items")));
-  check("unverified: authorise not offered when authority exists",await p.isHidden("#driver-action-monthly"));
+  check("unverified: missing setup remains resumable",await p.isVisible("#driver-action-monthly")&&
+    (await p.textContent("#driver-action-monthly"))==="Finish wallet setup");
   await p.screenshot({path:`${out}/charging-unverified-desktop-dark.png`,fullPage:true});await ctx.close();
+}
+// Review regressions F1/F3/F4/F6. Fictional wallet, never invokes a payment.
+for(const tab of ["station","charging","history"]){
+  const {p,ctx}=await page("monthly=new&active");
+  await p.click("#portal-login");
+  await p.waitForFunction(()=>!document.querySelector("#driver-action-monthly").disabled);
+  await p.click("#tab-"+tab);
+  await p.click("#driver-action-monthly");
+  await p.waitForSelector("#monthly-confirm:not([hidden])");
+  check(`review: approval visible from ${tab}`,await p.isVisible("#monthly-confirm"));
+  check(`review: approval focuses terms from ${tab}`,await p.evaluate(()=>document.activeElement.id)==="monthly-confirm-title");
+  await p.click("#monthly-confirm-no");
+  check(`review: decline from ${tab} signs nothing`,!(await p.evaluate(()=>window.portalPreviewCalls)).includes("monthly:monthly_accept"));
+  await ctx.close();
+}
+{
+  const {p,ctx}=await page("monthly=active&active&restored");
+  check("review: restored login without wallet is not automatic ready",
+    (await p.textContent("#monthly-readiness-title"))!=="Monthly charging ready");
+  await ctx.close();
+}
+{
+  const {p,ctx}=await page("monthly=active&active&stalemeter");
+  await p.click("#portal-login");
+  await p.waitForFunction(()=>document.querySelector("#tab-charging").getAttribute("aria-selected")==="true");
+  check("review: stale live net unavailable",await p.textContent("#charging-net")==="Unavailable");
+  check("review: stale live energy unavailable",await p.textContent("#charging-export")==="Unavailable");
+  await p.click("#tab-history");await p.locator(".portal-session").first().locator("summary").click();
+  const text=await p.locator(".portal-session").first().textContent();
+  check("review: expanded stale account never appears as current AUD",!text.includes("-0.060 AUD"));
+  await ctx.close();
 }
 // 4. Keyboard tab navigation.
 {
