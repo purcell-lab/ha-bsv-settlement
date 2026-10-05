@@ -126,6 +126,10 @@ main{padding-top:var(--s8)}
 #portal-signin>.actions,#portal-account .portal-wallet-actions{margin:0}
 #portal-account{border:0;background:none;padding:0;margin:var(--s4) 0}
 #portal-account .portal-prices,#portal-account .portal-price-note{display:none}
+.portal-connection{padding:var(--s4);margin:var(--s3) 0;background:var(--soft);border:1px solid var(--line);border-radius:8px}
+#portal-connection-state{font-size:var(--text-sm);font-weight:650;margin:0}
+#portal-connection-note{margin:var(--s2) 0 var(--s3)}
+.portal-connection[data-state=connected] #portal-connection-state{color:var(--accent)}
 #portal-current{margin-bottom:var(--s4)}
 #portal-current-amount{margin:var(--s3) 0;font-variant-numeric:tabular-nums}
 #portal-current-energy{font-size:var(--text-sm)}
