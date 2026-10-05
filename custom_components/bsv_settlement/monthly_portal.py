@@ -222,6 +222,8 @@ async def handle(hass, coord, origin, identity, data):
             pending, terms = _open_challenge(service, state, identity)
             if pending is not None:
                 return _challenge_view(terms, state["revision"])
+            # Expired requests from any driver can never be accepted; drop them first.
+            revision = (await service.prune_challenges(expected_revision=revision))["revision"]
             issued = await service.issue(driver_identity=identity, station_ids=list(portal.station_ids),
                                          policy_id=portal.policy_id, expected_revision=revision)
             return _challenge_view(issued["terms"], issued["revision"])

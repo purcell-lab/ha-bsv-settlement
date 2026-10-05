@@ -15,6 +15,8 @@ an implemented control. The original no-budget mock documentation remains below.
   monthly limit is spending authority, not a monthly bill.
 - **[Monthly wallet setup](monthly-wallet-setup.md):** staged S3 portal transport
   and one-action wallet orchestrator. Disabled unless a reviewed activation configures it.
+- **[Monthly charging release](monthly-release.md):** failure matrix with offline/mock/native
+  evidence, migration, rollback hazards and the separately approved activation runbook.
 
 - **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
   integration evidence and guarded Legacy Sigenergy / OCPP source selection.
