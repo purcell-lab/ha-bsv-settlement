@@ -48,7 +48,10 @@ def activate(hass, coord, clock, *, remaining=30_000, net="1.00"):
     service = MonthlyAuthorities(coord, origin="charging.example.com", policies={POLICY.policy_id: POLICY},
                                  resolve_session=resolver, resolve_record=record, wallet_grant=grant,
                                  clock=lambda: clock[0])
-    hass.data[KEY] = MonthlyPortal(service, ("station-1",), POLICY.policy_id)
+    async def health(identity):
+        # Explicit fictional executor health; not evidence of a live executor.
+        return {"ready": True, "checked_at": clock[0].isoformat()}
+    hass.data[KEY] = MonthlyPortal(service, ("station-1",), POLICY.policy_id, health)
     return service
 
 

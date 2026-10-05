@@ -12,11 +12,31 @@ separate, explicit owner approval recorded on #79.
 | S1 allowance model | Implemented, offline tests |
 | S2 authority, ledger, ownership | Implemented, internal only |
 | S3 portal transport, orchestrator | Implemented, disabled without activation record |
-| S4 Station / My charging / History | Implemented; monthly UI hidden while disabled |
+| S4 Station / My charging / History | Implemented; monthly action disabled while runtime is off; public terms remain visible |
 | Production adapters | **Not implemented** (period policy evidence, native grant, session ownership, closed-session record, spending reconciler) |
 | Monthly credit/zero routes for monthly-bound sessions | **Not implemented** |
 | Native wallet/device evidence | **None recorded** |
 | Activation | **Not possible** until the rows above are complete |
+
+## Holistic review corrections
+
+F1-F6 are addressed within S3/S4, with detailed regression mapping in
+[station review corrections](qa/station-review-corrections.md).
+
+- **F1:** readiness requires session adapters, fresh executor health, positive
+  app/native allowance and a stable ledger revision. The UI also requires a
+  recently verified connected signer; login alone is never automatic-ready.
+- **F2:** retained monthly bindings and frozen accounts appear in owner-filtered
+  history even while activation is off. Accounting commit is not chain finality.
+- **F3:** confirmation is visible and focused when approval starts from any tab.
+- **F4:** incomplete setup remains resumable without a new mandate or allowance
+  reset. Unsupported production setup adapters are explicit operator work.
+- **F5:** OCPP comes from the guarded observer, not the Sigenergy running state.
+- **F6:** live and expanded account views apply the same stale/unknown rules.
+
+These corrections do not complete the unimplemented production adapters or
+monthly credit/zero settlement routes. No native acceptance gate is satisfied
+by these fictional-wallet tests, and no new live authority is enabled.
 
 ## Integrated failure and migration matrix
 
@@ -98,7 +118,10 @@ Copy `index.html` and `style.css` to `custom_components/bsv_settlement/frontend/
 3. **Adapters:** implement and review native grant, session ownership (connector to
    session, wrong-driver rejection), closed-session record and the spending
    reconciler (exactly once per session; repeated `wallet_pending` reads never
-   re-invoke the wallet; commit only from verified wallet evidence).
+   re-invoke the wallet; commit only from verified wallet evidence). Supply a
+   read-only executor/reconciler health adapter returning fresh observations, not
+   a static readiness flag. Install and verify receiving-registration and native
+   permission setup adapters before claiming one-action setup is complete.
 4. **Credit/zero routes** for monthly-bound sessions, with immutable receiving metadata.
 5. **Native evidence register** complete for every capability the UI claims.
 6. **Activation record:** construct `MonthlyPortal(service, station_ids, policy_id)` in
@@ -114,12 +137,12 @@ Copy `index.html` and `style.css` to `custom_components/bsv_settlement/frontend/
 | Gate | State |
 |---|---|
 | Single entry | Met in preview (S4) |
-| Honest readiness | Met offline (S3/S4) |
+| Honest readiness | Regression-tested for missing adapters, exhausted allowance, cancellation race and disconnected wallet; native evidence pending |
 | Bounded spending | Met offline (S1/S2) |
 | No refill | Met offline (S1) |
 | Month rollover | Met offline (S1/S2/S5) |
 | Correct driver | Met offline (S2/S3) |
-| One account | Met offline (S4 projection tests) |
+| One account | Monthly ownership/HTTP projection and stale/OCPP regressions tested offline; native end-to-end reconciliation pending |
 | All receipts | Met offline for existing credits; monthly credit route pending |
 | Cancellation | Met offline; native revocation pending |
 | Legacy isolation | Met offline (S2/S5) |

@@ -35,3 +35,14 @@ from Station, My charging and History; declining without consent; partial setup;
 restored login without a connected wallet; stale amounts in live and expanded
 views; mobile/desktop light/dark layout; keyboard tabs; QR text/copy; and no
 wallet spend calls. The correction run passed 70 of 70 assertions.
+
+## Combined validation
+
+The corrected S5 stack passed 1,175 Python tests, 161 driver JavaScript tests
+and 88 operator JavaScript tests. Both frontend rebuilds matched the committed
+bundles, Python compilation passed and `git diff --check` was clean. Three
+existing dependency/runtime warnings remain in the Python run.
+
+All validation was local or fictional. No Home Assistant restart, real-wallet
+prompt, permission increase, payment, receipt import or live policy change was
+performed.
