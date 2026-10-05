@@ -7,6 +7,10 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[Station-first implementation series](station-first-implementation.md):**
+  approved 30,000 sat monthly driver workflow, coordinated PR dependencies and
+  inactive accounting foundation. Not live monthly wallet authority.
+
 - **[OCPP recorder investigation](ocpp-recorder-investigation.md):** live installed
   integration evidence and guarded Legacy Sigenergy / OCPP source selection.
 - **[Recorder readiness](recorder-readiness.md):** read-only per-direction
