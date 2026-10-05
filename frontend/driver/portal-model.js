@@ -78,7 +78,7 @@ export function sessionSummary(s,now=Date.now()){
     payment=`${t.direction==="operator_to_driver"?"Credit":"Pay"} ${amount}`;
     status=t.state==="provider_confirmed"?
       t.direction==="operator_to_driver"?
-        (t.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(t.wallet_imported_at))?"Synced":"Receipt due"):
+        (t.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(t.wallet_imported_at))?"Received":"Receipt due"):
         "Confirmed":
       ({provider_unconfirmed:"Confirming",submitted:"Submitted",broadcast_unknown:"Review",
         wallet_attempt_reserved:"Held",waived:"Waived",waiting_for_session_end:"Active",
