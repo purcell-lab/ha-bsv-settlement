@@ -5,7 +5,7 @@ export const driverActions=[
   ["approve","Authorise EV charging budget"],["refresh","Refresh status"],
   ["sync","Add credit to wallet"],["signout","Sign out"],
   ["save","Save existing approval"],["report","Check existing payment"],
-  ["register","Authorise EV charging budget"],
+  ["register","Authorise EV charging budget"],["monthly","Authorise monthly charging"],
 ];
 export function mountDriverToolbar(mode){
   const bar=document.createElement("div");bar.className="driver-toolbar";

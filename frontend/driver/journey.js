@@ -1,6 +1,6 @@
 // Presentation only: never grants authority, connects a wallet or retries a payment.
 export function nextAction(states) {
-  for (const key of ["save", "report", "approve", "register", "sync", "connect"]) {
+  for (const key of ["save", "report", "monthly", "approve", "register", "sync", "connect"]) {
     if (states[key]?.enabled && states[key]?.primary !== false) return key;
   }
   return null;

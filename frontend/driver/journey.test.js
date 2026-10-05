@@ -16,6 +16,9 @@ test("only one eligible primary action, with uncertain reports and saved signatu
  assert.equal(nextAction({approve:{enabled:true},report:{enabled:true}}),"report");
  assert.equal(nextAction({approve:{enabled:true},connect:{enabled:true}}),"approve");
  assert.equal(nextAction({register:{enabled:true},connect:{enabled:true}}),"register");
+ // A pending signed receipt still outranks a new monthly authorisation.
+ assert.equal(nextAction({monthly:{enabled:true},connect:{enabled:true}}),"monthly");
+ assert.equal(nextAction({monthly:{enabled:true},report:{enabled:true}}),"report");
  assert.equal(nextAction({connect:{enabled:true,primary:false},approve:{enabled:false}}),null);
  assert.equal(nextAction({pair:{enabled:true},refresh:{enabled:true}}),null);
 });

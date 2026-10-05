@@ -295,3 +295,18 @@ async def test_browser_validator_accepts_python_terms_and_its_signature_verifies
         assert code == 200 and body["accepted"] is True
     finally:
         await client.close()
+
+
+async def test_public_station_facts_need_no_sign_in_and_reveal_nothing_private(tmp_path):
+    hass, api, row, driver, payment, view, hub, client = await fixture(tmp_path, True)
+    try:
+        r = await post(client, view, "station")
+        assert r.status == 200 and await r.json() == {"monthly_enabled": False, "station_ids": []}
+        assert "Set-Cookie" not in r.headers
+        activate(hass, api, hass.data["bsv_settlement"]["wallet"])
+        body = await (await post(client, view, "station")).json()
+        assert body == {"monthly_enabled": True, "station_ids": ["station-1"],
+                        "operator_identity": api.identity["public_key"], "monthly_limit_sats": 30_000}
+        assert driver.public_key().hex() not in json.dumps(body)
+    finally:
+        await client.close()

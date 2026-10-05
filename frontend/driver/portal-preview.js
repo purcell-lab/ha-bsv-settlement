@@ -31,7 +31,7 @@ const rows=Array.from({length:27},(_,i)=>({
     fee_sats:36,txid:"a".repeat(64)}],
 }));
 if(params.has("active")){
-  Object.assign(rows[0],{ended_at:null,import_kwh:0,export_kwh:.530,
+  Object.assign(rows[0],{ended_at:null,running_state:"Charging",import_kwh:0,export_kwh:.530,
     import_cost_aud:0,export_credit_aud:.06,net_amount_aud:-.06,
     meter_updated_at:new Date().toISOString(),satoshis_per_aud:"100",
     transactions:[{id:"fixture-active",state:"waiting_for_session_end",direction:"operator_to_driver",amount_sats:null}]});
@@ -107,8 +107,65 @@ window.fetch=async(url,options)=>{
       expires_in:params.has("expire")?2:900});
   }
   if(data.action==="pairing_create")return response({error:"Offline preview: real QR pairing is disabled"},401);
+  const scenario=params.get("monthly")||"off";
+  if(data.action==="station")return response(scenario==="off"?{monthly_enabled:false,station_ids:[]}:
+    {monthly_enabled:true,station_ids:["garage-1"],operator_identity:operator.toPublicKey().toString(),monthly_limit_sats:30000});
+  if(data.action.startsWith("monthly_")){
+    if(!signedIn)return response({error:"Sign in"},401);
+    if(scenario==="off")return data.action==="monthly_status"?response({enabled:false,readiness:{automatic_collection:false,missing:["monthly_disabled"]}}):
+      response({error:"Monthly charging is not enabled at this station.",code:"disabled"},409);
+    return monthlyPreview(data,response);
+  }
   throw Error("Offline preview: no payment or receipt mutations supported");
 };
+// Offline monthly fixture: mirrors S3 responses; nothing is persisted or paid.
+const month={year:2026,month:10,timezone:"Australia/Brisbane"};
+const monthly={revision:4,authority:["active","unverified","cancelled"].includes(params.get("monthly"))?
+  {authority_id:"preview-authority",state:params.get("monthly")==="cancelled"?"cancelled":"active",
+   accepted_at:"2026-10-01T08:00:00+10:00",station_ids:["garage-1"],
+   period:{policy_id:"fixture",wallet_version:"fictional-wallet-1",timezone:month.timezone}}:null,terms:null};
+function monthlyStatus(){
+  const a=monthly.authority,missing=[];
+  if(!a||a.state==="cancelled")missing.push("monthly_authority");
+  const grant=a&&a.state==="active"?(params.get("monthly")==="unverified"?"unverified":"verified"):"not_applicable";
+  if(grant==="unverified")missing.push("wallet_monthly_permission");
+  return {enabled:true,revision:monthly.revision,station_ids:["garage-1"],monthly_limit_sats:30000,challenge_pending:false,
+    authority:a&&{...a,wallet_permission_revoked:a.state==="cancelled"?"not_verified":null},
+    allowance:a?{month,limit_sats:30000,spent_sats:1240,reserved_sats:255,remaining_sats:28505,over_limit_sats:0,blocked:false,reasons:[]}:null,
+    native_grant:grant==="verified"?{state:"verified",remaining_sats:28505,month,observed_at:new Date().toISOString()}:{state:grant},
+    receiving:{registered:true,routes_new_credits:true},readiness:{automatic_collection:!missing.length,missing}};
+}
+async function monthlyPreview(data,response){
+  window.portalPreviewCalls.push("monthly:"+data.action);
+  if(data.action==="monthly_status")return response(monthlyStatus());
+  if(data.action==="monthly_challenge"){
+    const now=Date.now(),iso=ms=>new Date(ms).toISOString().replace("Z","+00:00");
+    monthly.terms={version:4,scope:"recurring_calendar_month_charging_including_driver_fees",network:"BSV mainnet",
+      authority_id:"preview-authority",nonce:"ab".repeat(32),driver_identity:identity,operator_identity:operator.toPublicKey().toString(),
+      operator_address:operator.toPublicKey().toAddress(),origin:location.hostname,station_ids:["garage-1"],monthly_limit_sats:30000,
+      period_policy:{policy_id:"fixture",wallet_version:"fictional-wallet-1",timezone:month.timezone,booking_event:"fixture",
+        fee_basis:"all_driver_paid_wallet_debits",evidence_ref:"offline-preview"},issued_at:iso(now),accept_before:iso(now+600000),
+      effective_at:iso(now),recurs_until_cancelled:true,collection_policy:"one_final_net_payment_per_session_on_closure",
+      credits_refill:false,unused_carries_forward:false,conversion_policy:"freeze_configured_sat_per_aud_at_session_binding",
+      included_session:null};
+    monthly.revision++;
+    return response({authority_id:"preview-authority",terms:monthly.terms,keyID:"preview-authority",
+      payload:canonical({version:4,action:"authorise_monthly_charging",terms:monthly.terms}),
+      protocolID:[2,"ev monthly spending"],revision:monthly.revision});
+  }
+  if(data.action==="monthly_accept"){
+    monthly.revision++;
+    monthly.authority={authority_id:"preview-authority",state:"active",accepted_at:new Date().toISOString(),
+      station_ids:["garage-1"],period:{policy_id:"fixture",wallet_version:"fictional-wallet-1",timezone:month.timezone}};
+    return response({accepted:true,authority_id:"preview-authority",accepted_at:monthly.authority.accepted_at,revision:monthly.revision});
+  }
+  if(data.action==="monthly_cancel_challenge")return response({authority_id:"preview-authority",keyID:"preview-authority",
+    protocolID:[2,"ev monthly spending"],revision:monthly.revision,
+    payload:canonical({version:4,action:"cancel_monthly_charging",authority_id:"preview-authority",driver_identity:identity,terms_hash:"cd".repeat(32)})});
+  if(data.action==="monthly_cancel"){monthly.revision++;monthly.authority.state="cancelled";
+    return response({cancelled:true,wallet_permission_revoked:"not_verified",revision:monthly.revision});}
+  return response({error:"unavailable",code:"unavailable"},409);
+}
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
 const previewNav=document.createElement("p");

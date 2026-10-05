@@ -283,7 +283,7 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
-                              "credit_receipt", "acknowledge_credit_receipt", *monthly_portal.ACTIONS):
+                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -292,6 +292,8 @@ class DriverPortalView(HomeAssistantView):
             coord = coords[0]
             if action == "prices":
                 return web.json_response(current_prices(coord.api), headers=HEADERS)
+            if action == "station":
+                return web.json_response(monthly_portal.public_station(self.hass, coord, origin), headers=HEADERS)
             token = request.cookies.get(COOKIE, "")
             key = sha(token)
             item = state.sessions.get(key)
