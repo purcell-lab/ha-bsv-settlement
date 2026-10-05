@@ -12,6 +12,7 @@ import {chainRecordUrl} from "../ui.js";
 import {warningMessage} from "../quality.js";
 import {privateSessionUrl,publicEnrolmentUrl} from "./private-link.js";
 import {mountDriverToolbar,qrText} from "./navigation.js";
+import {sessionJourney,simplifySessionLayout} from "./journey.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
 function drawApprovalQR(holder,url){
@@ -22,6 +23,7 @@ function drawApprovalQR(holder,url){
 
 const $ = id => document.getElementById(id);
 const toolbar=mountDriverToolbar("session");
+const simpleLayout=simplifySessionLayout();
 const fragment = new URLSearchParams(location.hash.slice(1));
 // A new fragment identifies a different private invitation. Reset every wallet
 // and session variable rather than displaying the old session in the same tab.
@@ -37,6 +39,7 @@ $("open-private-link").onclick=()=>{
   location.assign(url);
 };
 let checked = null, receipt = null, busy = false, live = null, accepted = false;
+let liveSession=null;
 let connectedWallet=null, binding=null, collectionBusy=false, halted=false, pendingReport=null, collectionState=null;
 let creditDirection=false, creditEnabled=false, creditRegistered=false;
 const importedCredits=new Set();
@@ -127,6 +130,7 @@ function pairingState(state, detail) {
 $("pairing-connect").onclick=async()=>{
   if(busy||collectionBusy||pairingBusy||framed||!capability||!checked)return;
   pairingBusy=true;controls();
+  document.querySelector(".driver-support").open=true;
   try {
     if(pairing)await pairing.disconnect();
     pairing=new BrowserPairing({api,origin:location.origin,onState:pairingState});
@@ -187,7 +191,7 @@ $("receive-ongoing").onclick=()=>syncConfirmedReceipts(true);
 const acceptedStates = ["consent_verified_not_payment_authority", "spending_authorised_wallet_permission_required"];
 const spending = () => [2,3].includes(checked?.terms.version);
 const status = (message,error=false) => {
-  $("status").textContent = message; $("status").className = error ? "notice error" : "notice";
+  $("status").textContent = message; $("status").className = error ? "driver-feedback error" : "driver-feedback";
   $("action-note").textContent = message;
 };
 function pricesValid() {
@@ -274,15 +278,26 @@ function controls() {
   const locked=busy||collectionBusy||receivingOngoing||pairingBusy||framed;
   const pendingCredit=ongoingRows.some(r=>r.state==="provider_confirmed"&&!importedCredits.has(r.txid))||
     latestCollection?.direction==="operator_to_driver"&&latestCollection.state==="provider_confirmed"&&!importedCredits.has(latestCollection.txid);
+  const journey=sessionJourney({accepted,state:collectionState,ended:!!liveSession?.ended_at||!!checked?.terms.closed_session_review,
+    credit:creditDirection,imported:importedCredits.has(latestTxid),failure:!!collectionFailure,expired});
+  if(checked){$("page-title").textContent=journey.title;$("page-subtitle").textContent=journey.hint;}
   $("receive-ongoing").classList.add("toolbar-managed");
   toolbar.update({
-    connect:{target:"resume-collection",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
+    connect:{target:"resume-collection",enabled:!$("resume-collection").disabled&&!$("resume-collection").hidden&&
+      !["broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState),
+      label:collectionState==="recovery_ready"?"Review and resume payment":liveSession?.ended_at?"Reconnect to finish payment":"Reconnect wallet",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
     pair:{target:"pairing-connect",enabled:!$("pairing-section").hidden&&!$("pairing-connect").disabled,reason:"Load a valid private invitation, or finish the active wallet action."},
     approve:{target:"approve",primary:true,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
     refresh:{enabled:!!capability&&!locked,run:()=>refresh(),reason:"Load an invitation and wait for the current action to finish."},
     sync:{enabled:!!pendingCredit&&!locked&&!!capability&&!enrolment,run:()=>syncConfirmedReceipts(true),primary:!!pendingCredit,reason:"No confirmed credit receipt is awaiting acceptance, or the wallet is busy."},
     signout:{enabled:false,reason:"This is a private-link session, not a portal login. Closing it does not revoke spending approval."},
-  });
+    save:{target:"retry",primary:true},
+    report:{target:"retry-collection",primary:true},
+  },{step:journey.step,title:journey.title,unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
+  simpleLayout.update({accepted,receiptOnly,step:journey.step});
+  $("approval-action").classList.add("toolbar-managed");
+  $("credit-status").hidden=!accepted||creditRegistered||!!checked?.terms.closed_session_review;
+  $("driver-help-contact").textContent=checked?.terms.operator_contact?`Need help? ${checked.terms.operator_contact}`:"Need help? Contact your charging operator.";
 }
 async function api(action, extra={}) {
   if(enrolment && !["read","approve"].includes(action))throw Error("Open this new-driver invitation inside BSV Browser to authorise your budget first.");
@@ -302,19 +317,26 @@ function paintPrices() {
   $("prices").hidden = !capability || !!checked?.terms.closed_session_review;
   for (const [key,id] of [["import","import-price"],["export","export-price"]]) {
     const p=live?.[key];
-    $(id).textContent = p?.available ? `${(Number(p.aud_per_kwh)*100).toFixed(2)} c/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
+    $(id).textContent = p?.available ? `${Number(p.aud_per_kwh).toFixed(4)} $/kWh${p.estimate ? " (estimated)" : ""}` : "Unavailable";
   }
   $("price-time").textContent = live?.checked_at
-    ? `Checked ${new Date(live.checked_at).toLocaleTimeString()}. Rates change during charging.`
+    ? `Rates checked ${new Date(live.checked_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}. They may change during your session.`
     : "Waiting for current buy and sell rates.";
   $("price-warning").textContent = pricesValid() ? "Indicative now, not a fixed tariff. The signed rule uses each interval's price." :
     "Prices are unavailable or stale. Approval is paused until current prices return.";
+  $("price-warning").hidden=!!pricesValid();
+  $("wallet-direction-note").textContent=pricesValid()&&live?.import&&live?.export?
+    `${Number(live.import.aud_per_kwh)<0?"Charging credits your wallet at this negative buy rate.":"Charging debits your wallet."} ${Number(live.export.aud_per_kwh)<0?"Export debits your wallet at this negative sell rate.":"Export credits your wallet."} Negative rates reverse the normal direction.`:
+    "Charging normally debits your wallet and export normally credits it. Negative rates reverse those directions.";
 }
 function show(invitation) {
   checked=parseInvitation(JSON.stringify(invitation),Date.now(),true);
   const t=checked.terms;
   $("budget").textContent=`${t.max_total_sats.toLocaleString()} sat`;
-  $("aud").textContent=`AUD ${(t.max_total_sats/Number(t.satoshis_per_aud)).toFixed(2)} at the displayed conversion rate`;
+  $("aud").textContent=`A$${(t.max_total_sats/Number(t.satoshis_per_aud)).toFixed(2)} at ${t.satoshis_per_aud} sat / A$1 (demo rate)`;
+  const expiry=new Date(t.expires_at).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+  $("budget-summary").textContent=`${t.closed_session_review?"This completed account only":t.version===3?`Shared across ${t.included_session?"the named current and ":""}future sessions`:"One session"}. Expires ${expiry}${t.version===3?" or when a new driver registers":""}.`;
+  $("fee-summary").textContent=`Includes network fees, up to ${t.max_fee_sats} sat per payment.${t.version===3?" Credits do not refill this budget.":""}`;
   $("fee").textContent=`Up to ${t.max_fee_sats} sat, within the total limit. Not a fixed charge.`;
   $("mobile-fee").textContent=`Total cap ${t.max_total_sats.toLocaleString()} sat, including up to ${t.max_fee_sats} sat fee`;
   $("rate").textContent=`${t.satoshis_per_aud} sat / AUD, fixed for this approval`;
@@ -339,12 +361,12 @@ function show(invitation) {
     $("closed-account").textContent=`Completed session ${t.transaction_id}. Energy Imported to EV: ${a.import_kwh} kWh; Energy Imported from EV: ${a.export_kwh} kWh. Net account AUD ${a.net_amount_aud}; ${c.amount_sats} sat payment, plus actual network fee within your total limit. ${total>0?`Average net energy cost A$${(Number(a.net_amount_aud)/total).toFixed(4)}/kWh, excluding network fee. `:""}Metering warnings: ${warnings||"standard provisional interval allocation only"}. Operator reason: ${c.reason}. Approval can collect this account immediately.`;
   }
   $("approval-terms").textContent = spending() ?
-    `By selecting Authorise EV charging budget, you authorise one automatic payment to the displayed operator address after your bound session ends, if the final net account is positive. Your total wallet debit must not exceed ${t.max_total_sats} sat including the network fee; the fee must not exceed ${t.max_fee_sats} sat. The displayed dynamic pricing rule, fixed conversion rate and expiry apply.` :
+    `Authorise one payment after this session ends, up to ${t.max_total_sats} sat including fees. The fee cannot exceed ${t.max_fee_sats} sat. Dynamic rates, the displayed conversion and expiry apply. Keep your wallet and this page available for collection; wallet prompts may still require approval.` :
     "This is an old consent-only invitation. It cannot authorise spending. Ask the operator to revoke it and issue a new spending invitation. Existing signatures do not change.";
   if(t.closed_session_review)$("approval-terms").textContent=
     `You authorise one payment of ${t.closed_session_review.amount_sats} sat for this completed account, plus the actual fee, up to ${t.max_total_sats} sat total. Review the warnings above. The operator's explanation is not independent validation of the meter. This approval does not authorise another session or change your receiving wallet.`;
   if(t.version===3){
-    $("approval-terms").textContent=`You authorise collection for ${t.included_session?"the named current session and ":""}multiple future sessions on this charger, up to ${t.max_total_sats} sat TOTAL including all network fees, until ${t.expires_at} or a newer driver registration. No per-session reset. Operator credits do not replenish this allowance. Collection still needs the driver wallet available; this is not a funds reservation or offline payment guarantee.`;
+    $("approval-terms").textContent=`Covers ${t.included_session?"the named current session plus ":""}future sessions until the expiry shown or a new driver registers. ${t.max_total_sats} sat is the TOTAL across all charges and fees, not a per-session limit. Credits do not refill it. Keep this page and wallet available; wallet payment prompts may still require approval.`;
     if(t.included_session){
       const i=t.included_session,a=i.account;
       $("closed-account").hidden=false;
@@ -389,6 +411,7 @@ async function refresh(initial=false) {
     live=result.prices; accepted=acceptedStates.includes(result.state) || !!result.driver_identity; binding=result.binding;
     creditEnabled=result.automatic_credit_enabled;creditRegistered=result.credit_destination_registered;
     const s=result.session;
+    liveSession=s;
     $("energy-summary").hidden=!s;
     if(s)$("energy-summary").textContent=`${s.ended_at?"Session ended":"Session in progress"} · Energy Imported to EV: ${s.import_kwh ?? "unavailable"} kWh · Energy Imported from EV: ${s.export_kwh ?? "unavailable"} kWh${s.net_cost_aud!==null&&s.net_cost_aud!==undefined ? ` · Provisional ${Number(s.net_cost_aud)<0?"credit":"charge"} AUD ${Math.abs(Number(s.net_cost_aud)).toFixed(2)}`:""}`;
     $("credit-status").textContent=creditRegistered ?
@@ -441,6 +464,8 @@ function paintCollection(result) {
     collectionFailure=null;pendingDiagnostic=null;
   } else if(result.diagnostic)collectionFailure=result.diagnostic;
   creditDirection=result.direction==="operator_to_driver";
+  $("settlement-heading").textContent=creditDirection?"Your session credit":"Session payment";
+  $("collection-amount").textContent="";
   collectionState=result.state;
   paintFailure();
   if(["wallet_attempt_reserved","recovery_ready"].includes(result.state)){
@@ -457,7 +482,8 @@ function paintCollection(result) {
   $("quality-warnings").textContent=`Metering warning (non-blocking): ${warningMessage(flags)} Payment permission and safety checks still apply.`;
   if(result.quote) {
     const q=JSON.parse(result.quote.payload);
-    $("collection-amount").textContent=`Session payment: ${q.amount_sats} sat${result.fee_sats!==undefined ? " + "+result.fee_sats+" sat fee" : ", effective fee cap "+q.max_fee_sats+" sat"}. Total debit limit: ${q.max_total_sats} sat. Transaction: ${q.account.ocpp_transaction_id}.`;
+    $("collection-amount").textContent=`${q.amount_sats} sat to the operator${result.fee_sats!==undefined ? " + "+result.fee_sats+" sat network fee" : ". Network fee not yet recorded"}.${
+      result.fee_sats===undefined?` Fee allowance up to ${q.max_fee_sats} sat, within your ${q.max_total_sats} sat total.`:""}`;
   }
   if(result.state==="waived"){
     $("collection-amount").textContent=result.amount_sats?

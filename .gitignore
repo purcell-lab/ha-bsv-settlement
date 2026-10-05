@@ -12,3 +12,5 @@ preview/*.woff2
 preview/DM-SANS-LICENSE.txt
 preview/receipt-sync/
 preview/portal/
+preview/simple-driver/
+preview/qa-simple-*.png

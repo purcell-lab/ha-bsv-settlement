@@ -63,10 +63,11 @@
         <p id="closed-account" class="notice" hidden></p>
         <div class="section-head"><div><p class="eyebrow">Your operator</p><h2 id="operator-name"></h2></div><span class="badge">Dynamic rates</span></div><p id="contact" class="small"></p>
         <div id="prices" hidden>
-          <div class="price-grid"><div><span>Buy (Import/ EV Charging) rate</span><strong id="import-price">Unavailable</strong><small>Energy Imported to EV</small></div><div><span>Sell (Export/ V2G) rate</span><strong id="export-price">Unavailable</strong><small>Energy Imported from EV</small></div></div>
+          <div class="price-grid"><div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="import-price">Unavailable</strong></div><div><span title="Sell (Export/ V2G) rate">Sell / V2G export</span><strong id="export-price">Unavailable</strong></div></div>
           <p id="price-time" class="small"></p><p id="price-warning" class="small"></p>
         </div>
         <div id="energy-summary" class="notice" hidden></div>
+        <p id="wallet-direction-note" class="small"></p>
         <details id="rate-details"><summary>How charging and export affect your wallet</summary>
           <p><strong>Buy (Import/ EV Charging) rate:</strong> your wallet is debited for energy imported to the EV, except when this rate is negative. A negative rate credits your wallet.</p>
           <p><strong>Sell (Export/ V2G) rate:</strong> your wallet is credited for energy imported from the EV, except when this rate is negative. A negative rate debits your wallet.</p>
@@ -98,6 +99,7 @@
       </section>
       <section id="wallet-section" hidden>
         <div class="wallet-heading"><i data-lucide="wallet" aria-hidden="true"></i><p class="eyebrow" id="approval-heading">Your spending limit</p></div><div class="amount"><strong id="budget"></strong><span id="aud"></span></div>
+        <p id="budget-summary" class="small"></p><p id="fee-summary" class="small"></p>
         <dl><dt>Fee allowance</dt><dd id="fee"></dd><dt>Conversion</dt><dd id="rate"></dd><dt>Approval expires</dt><dd id="expiry"></dd></dl>
         <p id="approval-terms" class="small"></p>
         <p id="action-note" class="small"></p>
@@ -106,7 +108,7 @@
           <p class="small">Connected wallet public identity</p><p id="wallet-key" class="mono">Not connected</p>
           <p class="small">Operator receives at</p><p id="operator" class="mono"></p><p class="small">Operator public identity</p><p id="operator-key" class="mono"></p>
           <p class="small">Approval does not reserve funds or start charging. Keep this page open for a driver payment; wallet permission may still be required. Operator credits can be sent with the browser closed once your receiving wallet is registered.</p>
-          <p id="credit-policy" class="small">Automatic operator credits are capped at 1,000 sat total, including the 10 sat fee. Closing this page does not revoke approval. Ask the operator to revoke it before submission. A submitted payment cannot be recalled here.</p>
+          <p id="credit-policy" class="small">Eligible credits follow the operator's separate payment policy. Closing this page does not revoke approval. Ask the operator to revoke it before submission. A submitted payment cannot be recalled here.</p>
         </details>
       </section>
       <section id="result" hidden>
@@ -114,6 +116,7 @@
       </section>
     </div>
   </div>
+<p id="driver-help-contact" class="small">Need help? Contact your charging operator.</p>
 </main>
 <footer>BSV mainnet · Demonstration conversion rate · Provisional energy account, not a certified bill</footer>
 <script type="module" src="./app.bundle.js"></script>

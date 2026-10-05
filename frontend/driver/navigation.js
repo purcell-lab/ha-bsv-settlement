@@ -1,42 +1,64 @@
+import {nextAction,renderSteps} from "./journey.js";
 // Shared visual actions, not shared authority. Each mode supplies its existing guards.
 export const driverActions=[
   ["connect","Connect wallet"],["pair","Connect BSV Browser"],
   ["approve","Authorise EV charging budget"],["refresh","Refresh status"],
-  ["sync","Sync credit receipts"],["signout","Sign out"],
+  ["sync","Add credit to wallet"],["signout","Sign out"],
+  ["save","Save existing approval"],["report","Check existing payment"],
+  ["register","Authorise EV charging budget"],
 ];
 export function mountDriverToolbar(mode){
-  const bar=document.createElement("section");bar.className="driver-toolbar";
+  const bar=document.createElement("div");bar.className="driver-toolbar";
   bar.setAttribute("aria-label","Driver navigation and actions");
-  bar.innerHTML=`<nav class="driver-modes" aria-label="Driver views">
-    <a id="driver-mode-portal" href="/bsv_settlement/driver/index.html">Driver portal</a>
-    <span id="driver-mode-session">Your charging session</span></nav>
-    <div class="driver-action-grid">${driverActions.map(([id,label])=>
-      `<button id="driver-action-${id}" class="secondary" disabled>${label}</button>`).join("")}</div>
-    <p id="driver-mode-help" class="small">${mode==="portal"?
-      "Wallet history and receipt sync. To authorise spending, open an invitation supplied by your operator.":
-      "This invitation and its settlement only. Reconnecting can resume an already-authorised collection. Use Driver portal for your full wallet-linked history."}</p>
-    <details class="driver-action-help"><summary>Why are some actions unavailable?</summary><ul></ul></details>`;
+  bar.innerHTML=`<ol class="journey-steps" aria-label="Charging journey">${renderSteps(0)}</ol>
+    <p id="driver-journey-announcement" class="visually-hidden" role="status" aria-live="polite"></p>
+    <div class="journey-primary"><p id="driver-next-hint" class="small"></p><div id="driver-next-action"></div>
+      <p id="driver-action-unavailable" class="small" role="status" hidden></p></div>
+    <details class="journey-more"><summary>Wallet options and help</summary>
+      <p class="small">Use a wallet on another device, refresh your status, or get back to your history.</p>
+      <div id="driver-secondary-actions" class="driver-action-grid">${driverActions.map(([id,label])=>
+      `<button id="driver-action-${id}" class="secondary" hidden disabled>${label}</button>`).join("")}</div>
+      <nav class="driver-modes" aria-label="Driver views">
+      <a id="driver-mode-portal" href="/bsv_settlement/driver/index.html">My charging history</a>
+      <span id="driver-mode-session">Current session</span></nav>
+    </details>`;
   document.querySelector(".intro").after(bar);
   const portal=bar.querySelector("#driver-mode-portal"),session=bar.querySelector("#driver-mode-session");
   if(mode==="portal"){
     portal.setAttribute("aria-current","page");portal.removeAttribute("href");
     session.setAttribute("aria-disabled","true");session.title="Open a private session or registration invitation from your operator.";
   }else session.setAttribute("aria-current","page");
-  return {update(states){
-    const help=bar.querySelector("ul");help.replaceChildren();
+  return {update(states,journey={}){
+    const resolved={};
     for(const [id,label] of driverActions){
       const state=states[id]||{},target=state.target&&document.getElementById(state.target);
       if(target)target.classList.add("toolbar-managed");
       const enabled=state.enabled!==undefined?!!state.enabled:!!target&&!target.disabled&&!target.hidden;
-      const button=bar.querySelector(`#driver-action-${id}`);
-      button.disabled=!enabled;button.className=enabled&&state.primary?"":"secondary";
+      resolved[id]={...state,enabled};
+      const button=document.getElementById(`driver-action-${id}`);
+      button.disabled=!enabled;button.hidden=!enabled;button.className="secondary";
+      button.textContent=state.label||label;
       button.title=enabled?(state.hint||label):(state.reason||"Not available in this mode.");
       button.onclick=()=>{
         if(button.disabled)return;
         if(target){if(!target.disabled&&!target.hidden)target.click();}
         else state.run?.();
       };
-      if(!enabled){const li=document.createElement("li");li.textContent=`${label}: ${button.title}`;help.append(li);}
+    }
+    const primary=nextAction(resolved),slot=document.getElementById("driver-next-action"),grid=document.getElementById("driver-secondary-actions");
+    for(const [id] of driverActions){
+      const button=document.getElementById(`driver-action-${id}`),parent=id===primary?slot:grid;
+      if(button.parentElement!==parent)parent.append(button);
+      if(id===primary)button.className="wide";
+    }
+    const note=document.getElementById("driver-action-unavailable");
+    note.hidden=!!primary||!journey.unavailable;note.textContent=journey.unavailable||"";
+    document.getElementById("driver-next-hint").textContent=journey.hint||"";
+    const step=journey.step??0;
+    const announcement=document.getElementById("driver-journey-announcement");
+    if(announcement.textContent!==(journey.title||""))announcement.textContent=journey.title||"";
+    if(bar.dataset.step!==String(step)){
+      bar.querySelector(".journey-steps").innerHTML=renderSteps(step);bar.dataset.step=String(step);
     }
   }};
 }
