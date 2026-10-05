@@ -1,6 +1,8 @@
 """Wallet proof-of-control login and owner-scoped, read-only charging history.
 
 No budget capabilities, operator keys, payment actions or authority renewal.
+Monthly consent actions are delegated to ``monthly_portal`` and stay disabled
+unless a reviewed activation configures them; no accounting transition is exposed.
 Login state is memory-only and is lost on restart. Receipt reports use the
 existing independently wallet-signed acknowledgement, not login authority.
 """
@@ -19,6 +21,7 @@ from .api import WalletError
 from .budget import approval_payload, canonical, message_hash, sha, signature_protocol
 from .const import DOMAIN
 from .pairing import external_origin, KEY as PAIRING_KEY
+from . import monthly_portal
 
 KEY = DOMAIN + "_portal"
 COOKIE = "__Host-bsv_driver_portal"
@@ -258,7 +261,7 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
-                              "credit_receipt", "acknowledge_credit_receipt"):
+                              "credit_receipt", "acknowledge_credit_receipt", *monthly_portal.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -323,6 +326,16 @@ class DriverPortalView(HomeAssistantView):
                         raise WalletError("Pairing unavailable")
                     await hub.close(topic)
                     result = {"disconnected": True}
+            elif action in monthly_portal.ACTIONS:
+                if not item["identity"]:
+                    raise WalletError("Sign in to view your sessions")
+                # The monthly service takes coord.lock itself (not re-entrant).
+                try:
+                    result = await monthly_portal.handle(self.hass, coord, origin, item["identity"], data)
+                except monthly_portal.MonthlyRefusal as refusal:
+                    # Not an authentication failure: the page must keep its sign-in.
+                    return web.json_response({"error": monthly_portal.REFUSALS[refusal.code],
+                                              "code": refusal.code}, status=409, headers=HEADERS)
             else:
                 if not item["identity"]:
                     raise WalletError("Sign in to view your sessions")

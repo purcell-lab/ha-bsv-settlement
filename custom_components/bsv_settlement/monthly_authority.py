@@ -337,6 +337,13 @@ class MonthlyAuthorities:
         text(grant["evidence_ref"])
         return grant, month
 
+    async def observe_grant(self, authority_id):
+        """Read-only native grant observation for status. Never persisted or trusted later."""
+        row = self._state()["authorities"][authority_id]
+        grant, month = await self._grant(row["terms"])
+        return {"month": asdict(month), "remaining_sats": grant["remaining_sats"],
+                "observed_at": grant["observed_at"]}
+
     async def transition(self, authority_id, action, data, *, expected_revision):
         """Internal accounting transitions only, NEVER a permission to broadcast.
 

@@ -41,6 +41,9 @@ PR #78 is the existing provisional-account display correction, not a competing
 redesign. Keep it separate and consume its projection in S4 rather than redoing
 or silently merging it.
 
+S3 status: transport and orchestrator staged on `feat/station-monthly-wallet-setup`;
+see [monthly wallet setup](monthly-wallet-setup.md). Still off at runtime.
+
 ## Approved interaction contract
 
 Public station information comes before wallet setup: recognised station and
