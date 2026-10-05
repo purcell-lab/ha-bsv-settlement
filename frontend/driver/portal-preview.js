@@ -30,6 +30,12 @@ const rows=Array.from({length:27},(_,i)=>({
     wallet_receipt_status:i%2?null:"wallet_reported_accepted",wallet_imported_at:"2026-10-04T08:01:00Z",amount_sats:i%2?218:119,
     fee_sats:36,txid:"a".repeat(64)}],
 }));
+if(params.has("active")){
+  Object.assign(rows[0],{ended_at:null,import_kwh:0,export_kwh:.530,
+    import_cost_aud:0,export_credit_aud:.06,net_amount_aud:-.06,
+    meter_updated_at:new Date().toISOString(),satoshis_per_aud:"100",
+    transactions:[{id:"fixture-active",state:"waiting_for_session_end",direction:"operator_to_driver",amount_sats:null}]});
+}
 const operator=new PrivateKey(101),terms={
   version:2,budget_id:"11111111-2222-4333-8444-555555555555",
   session_id:rows[0].session_id,transaction_id:rows[0].transaction_id,session_mode:"existing_session",
