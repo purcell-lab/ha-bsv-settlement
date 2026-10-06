@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: mainnet wallet fixes (#102, #113, #114)
+
+- #102: a provider with no evidence for the active payment's txid (e.g. signed, never posted) no longer blanks the operator balance or fails the refresh. The balance is kept, the payment state is unchanged, and `payment_check_error` (`payment_evidence_unavailable` / `payment_evidence_invalid`) appears on wallet status and the balance/status sensors until evidence appears.
+
 ## Unreleased: drop mock and testnet backends from the integration
 
 - Remove the `mock` (HTTP mock wallet service) and `embedded_testnet` backends from the config flow and setup. The backend form defaults to the read-only `sensor_proxy`; the mainnet step keeps all three acknowledgements.

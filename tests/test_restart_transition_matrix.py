@@ -6,6 +6,7 @@ transition, replays that transition, and compares the hash-chained audit with an
 uninterrupted run. Fictional keys only; providers fail on any extra broadcast.
 """
 import asyncio
+import copy
 from dataclasses import asdict
 from datetime import timedelta
 
@@ -251,17 +252,77 @@ async def test_manual_credit_restart_inside_broadcast_never_resends(tmp_path, bo
     api.chain.confirmations = 1
     if boundary == "signed_not_posted":
         # No provider evidence: stays unknown for operator reconciliation, never resent.
-        await refused(api.refresh_chain(), "no observation")
+        status = await api.refresh_chain()
         assert api.reviews.latest()["state"] == "credit_broadcast_unknown" and not api.chain.posts
         assert history(api) == history(straight)[:len(history(api))]
-        # Current behaviour: the missing observation also withholds the balance.
-        assert api.saved["chain"]["balance_sats"] is None
-        assert api.saved["chain"]["error"] == "chain_check_failed"
+        # #102: the missing observation no longer withholds the (conservative) balance.
+        assert api.saved["chain"]["balance_sats"] == 0 and api.saved["chain"]["error"] is None
+        assert status["payment_check_error"] == "payment_evidence_unavailable"
     else:
         await confirm_credit(api)
         assert api.chain.posts == [saved["signed_raw"]]
         assert history(api) == history(straight)
     verified(api)
+
+
+
+async def test_unposted_manual_credit_keeps_balance_and_payment_unknown(tmp_path):
+    """#102: a never-posted txid flags missing evidence; balance and payment are kept."""
+    api = await drive(await manual(tmp_path, "-1.89"), CREDIT[:3], None)
+
+    async def lost(raw):
+        raise asyncio.CancelledError()
+    send, api.chain.broadcast = api.chain.broadcast, lost
+    with pytest.raises(asyncio.CancelledError):
+        await api.reviews.broadcast_credit(credit_fields(api), "admin")
+    api.chain.broadcast = send
+    api = await reload(api)
+    api.chain.rows.append({"tx_hash": "33" * 32, "tx_pos": 0, "value": 76,
+                           "height": 1, "isSpentInMempoolTx": False})
+    (before,) = copy.deepcopy(list(api.saved["payments"].values()))
+    coordinator = SettlementCoordinator(api.hass, api.entry, api)
+    await coordinator.load()
+    for refresh in (api.refresh_chain, lambda: coordinator.execute("wallet_refresh_chain", {}, "admin"),
+                    coordinator._async_update_data):
+        api._balance_refresh_required = True
+        await refresh()  # Neither the action nor the tick raises.
+        status = api.status()
+        assert (status["balance_sats"], status["chain_error"]) == (76, None)  # Signed input excluded.
+        assert status["payment_check_error"] == "payment_evidence_unavailable"
+        assert status["payment_check_attempted_at"] == status["chain_attempted_at"]
+        assert api.saved["payments"] == {before["draft_id"]: before} and not api.chain.posts
+        assert status["last_payment"]["state"] == "broadcast_unknown"
+        assert api.reviews.latest()["state"] == "credit_broadcast_unknown"
+    await api.refresh_chain(reconcile_payment=False)  # A balance-only read keeps the flag.
+    assert api.status()["payment_check_error"] == "payment_evidence_unavailable"
+    api = await reload(api)
+    assert api.status()["payment_check_error"] == "payment_evidence_unavailable"
+    await rebroadcast_refused(api)
+    assert not api.chain.posts
+    # The provider later reports the transaction (posted elsewhere): the flag clears.
+    api.chain.driver_tx, api.chain.confirmations = Transaction.from_hex(before["signed_raw"]), 1
+    status = await api.refresh_chain()
+    assert status["payment_check_error"] is None and status["balance_sats"] == 76
+    assert status["last_payment"]["state"] == "provider_confirmed" and not api.chain.posts
+    assert api.reviews.latest()["state"] == "credit_provider_confirmed"
+    verified(api)
+
+
+async def test_invalid_payment_evidence_keeps_balance(tmp_path):
+    hass, entry, api = await setup_wallet(tmp_path)
+    OPEN_HASS.append(hass)
+    api.saved["active_payment"] = "d"
+    api.saved["payments"]["d"] = payment = {
+        "draft_id": "d", "state": "submitted", "txid": "44" * 32,
+        "source_txid": "55" * 32, "source_index": 0}
+
+    async def details(txid):
+        return {"txid": txid, "confirmations": -1}
+    api.chain.details = details
+    status = await api.refresh_chain()
+    assert (status["balance_sats"], status["chain_error"]) == (50000, None)
+    assert status["payment_check_error"] == "payment_evidence_invalid"
+    assert payment["state"] == "submitted" and "confirmations" not in payment
 
 
 # --- Driver collection --------------------------------------------------------

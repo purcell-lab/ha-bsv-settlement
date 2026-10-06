@@ -161,8 +161,9 @@ monthly revision); the rest return the stored record. Cancellation inside
 collection and automatic-credit calls stays in their interruption matrices.
 Limits: monthly attempt states and unused challenges are not in the audit
 projection (#103), so the monthly audit comparison covers authorities and
-bindings only. A manual credit signed but never posted stays `broadcast_unknown` and
-the balance refresh reports `chain_check_failed` until reconciled (#102).
+bindings only. A manual credit signed but never posted stays `broadcast_unknown`; the
+balance refresh keeps the balance and reports `payment_check_error:
+payment_evidence_unavailable` until the provider has evidence (#102).
 
 ## Retention and expiry
 

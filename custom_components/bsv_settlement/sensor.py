@@ -223,7 +223,7 @@ WALLET_SUMMARY_KEYS = (
     "receive_address", "operator_public_key", "driver_identity_status",
     "chain_checked_at", "chain_error", "balance_source", "last_payment",
     "chain_attempted_at", "pending_change_sats", "pending_change_source",
-    "max_payment_sats", "max_fee_sats")
+    "max_payment_sats", "max_fee_sats", "payment_check_error", "payment_check_attempted_at")
 # Ledger-sized fields the dashboard cards read from the live state. Together
 # they reach ~50 KB on a live mainnet wallet, past the recorder's 16 KB
 # attribute limit, so they are kept out of the recorder (history keeps the
@@ -234,6 +234,7 @@ WALLET_DETAIL_KEYS = (
 BALANCE_KEYS = (
     "mode", "network", "backend", "balance_verified", "balance_source",
     "chain_checked_at", "chain_attempted_at", "chain_error",
+    "payment_check_error", "payment_check_attempted_at",
     "pending_change_sats", "pending_change_source")
 
 

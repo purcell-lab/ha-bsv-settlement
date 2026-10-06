@@ -286,6 +286,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             balance_source="WhatsOnChain confirmed UTXOs, not independently SPV verified",
             chain_checked_at=chain.get("checked_at"), chain_error=chain.get("error"),
             chain_attempted_at=chain.get("attempted_at"),
+            payment_check_error=chain.get("payment_check_error"),
+            payment_check_attempted_at=chain.get("payment_check_attempted_at"),
             pending_change_sats=self.pending_change(),
             pending_change_source="Locally signed operator change; not confirmed or spendable",
             driver_identity_status="submitted_unverified" if self.saved["driver"]["driver_public_identity"] else "not_submitted",
@@ -435,18 +437,33 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             # as spendable, even when submission outcome is unknown.
             used = {(p["source_txid"], p["source_index"]) for p in self.signed_payments()}
             rows = [r for r in rows if (r["tx_hash"], r["tx_pos"]) not in used]
-            self.saved["chain"] = {"balance_sats": sum(r["value"] for r in rows),
-                                   "checked_at": utcnow().isoformat(),
-                                   "attempted_at": attempted_at, "error": None}
+            previous = self.saved.get("chain") or {}
+            chain = self.saved["chain"] = {"balance_sats": sum(r["value"] for r in rows),
+                                           "checked_at": utcnow().isoformat(),
+                                           "attempted_at": attempted_at, "error": None}
             p = self.saved["payments"].get(self.saved["active_payment"])
             if reconcile_payment and p and p.get("txid") and p["state"] in (
                 "broadcast_unknown", "submitted", "provider_unconfirmed", "provider_confirmed"):
-                details = await self.chain.details(p["txid"])
-                confirmations = details.get("confirmations", 0)
-                if type(confirmations) is not int or confirmations < 0:
-                    raise WalletError("Invalid chain confirmation evidence")
-                p["confirmations"] = confirmations
-                p["state"] = "provider_confirmed" if confirmations else "provider_unconfirmed"
+                try:
+                    details = await self.chain.details(p["txid"])
+                    confirmations = details.get("confirmations", 0)
+                    if type(confirmations) is not int or confirmations < 0:
+                        raise ValueError
+                except (WalletError, ValueError) as exc:
+                    # #102: missing payment evidence (e.g. signed, never posted) keeps the
+                    # balance read above (signed inputs excluded) and leaves the payment
+                    # exactly as it was: never resent, cancelled, released or failed.
+                    chain["payment_check_error"] = ("payment_evidence_invalid" if isinstance(exc, ValueError)
+                                                    else "payment_evidence_unavailable")
+                    chain["payment_check_attempted_at"] = attempted_at
+                else:
+                    p["confirmations"] = confirmations
+                    p["state"] = "provider_confirmed" if confirmations else "provider_unconfirmed"
+            elif previous.get("payment_check_error") and p and p.get("txid") and p["state"] in (
+                    "broadcast_unknown", "submitted", "provider_unconfirmed"):
+                # Not reconciled this time: the earlier condition still stands.
+                for key in ("payment_check_error", "payment_check_attempted_at"):
+                    chain[key] = previous.get(key)
             await self.store.async_save(self.saved)
             return self.status()
         except WalletError:
