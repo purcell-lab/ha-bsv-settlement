@@ -7,11 +7,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.importlib import async_import_module
 
-from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
+from .const import DOMAIN, SERVICES, PURGE_REMOVED_BACKEND_STORES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
-# Removed backends: such entries are refused, never migrated; their stores are left untouched.
+# Removed backends: such entries are refused, never migrated; their stores are left untouched
+# unless an administrator purges them after deleting the entry (legacy_stores.py).
 REMOVED_BACKENDS = ("mock", "embedded_testnet")
 
 
@@ -111,6 +112,9 @@ async def async_setup(hass, config):
             vol.Required("confirm_mainnet_payment"): vol.In([True]),
         },
         "cancel_operator_payment": {**common, vol.Required("draft_id"): str},
+        PURGE_REMOVED_BACKEND_STORES: {
+            vol.Required("entry_id"): vol.Match(r"^[0-9A-Za-z_-]{1,64}$"),
+            vol.Required("confirm"): vol.In([True])},
     }
     review = {**common, vol.Required("review_id"): str}
     hashed = {**review, vol.Required("terms_hash"): str}
@@ -216,7 +220,7 @@ async def async_setup(hass, config):
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
                             # #113: these persist to (or expose) the mainnet ledger and coordinator store.
                             "wallet_status", "wallet_self_test", "bind_session", "add_interval",
-                            "prepare_session",
+                            "prepare_session", PURGE_REMOVED_BACKEND_STORES,
                             *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES,
                             *CREDIT_RECOVERY_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
@@ -224,6 +228,10 @@ async def async_setup(hass, config):
                     if call.context.user_id else None)
             if user is None or not user.is_admin:
                 raise HomeAssistantError("An authenticated HA administrator must perform this wallet action")
+        if call.service == PURGE_REMOVED_BACKEND_STORES:
+            from .legacy_stores import purge
+            result = await purge(hass, call.data)
+            return result if call.return_response else None
         coordinator = hass.data[DOMAIN].get(call.data["config_entry_id"])
         if coordinator is None:
             raise HomeAssistantError("The selected BSV config entry is not loaded")
@@ -246,7 +254,8 @@ async def async_setup_entry(hass, entry):
     if removed := removed_backend(entry):
         raise ConfigEntryError(
             f"The '{removed}' backend was removed from this integration. Delete this entry; "
-            "its stored records are left in place and are not read or changed.")
+            "its stored records are left in place and are not read or changed. After deleting it, "
+            "an administrator can remove them with bsv_settlement.purge_removed_backend_stores.")
     if entry.data.get("backend") == "ocpp_import_shadow":
         from .ocpp_shadow import OCPPShadowCoordinator
         coordinator = OCPPShadowCoordinator(hass, entry)

@@ -4,6 +4,7 @@
 
 - #102: a provider with no evidence for the active payment's txid (e.g. signed, never posted) no longer blanks the operator balance or fails the refresh. The balance is kept, the payment state is unchanged, and `payment_check_error` (`payment_evidence_unavailable` / `payment_evidence_invalid`) appears on wallet status and the balance/status sensors until evidence appears.
 - #113: `wallet_status`, `wallet_self_test`, `bind_session`, `add_interval` and `prepare_session` now require an authenticated HA administrator (no-user automation calls are refused), as they write to or expose the mainnet ledger. Self-test signing is unchanged.
+- #114: add the administrator-only `purge_removed_backend_stores` action. Given a deleted `mock`/`embedded_testnet` entry's `entry_id` and `confirm: true`, it removes exactly that entry's coordinator, wallet-ledger and operator-key stores via the HA Store API and returns their keys. It refuses (removing nothing) while any config entry has that ID, if any other per-entry store exists, if a store is unrecognised, or unless every present store is positively testnet/mock.
 
 ## Unreleased: drop mock and testnet backends from the integration
 

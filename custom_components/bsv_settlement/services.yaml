@@ -479,6 +479,20 @@ cancel_operator_payment:
       required: true
       selector:
         text:
+purge_removed_backend_stores:
+  name: Remove stores of a deleted testnet or mock entry
+  description: Administrator only. Permanently delete the coordinator, wallet-ledger and unencrypted operator-key stores left by a deleted mock or embedded_testnet entry. Refused, with nothing removed, while any config entry has this ID, or if any store is a mainnet wallet, another backend's or unrecognised. Archive the files first if you may need them. Returns the removed store keys; repeat calls remove nothing.
+  fields:
+    entry_id:
+      description: ID of the deleted mock or embedded_testnet config entry (the suffix of its .storage files).
+      required: true
+      selector:
+        text:
+    confirm:
+      description: Confirm permanent deletion of that entry's stores.
+      required: true
+      selector:
+        boolean:
 create_session_budget:
   name: Create session budget invitation
   description: Sign an invitation before charging, or for a named open session. No payment, funds reservation or charger control.

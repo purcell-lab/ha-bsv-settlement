@@ -34,7 +34,13 @@ also carries `schema: monthly-authorities-v1`; the ledger carries the
 `wallet_service` SQLite mock is outside this registry. Entries of the removed
 `mock` and `embedded_testnet` backends left files under the same `coordinator`,
 `operator_key` and `wallet_ledger` keys; the registry still recognises them,
-and setup refuses those entries without reading or rewriting the files.
+and setup refuses those entries without reading or rewriting the files. After
+the entry is deleted, `purge_removed_backend_stores` (administrator only,
+`entry_id` plus `confirm: true`) removes exactly those three files through HA's
+Store API. It refuses, removing nothing, while any config entry has that ID,
+when any other per-entry store (e.g. `ledger_checkpoint`) exists for it, when a
+store is unrecognised, or unless every present store is positively testnet/mock
+(testnet key re-derived, testnet-only ledger records, no mainnet draft) (#114).
 
 Existing files were not rewritten. The HA envelope already records
 `version`/`minor_version` for every store; that envelope is the explicit

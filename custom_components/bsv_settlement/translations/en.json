@@ -102,6 +102,20 @@
     }
   },
   "services": {
+    "purge_removed_backend_stores": {
+      "name": "Remove stores of a deleted testnet or mock entry",
+      "description": "Administrator only. Permanently delete the coordinator, wallet-ledger and unencrypted operator-key stores left by a deleted mock or embedded_testnet entry. Refused, with nothing removed, while any config entry has this ID or if any store is a mainnet wallet, another backend's or unrecognised.",
+      "fields": {
+        "entry_id": {
+          "name": "Deleted entry ID",
+          "description": "ID of the deleted mock or embedded_testnet config entry (the suffix of its .storage files)."
+        },
+        "confirm": {
+          "name": "Confirm deletion",
+          "description": "Confirm permanent deletion of that entry's stores."
+        }
+      }
+    },
     "configure_automatic_credit": {
       "name": "Set automatic operator credit policy",
       "description": "Enable or stop prospective automatic credits. Maximum total 1000 sat per session, including a fixed 10 sat fee. No per-payment approval.",

@@ -14,7 +14,9 @@ SESSION_REVIEW_SERVICES = (
 )
 COLLECTION_RECOVERY_SERVICES = ("prepare_collection_recovery", "recover_driver_collection",
                                 "get_reviewed_collection_link", "inspect_driver_collection")
-SERVICES = ("get_credit_receipt_link", "bind_session", "add_interval", "prepare_session", "refresh",
+# Not per loaded entry: removes the stores of a deleted mock/testnet entry (#114).
+PURGE_REMOVED_BACKEND_STORES = "purge_removed_backend_stores"
+SERVICES = (PURGE_REMOVED_BACKEND_STORES, "get_credit_receipt_link", "bind_session", "add_interval", "prepare_session", "refresh",
             "configure_automatic_credit", "configure_ongoing_credit",
             "wallet_status", "wallet_self_test", "wallet_refresh_chain",
             "prepare_operator_payment", "broadcast_operator_payment", "cancel_operator_payment",
