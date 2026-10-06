@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .proxy_ledger import build_records, instant
+from .tariff_provenance import TariffProvenanceLedger, capture, summary
 
 _LOGGER = logging.getLogger(__name__)
 SOURCE_KEYS = ("import", "export", "state", "import_price", "export_price")
@@ -54,6 +55,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
         self.cancel_listener = None
         self.last_save = 0
         self.last_latest_id = None
+        self.provenance = TariffProvenanceLedger()
 
     async def load(self):
         saved = await self.store.async_load()
@@ -61,6 +63,8 @@ class ProxyCoordinator(DataUpdateCoordinator):
             self.observations = saved["observations"]
             self.archive = saved.get("archive", [])
             self.issues.update(saved.get("persistent_issues", []))
+            # Older stores have no provenance: it stays "not recorded", never invented.
+            self.provenance = TariffProvenanceLedger(saved.get("tariff_provenance"))
         end = dt_util.utcnow()
         start = end - timedelta(hours=24)
         if saved and saved.get("checkpoint_at"):
@@ -134,6 +138,8 @@ class ProxyCoordinator(DataUpdateCoordinator):
         if issues and latest:
             latest = {**latest, "net_cost_aud": None, "net_cost_aud_unrounded": None,
                       "quality_flags": sorted(set(latest["quality_flags"]) | set(issues))}
+        provenance_changed = await self._capture_provenance(
+            observations, [*records[:-1], latest] if latest else records)
         # Keep latest ended session plus current/most recent session for repricing.
         # Keep the preceding baseline for each source and a small summary archive.
         if len(records) > 2:
@@ -146,7 +152,8 @@ class ProxyCoordinator(DataUpdateCoordinator):
                 after = [r for r in rows if instant(r["t"]) >= cut]
                 self.observations[key] = before[-1:] + after
         current_id = latest["session_id"] if latest else None
-        if current_id != self.last_latest_id or time.monotonic() - self.last_save >= 300:
+        if (provenance_changed or current_id != self.last_latest_id
+                or time.monotonic() - self.last_save >= 300):
             await self.persist()
             self.last_latest_id = current_id
         return {
@@ -155,6 +162,33 @@ class ProxyCoordinator(DataUpdateCoordinator):
             "issues": issues, "source_entities": self.sources, "billing_eligible": False,
         }
 
+    async def _capture_provenance(self, observations, records):
+        """Evidence capture only; a fault here never changes or blocks an account."""
+        try:
+            from .session_review import account_snapshot, digest
+            found = await self.hass.async_add_executor_job(
+                capture, observations, records, self.sources)
+            captured_at = dt_util.utcnow().isoformat()
+            changed = False
+            for record in records:
+                if not record or record["session_id"] not in found:
+                    continue
+                try:
+                    account_digest = digest(account_snapshot(record))
+                except Exception:  # noqa: BLE001 - not a settleable account; nothing to link
+                    continue
+                changed |= self.provenance.observe(
+                    record["session_id"], found[record["session_id"]], account_digest, captured_at)
+            return changed
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Tariff provenance capture failed; accounts are unaffected")
+            return False
+
+    def tariff_provenance(self, session_id, account_digest, detail=False):
+        """Read-only: the version captured for exactly this frozen account."""
+        version = self.provenance.lookup(session_id, account_digest)
+        return version if detail else summary(version)
+
     async def persist(self):
         await self.store.async_save({
             "observations": copy.deepcopy(self.observations),
@@ -162,6 +196,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
             "persistent_issues": sorted(self.issues & {
                 "observation_limit_reached", "restart_gap_exceeds_24_hour_backfill"}),
             "checkpoint_at": dt_util.utcnow().isoformat(),
+            "tariff_provenance": self.provenance.stored(),
         })
         self.last_save = time.monotonic()
 
