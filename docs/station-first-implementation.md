@@ -1,5 +1,11 @@
 # Station-first implementation series
 
+> Status update, 6 October 2026: S1–S5 are merged and deployed, not staged.
+> The monthly operating proposal below is historical and deferred. The current
+> default is 1,000 sat including fees for seven days, settled per session.
+> See [weekly reliability](weekly-reliability-series.md) and issue #91.
+> Monthly runtime remains disabled; delivery does not imply native acceptance.
+
 Approved workflow: [issue #79](https://github.com/purcell-lab/ha-bsv-settlement/issues/79).
 The driver spending limit is **30,000 sat each calendar month, including
 driver-paid fees**, recurring until cancelled. This is a design and development

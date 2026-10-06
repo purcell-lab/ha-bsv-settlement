@@ -1,5 +1,19 @@
 # Demonstration acceptance and evidence
 
+## Current scope: 6 October 2026
+
+The deployed baseline is PR #90, commit
+`9d707c06dc3a0cf4136ce9e8c2884dac1f53f93a`. S1–S5 and A1/A2 are merged.
+Recorded local validation: 1,229 Python, 184 driver and 88 operator tests.
+The current release plan is [weekly reliability](weekly-reliability-series.md),
+issue #91: 1,000 sat including fees for seven days, with per-session settlement.
+Monthly activation is disabled and deferred, not an acceptance requirement
+for the weekly path. Native wallet status repair remains unproven.
+
+Earlier checkpoints below are historical evidence, not current staged work.
+Independent reference accounts, isolated protected restore, endpoint security,
+native-device and physical-control gates remain open. No test count closes them.
+
 This is the working evidence plan for issues #1 and #22. It does not authorise
 funding, transfers, live charger control, a restart, a release or a wider pilot.
 The baseline is [487d677](https://github.com/purcell-lab/ha-bsv-settlement/commit/487d677742288c1089ce67ac4d6633703e723158),

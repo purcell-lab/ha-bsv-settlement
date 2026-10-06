@@ -661,6 +661,16 @@ get_reviewed_collection_link:
       required: true
       description: Reveal the existing private session capability in this administrator response. Share only with the approved driver.
       selector: {boolean: {}}
+inspect_driver_collection:
+  name: Inspect a retained driver transaction
+  description: Administrator-only local inspection of one saved attempt. Returns bounded public outpoints and match results, not raw bytes or scripts. Does not query a provider, change the ledger, verify signatures, release a hold or authorise a retry.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {text: {}}
+    budget_id:
+      required: true
+      selector: {text: {}}
 prepare_collection_recovery:
   name: Review a held driver collection
   description: Read-only review. Does not prove absence of a wallet payment or release the attempt.

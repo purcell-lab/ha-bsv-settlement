@@ -1,4 +1,11 @@
-# Monthly wallet adapters: staged follow-on series
+# Monthly wallet adapters: deferred follow-on series
+
+> Status update, 6 October 2026: A1/A2 foundations are merged and deployed but
+> monthly execution remains disabled. A3's grouped-request diagnostic was
+> deployed and subsequently disabled at the owner's request. Native grant
+> verification/repair and A4–A6 remain incomplete and deferred, not release
+> prerequisites for weekly settlement. Any staged labels below are historical.
+> The current plan is [weekly reliability](weekly-reliability-series.md), #91.
 
 This follows deployed S1–S5 under [issue #79](https://github.com/purcell-lab/ha-bsv-settlement/issues/79). Implementation is authorised; merge, deployment, monthly activation and real-value tests are not authorised by this document.
 
