@@ -100,6 +100,8 @@ def test_registry_versions_match_owner_constants_and_keys_resolve():
     assert STORES["recorder_reconciliation"].version == SCHEMA == 1
     from custom_components.bsv_settlement import provenance_archive
     assert STORES["provenance_archive"].version == provenance_archive.STORE_VERSION == 1
+    assert STORES["ocpp_lifecycle"].version == ocpp_shadow.LIFECYCLE_SCHEMA == 1
+    assert STORES["ocpp_lifecycle"].keys == frozenset(ocpp_shadow.LIFECYCLE_KEYS)
     assert ledger_checkpoint.VERSION == 1 and audit_module.VERSION == 1
     keys = set()
     for name, spec in STORES.items():
@@ -176,7 +178,8 @@ async def test_unknown_ledger_namespace_from_a_newer_release_is_refused(tmp_path
 
 @pytest.mark.parametrize("name,entry_id", [
     ("coordinator", "e1"), ("proxy", "e1"), ("grouped_wallet_test", None),
-    ("recorder_reconciliation", "e1"), ("operator_key", "e1"), ("wallet_audit", "e1")])
+    ("recorder_reconciliation", "e1"), ("operator_key", "e1"), ("wallet_audit", "e1"),
+    ("ocpp_lifecycle", "e1")])
 async def test_each_registered_store_refuses_newer_minor_corrupt_and_unknown(tmp_path, name, entry_id):
     hass = HomeAssistant(str(tmp_path))
     try:

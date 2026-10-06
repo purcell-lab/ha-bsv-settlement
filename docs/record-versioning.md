@@ -22,6 +22,7 @@ name is missing.
 | `proxy` | `bsv_settlement.proxy.<entry>` | 1.1 | `proxy` | Exact five keys |
 | `provenance_archive` | `bsv_settlement.provenance_archive.<entry>` | 1.1 | `provenance_archive` | Private, atomic; exact keys `schema`, `versions`; inner `schema: bsv_settlement.provenance_archive.v1`. Refused files are left unchanged and not written, without blocking the wallet |
 | `ocpp_shadow` | `bsv_settlement.ocpp_shadow.<entry>` | 3.1 | `ocpp_shadow` | Converters from 1 and 2 |
+| `ocpp_lifecycle` | `bsv_settlement.ocpp_lifecycle.<entry>` | 1.1 | `ocpp_shadow` | Exact keys; inner `schema: 1`; no idTag, only references |
 | `recorder_reconciliation` | `bsv_settlement.recorder_reconciliation.<entry>` | 1.1 | `recorder` | Inner `schema: 1` |
 | `grouped_wallet_test` | `bsv_settlement_grouped_wallet_test` | 1.1 | `grouped_wallet_test` | Exact keys; optional diagnostic |
 

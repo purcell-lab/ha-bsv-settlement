@@ -26,8 +26,11 @@ sends no OCPP or service call.
   `billing_eligible: false` and `settlement_owner: legacy_sigen`.
 - The new modules `ocpp_lifecycle.py` and `ocpp_replay.py` are pure. They have
   no HA imports and make no service, wallet or charger calls.
-- No other integration module imports them, and a test enforces that. The live
-  coordinator, sensors and financial modules are therefore unchanged.
+- Only the live shadow observer (`ocpp_shadow.py`) imports `ocpp_lifecycle`
+  (see [live shadow wiring](#live-shadow-wiring)). Nothing imports
+  `ocpp_replay`. A test enforces both, and that no settlement, payment, budget,
+  collection, monthly, weekly, credit or recorder module mentions the
+  lifecycle output.
 - Fixtures were captured with read-only `ha_get_history` calls only. No service,
   button, restart or write was made on the live system.
 
@@ -38,7 +41,7 @@ Code: `custom_components/bsv_settlement/ocpp_lifecycle.py`.
 | Rule | Enforcement |
 | --- | --- |
 | Session identity is exactly **(charger, connector, OCPP transactionId, start time)**. | `SessionIdentity` is a frozen dataclass with exactly these fields (`IDENTITY_FIELDS`). It rejects missing, `0` and unavailable transaction IDs. |
-| The **idTag is untrusted metadata**, never a vehicle identifier, ownership key or payment key. | `ownership_key()` returns the identity tuple. It raises `AttributionError` if it is passed an idTag, a vehicle hint or anything else. Sessions store only one-way `id_tag_refs`, never the raw tag. A test fails if any other integration module mentions an idTag. |
+| The **idTag is untrusted metadata**, never a vehicle identifier, ownership key or payment key. | `ownership_key()` returns the identity tuple. It raises `AttributionError` if it is passed an idTag, a vehicle hint or anything else. The tracker hashes an idTag on arrival and holds only the one-way reference, so sessions, persisted state, attributes and logs never contain the raw tag. A test fails if any module other than the lifecycle, replay and shadow observer mentions an idTag, or if the observer does more than name the sensor. |
 | idTag changes never split a session, and a shared idTag never merges two sessions. | Tested with the tracker directly and with live back-to-back transactions that carry the same idTag. |
 | **Vehicle attribution only comes from external evidence and is never automatic.** | Every session has `vehicle_attribution: unresolved` and `vehicle_attribution_automatic: false`. SoC continuity across a boundary is recorded as `vehicle_evidence` (±2 points, the [#61](https://github.com/purcell-lab/ha-bsv-settlement/issues/61) rule) for an operator to review. |
 | A closed transaction is never reopened. | A late or duplicate stop that re-publishes a closed transaction ID only adds `late_or_duplicate_transaction_event` to that session. |
@@ -200,10 +203,73 @@ From the [committed report](qa/ocpp-shadow-report-2026-10-05.md):
   transaction cleared, then Available or Faulted. No HA restart lost or changed an
   active transaction ID.
 
+## Live shadow wiring
+
+Status (T7, #61 and #10): **live, shadow only.** `OCPPShadowCoordinator` holds a
+`LifecycleTracker` for its bound connector. The Sigenergy `sensor_proxy`
+recorder stays the only settlement recorder. There is no recorder selector, and
+nothing here can pay, collect, budget, credit or control the charger.
+
+- **Inputs.** The bound connector status and transaction ID sensors, plus the
+  connector's `id_tag` and `soc` sensors when they exist. These are found by
+  exact unique ID (`<connector scope>.id_tag.sensor`, `.soc.sensor`) in the
+  same OCPP config entry, never by name. Missing ones are reported as
+  `not_found` and the lifecycle still works without them. Events use HA
+  `last_updated` arrival times, as in the replay. idTag and SoC changes feed
+  only the tracker and do not trigger a ledger observation.
+- **Identity.** `(charger, connector, transactionId, start)`. The charger is the
+  `<cpid>` and the connector is `connN`, or 1 when the scope has no `connN`.
+- **Totals.** `assemble()` runs over closed spans of the retained sessions,
+  plus the open import and export spans. Closed spans are indexed in the
+  lifecycle store, up to 400 per direction (`spans_trimmed`), because the
+  ledgers keep only 50. Reconciliation outcomes come from the recorder
+  reconciliation results. The live path passes no reference history, so
+  reference comparison stays the job of **Last OCPP reconciliation**. Late
+  final import is computed from a 30-minute in-memory register buffer. Once
+  computed, it is persisted per transaction.
+- **Restarts.** On load, the tracker resumes with an outage from its last save.
+  An HA restart or reload is never a stop. If the same transaction is seen
+  again, the outage is recorded in `ha_restarts` and flagged
+  `ha_restart_during_session`. A different transaction ends the old session as
+  `superseded_without_stop`, and a cleared transaction ends it at the time it
+  was observed. Newer entity values are fed in time order on load.
+- **Storage.** Separate registered store
+  `bsv_settlement.ocpp_lifecycle.<shadow entry_id>`, version 1.1, inner
+  `schema: 1`, with exact keys `schema`, `recorded_since`, `saved_at`,
+  `tracker`, `spans`, `spans_trimmed` and `late_final`. It keeps at most 20
+  sessions, 200 closed transaction IDs and 100 events. The shadow store stays
+  at version 3, with no migration. A missing store, for example after an
+  upgrade, starts recording at load. Earlier history is
+  `history_before_recorded_since: not_recorded` and is never reconstructed. A
+  corrupt, newer, foreign-charger, unknown-key or billable store, or one that
+  holds a non-reference idTag, is refused. Lifecycle then reads
+  `store_refused`, the file is not rewritten, and the import and export shadow
+  carry on.
+- **Sensor.** The diagnostic **OCPP session lifecycle** sensor shows the
+  `lifecycle_state` of the current session, or else the last one: `active`,
+  `stopped`, `faulted`, `superseded` or `late_final`. Otherwise it shows
+  `no_session`, `store_refused` or `binding_changed`. Its attributes are:
+  - `current_session` and `last_session`, each with identity, start/end, end
+    reason, `start_observed`, `restart_continuity`, `ha_restart_count` and the
+    last three `ha_restarts`, `id_tag_ref`, `id_tag_changes`, observed
+    import/export kWh with span counts, export bounds and grades,
+    reconciliation outcomes, `late_final_import_kwh`, quality flags, SoC
+    evidence and `vehicle_attribution: unresolved`;
+  - `inputs`, `outage_open` and `outage_since`, `session_count`,
+    `recorded_since`, and the trim flags.
+
+  Every output carries `billing_eligible: false`, `settlement_owner:
+  legacy_sigen` and `selector_implemented: false`.
+- **Parity.** `tests/test_ocpp_lifecycle_live.py` drives all 12 fixtures
+  through a real HA state machine and the live coordinator. HA restarts unload
+  the observer and rebuild it from its stores. The test asserts the same
+  session identities, start and end times, end reasons, restart counts, idTag
+  references, observed import/export totals, span counts and bounds, late
+  final readings and quality flags as `ocpp_replay`. Only reference-comparison
+  flags and the replay's `open_at_window_end` are excluded.
+
 ## Remaining work
 
-- Wiring `LifecycleTracker` into the live shadow coordinator with a persisted
-  session store and diagnostic sensor. It is staged as offline code only.
 - Charger-timestamped events: the fixtures carry HA arrival times. Only the
   export register exposes the charger's `last_sample_timestamp`.
 - A live capture of a genuinely late StopTransaction. The late and duplicate

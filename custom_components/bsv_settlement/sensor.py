@@ -29,6 +29,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                ("session_recorder", "Session recorder"),
                                ("recorder_readiness", "OCPP recorder readiness"),
                                ("last_reconciliation", "Last OCPP reconciliation")))
+        async_add_entities([OCPPLifecycleSensor(
+            coordinator, entry, "session_lifecycle", "OCPP session lifecycle", None)])
         return
     if coordinator.mode == "sensor_proxy":
         async_add_entities(ProxySensor(coordinator, entry, key, name, unit) for key, name, unit in (
@@ -184,6 +186,31 @@ class RecorderReadinessSensor(OCPPShadowSensor):
                 **{k: reconciliation.get(k) for k in (
                     "aligned_count", "unresolved_count", "outcome_counts", "explanation_counts",
                     "retained_count", "results_trimmed", "pending_count", "lifetime_totals")}}
+
+
+class OCPPLifecycleSensor(OCPPShadowSensor):
+    """Diagnostic native session lifecycle; shadow evidence, never a settlement input."""
+    _attr_icon = "mdi:timeline-clock-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def lifecycle(self):
+        return (self.coordinator.data or {}).get("lifecycle") or {}
+
+    @property
+    def native_value(self):
+        lifecycle = self.lifecycle
+        if lifecycle.get("state") != "recording":
+            return lifecycle.get("state")
+        session = lifecycle.get("current_session") or lifecycle.get("last_session")
+        return session["lifecycle_state"] if session else "no_session"
+
+    @property
+    def extra_state_attributes(self):
+        # Fixed on every output regardless of the summary contents.
+        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": "legacy_sigen",
+                "selector_implemented": False, "payment_control": False,
+                "charger_control": False}
 
 
 # Wallet health fields small enough to record on every update.

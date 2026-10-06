@@ -246,7 +246,8 @@ def test_store_versions_are_pinned_for_rollback_review():
     assert ocpp_shadow.STORE_VERSION == 3
     assert recorder_reconciliation.SCHEMA == 1
     checklist = (ROOT / "docs" / "release-checklist.md").read_text()
-    for marker in ("Downgrade hazards", "ocpp_shadow", "ledger_checkpoint", "monthly"):
+    for marker in ("Downgrade hazards", "ocpp_shadow", "ocpp_lifecycle", "ledger_checkpoint",
+                   "monthly"):
         assert marker in checklist
 
 

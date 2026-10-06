@@ -13,9 +13,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
-from .records import VersionedStore
+from .records import VersionedStore, check_keys
 from .ocpp_export_shadow_ledger import ExportShadowLedger, grading_rules
-from .ocpp_shadow_ledger import ImportShadowLedger, energy, provenance_flags
+from .ocpp_lifecycle import SETTLEMENT_OWNER, LifecycleTracker, assemble
+from .ocpp_shadow_ledger import ImportShadowLedger, energy, instant, provenance_flags
 from .recorder import RecorderMonitor
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,6 +38,19 @@ REFERENCE_FIELD = "export_reference_entity"
 GRADING_FIELDS = {"min_energy_kwh": "export_min_energy_kwh",
                   "tolerance_pct": "export_tolerance_pct", "wide_pct": "export_wide_pct"}
 STORE_VERSION = 3
+# Native session lifecycle (shadow only). Optional connector inputs found by exact
+# unique ID; the idTag value goes straight into the tracker, which keeps a one-way
+# reference only.
+LIFECYCLE_INPUTS = {"id_tag": "id_tag", "soc": "soc"}
+LIFECYCLE_SCHEMA = 1
+LIFECYCLE_KEYS = {"schema", "recorded_since", "saved_at", "tracker", "spans", "spans_trimmed",
+                  "late_final"}
+MAX_LIFECYCLE_SPANS = 400
+REGISTER_BUFFER_S = 1800
+SPAN_FIELDS = ("span_id", "native_transaction_id", "first_meter_ha_updated_at",
+               "last_meter_ha_updated_at", "observation_ended_at", "end_reason",
+               "observed_import_kwh", "estimate_kwh", "lower_kwh", "upper_kwh", "grade",
+               "source_label")
 
 
 def source_binding(hass, sources):
@@ -157,6 +171,99 @@ def suggest_export(hass, binding):
     return found if {"register", "flow"} <= set(found) else {}
 
 
+def session_scope(binding):
+    """(charger, connector) of the native session identity, from the pinned binding.
+
+    A scope without ``connN`` is the single-connector layout: connector 1.
+    """
+    scope = measurand_scope(binding)
+    head, _, tail = scope.rpartition(".")
+    if head != "ocpp" and re.fullmatch(r"conn\d+", tail):
+        return head[len("ocpp."):], int(tail[4:])
+    return scope[len("ocpp."):], 1
+
+
+def lifecycle_inputs(hass, binding):
+    """Optional lifecycle sensors of the bound connector by exact unique ID; never by name."""
+    registry, scope = er.async_get(hass), measurand_scope(binding)
+    bound = {v["entity_id"] for v in binding.values()}
+    found = {}
+    for key, slug in LIFECYCLE_INPUTS.items():
+        entity_id = registry.async_get_entity_id("sensor", "ocpp", f"{scope}.{slug}.sensor")
+        row = registry.async_get(entity_id) if entity_id else None
+        if (row and entity_id not in bound and row.disabled_by is None
+                and row.config_entry_id == binding["import"]["config_entry_id"]):
+            found[key] = entity_id
+    return found
+
+
+def lifecycle_view(row):
+    """Compact, attribute-sized view of one assembled native session; references only."""
+    flags = set(row["quality_flags"])
+    if row["ended_at"] is None:
+        state = "active"
+    elif flags & {"late_final_reading_unattributed", "late_or_duplicate_transaction_event"}:
+        state = "late_final"
+    elif row["end_reason"] == "superseded_without_stop":
+        state = "superseded"
+    elif flags & {"charger_fault", "charger_fault_at_end"}:
+        state = "faulted"
+    else:
+        state = "stopped"
+    refs = row["untrusted_metadata"]["id_tag_refs"]
+    imp, exp = row["import"], row["export"]
+    return {
+        "identity": dict(row["identity"]), "lifecycle_state": state,
+        "started_at": row["started_at"], "ended_at": row["ended_at"],
+        "end_reason": row["end_reason"], "finishing_at": row["finishing_at"],
+        "start_observed": row["start_observed"],
+        "restart_continuity": "continued_across_restart" if row["ha_restarts"] else "no_restart",
+        "ha_restart_count": len(row["ha_restarts"]), "ha_restarts": row["ha_restarts"][-3:],
+        "id_tag_ref": refs[-1] if refs else None,
+        "id_tag_changes": row["untrusted_metadata"]["id_tag_changes"],
+        "import_observed_kwh": imp["observed_kwh"], "import_span_count": imp["span_count"],
+        "import_reconciliation": imp["reconciliation_outcomes"],
+        "export_observed_kwh": exp["observed_kwh"], "export_span_count": exp["span_count"],
+        "export_lower_kwh": exp.get("observed_lower_kwh"),
+        "export_upper_kwh": exp.get("observed_upper_kwh"), "export_grades": exp.get("grades"),
+        "export_reconciliation": exp["reconciliation_outcomes"],
+        "late_final_import_kwh": row["late_final_import_kwh"],
+        "quality_flags": row["quality_flags"],
+        "vehicle_evidence": (row["vehicle_evidence"] or {}).get("assessment"),
+        "vehicle_attribution": "unresolved", "billing_eligible": False,
+        "settlement_owner": SETTLEMENT_OWNER,
+    }
+
+
+def validate_lifecycle(saved, charger_id, connector_id):
+    """Validated lifecycle store data, or None when nothing was recorded. Raises ValueError."""
+    if saved is None:
+        return None
+    check_keys("ocpp_lifecycle", saved)
+    if (set(saved) != LIFECYCLE_KEYS or saved["schema"] != LIFECYCLE_SCHEMA
+            or type(saved["spans_trimmed"]) is not bool
+            or not isinstance(saved["spans"], dict) or set(saved["spans"]) != {"import", "export"}
+            or not isinstance(saved["late_final"], dict)):
+        raise ValueError("Invalid OCPP lifecycle store")
+    instant(saved["recorded_since"])
+    instant(saved["saved_at"])
+    tracker = LifecycleTracker.restore(saved["tracker"], charger_id, connector_id)
+    for direction, key in (("import", "observed_import_kwh"), ("export", "estimate_kwh")):
+        rows = saved["spans"][direction]
+        if not isinstance(rows, dict) or len(rows) > MAX_LIFECYCLE_SPANS:
+            raise ValueError("Invalid OCPP lifecycle spans")
+        for span_id, span in rows.items():
+            if (not isinstance(span, dict) or set(span) - set(SPAN_FIELDS)
+                    or span.get("span_id") != span_id
+                    or not isinstance(span.get("native_transaction_id"), str)):
+                raise ValueError("Invalid OCPP lifecycle span")
+            energy(span[key], "kWh")
+            instant(span["first_meter_ha_updated_at"])
+    for value in saved["late_final"].values():
+        energy(value, "kWh")
+    return {**deepcopy(saved), "tracker": tracker}
+
+
 def reference_binding(hass, binding, exported, entity_id):
     """Optional independent cumulative energy counter, diagnostic only.
 
@@ -232,6 +339,15 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
         self.export_error = False
         # Read-only readiness and legacy reconciliation; separate store.
         self.recorder = RecorderMonitor(hass, entry)
+        # Native session lifecycle; separate store, shadow only.
+        self.lifecycle_store = VersionedStore(hass, "ocpp_lifecycle", entry.entry_id)
+        self.lifecycle = None
+        self.lifecycle_state = "not_loaded"
+        self.lifecycle_sources = {}
+        self.lifecycle_spans = {"import": {}, "export": {}}
+        self.lifecycle_meta = {}
+        self.register = []
+        self.watched = set()
 
     async def load(self):
         binding = source_binding(self.hass, self.sources)
@@ -246,18 +362,204 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
             ledger.data["export"] = export.data
         self.ledger, self.export = ledger, export
         await self.recorder.load(dt_util.utcnow().isoformat())
+        await self.load_lifecycle(binding)
         watched = [*self.sources.values(), *self.export_sources.values()]
         if self.reference:
             watched.append(self.reference["entity_id"])
+        self.watched = set(watched)
         self.cancel_listener = async_track_state_change_event(
-            self.hass, watched, self._state_changed)
+            self.hass, [*watched, *self.lifecycle_sources.values()], self._state_changed)
         self.observe()
+
+    async def load_lifecycle(self, binding):
+        """Refusal disables lifecycle tracking only; a refused file is never rewritten.
+
+        A missing store (first run, or upgrade from an older release) starts
+        recording now: earlier history is reported as not recorded, never rebuilt.
+        """
+        now = dt_util.utcnow().isoformat()
+        charger_id, connector_id = session_scope(binding)
+        try:
+            saved = validate_lifecycle(await self.lifecycle_store.async_load(),
+                                       charger_id, connector_id)
+        except (ValueError, KeyError, TypeError, HomeAssistantError):
+            _LOGGER.warning("OCPP lifecycle store refused; lifecycle tracking disabled")
+            self.lifecycle, self.lifecycle_state = None, "store_refused"
+            return
+        self.lifecycle_sources = {"status": self.sources["status"],
+                                  "transaction": self.sources["transaction"],
+                                  **lifecycle_inputs(self.hass, binding)}
+        if saved is None:
+            self.lifecycle = LifecycleTracker(charger_id, connector_id)
+            self.lifecycle_meta = {"recorded_since": now, "spans_trimmed": False, "late_final": {}}
+        else:
+            self.lifecycle = saved["tracker"]
+            self.lifecycle_spans = saved["spans"]
+            self.lifecycle_meta = {k: saved[k] for k in ("recorded_since", "spans_trimmed",
+                                                         "late_final")}
+            # A restart or reload is an outage from the last save, never a stop.
+            self.lifecycle.resume(saved["saved_at"])
+        self.lifecycle_state = "recording"
+        try:
+            self.resume_lifecycle(saved is not None, now)
+        except Exception as exc:  # noqa: BLE001
+            self.lifecycle_failed(exc)
+
+    def resume_lifecycle(self, restored, now):
+        """Feed entity values newer than the tracker has seen, oldest first."""
+        seen = self.lifecycle.last_seen
+        rows = []
+        for key, entity_id in self.lifecycle_sources.items():
+            state = self.hass.states.get(entity_id)
+            if state is not None and (key not in seen or state.last_updated > instant(seen[key])):
+                rows.append((state.last_updated, key, state))
+        for _, key, state in sorted(rows, key=lambda row: row[0]):
+            self.lifecycle.update(key, state.state, state.last_updated.isoformat())
+        if self.lifecycle.outage is not None and restored:
+            # Entities kept their values across a reload: the outage ends now.
+            tx = self.hass.states.get(self.sources["transaction"])
+            status = self.hass.states.get(self.sources["status"])
+            if tx is not None and status is not None and all(
+                    s.state.lower() not in ("unknown", "unavailable") for s in (tx, status)):
+                self.lifecycle.update("transaction", tx.state, now)
+        self.save_lifecycle()
+
+    def lifecycle_data(self):
+        return {"schema": LIFECYCLE_SCHEMA, "recorded_since": self.lifecycle_meta["recorded_since"],
+                "saved_at": dt_util.utcnow().isoformat(),
+                "tracker": self.lifecycle.state(), "spans": deepcopy(self.lifecycle_spans),
+                "spans_trimmed": self.lifecycle_meta["spans_trimmed"],
+                "late_final": dict(self.lifecycle_meta["late_final"])}
+
+    def save_lifecycle(self):
+        # Snapshot now: a later tracking fault leaves this last good state to be written.
+        if self.lifecycle is not None:
+            data = self.lifecycle_data()
+            self.lifecycle_store.async_delay_save(lambda: data, 1)
 
     @callback
     def _state_changed(self, event):
-        self.observe()
-        self.recorder.reconcile(self, dt_util.utcnow().isoformat())
+        entity_id, state = event.data["entity_id"], event.data.get("new_state")
+        if self.lifecycle is not None and not self.binding_error and state is not None:
+            self.feed_lifecycle(entity_id, state)
+        if entity_id in self.watched:
+            self.observe()
+            self.recorder.reconcile(self, dt_util.utcnow().isoformat())
         self.async_set_updated_data(self.summary())
+
+    def lifecycle_failed(self, exc):
+        # Diagnostic path must never break observation. No value or traceback is
+        # logged: an input may be an idTag.
+        _LOGGER.warning("OCPP lifecycle tracking failed (%s); observation continues",
+                        type(exc).__name__)
+        self.lifecycle, self.lifecycle_state = None, "failed"
+
+    def feed_lifecycle(self, entity_id, state):
+        try:
+            for key, source in self.lifecycle_sources.items():
+                if source == entity_id:
+                    self.lifecycle.update(key, state.state, state.last_updated.isoformat())
+                    self.save_lifecycle()
+            if entity_id == self.sources["import"]:
+                self.buffer_register(state)
+        except Exception as exc:  # noqa: BLE001
+            self.lifecycle_failed(exc)
+
+    def buffer_register(self, state):
+        """Recent import register readings, only to report a late final reading."""
+        try:
+            value = energy(state.state, state.attributes.get("unit_of_measurement"))
+        except ValueError:
+            return
+        self.register.append((state.last_updated, value))
+        limit = state.last_updated - timedelta(seconds=REGISTER_BUFFER_S)
+        self.register = [row for row in self.register if row[0] >= limit]
+
+    def collect_lifecycle_spans(self):
+        """Closed shadow spans of retained sessions, kept beyond the ledgers' 50-span window."""
+        if self.lifecycle is None:
+            return
+        try:
+            self._collect_lifecycle_spans()
+        except Exception as exc:  # noqa: BLE001
+            self.lifecycle_failed(exc)
+
+    def _collect_lifecycle_spans(self):
+        txs = {s["transaction_id"] for s in self.lifecycle.sessions}
+        changed = False
+        for direction, spans in (("import", self.ledger.data["spans"]),
+                                 ("export", self.export.data["spans"] if self.export else [])):
+            index = self.lifecycle_spans[direction]
+            for span in spans:
+                if span.get("native_transaction_id") in txs and span["span_id"] not in index:
+                    index[span["span_id"]] = {k: span[k] for k in SPAN_FIELDS if k in span}
+                    changed = True
+            for span_id in [k for k, v in index.items() if v["native_transaction_id"] not in txs]:
+                del index[span_id]
+                changed = True
+            while len(index) > MAX_LIFECYCLE_SPANS:
+                del index[next(iter(index))]
+                self.lifecycle_meta["spans_trimmed"] = True
+        if changed:
+            self.save_lifecycle()
+
+    def lifecycle_sessions(self, now):
+        """Native sessions with attributed observed totals (diagnostic evidence only)."""
+        if self.lifecycle is None:
+            return []
+        current = [s for s in (self.ledger.data["current"],
+                               self.export.data["current"] if self.export else None) if s]
+        results = self.recorder.ledger.data["results"] if self.recorder.ledger else ()
+        rows = assemble(
+            deepcopy(self.lifecycle.sessions),
+            [*self.lifecycle_spans["import"].values(),
+             *[s for s in current if "observed_import_kwh" in s]],
+            [*self.lifecycle_spans["export"].values(),
+             *[s for s in current if "estimate_kwh" in s]],
+            results, window_end=now, import_register=self.register or None)
+        late = self.lifecycle_meta["late_final"]
+        txs = {row["transaction_id"] for row in rows}
+        for tx in [tx for tx in late if tx not in txs]:
+            del late[tx]
+        for row in rows:
+            tx = row["transaction_id"]
+            if row["late_final_import_kwh"] is not None:
+                if late.get(tx) != row["late_final_import_kwh"]:
+                    late[tx] = row["late_final_import_kwh"]
+                    self.save_lifecycle()
+            elif tx in late:
+                # The in-memory register window has passed; keep what was reported.
+                row["late_final_import_kwh"] = late[tx]
+                row["quality_flags"] = sorted({*row["quality_flags"],
+                                               "late_final_reading_unattributed"})
+        return rows
+
+    def lifecycle_summary(self, now):
+        common = {"billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
+                  "selector_implemented": False, "vehicle_attribution": "unresolved",
+                  "payment_control": False, "charger_control": False}
+        try:
+            rows = self.lifecycle_sessions(now)
+        except Exception as exc:  # noqa: BLE001
+            self.lifecycle_failed(exc)
+        if self.lifecycle is None:
+            return {**common, "state": self.lifecycle_state, "current_session": None,
+                    "last_session": None}
+        tracker = self.lifecycle
+        closed = [row for row in rows if row["ended_at"] is not None]
+        return {
+            **common,
+            "state": "binding_changed" if self.binding_error else self.lifecycle_state,
+            "recorded_since": self.lifecycle_meta["recorded_since"],
+            "history_before_recorded_since": "not_recorded",
+            "inputs": {k: ("bound" if k in self.lifecycle_sources else "not_found")
+                       for k in ("status", "transaction", *LIFECYCLE_INPUTS)},
+            "outage_open": tracker.outage is not None, "outage_since": tracker.outage,
+            "current_session": lifecycle_view(rows[-1]) if tracker.current is not None else None,
+            "last_session": lifecycle_view(closed[-1]) if closed else None,
+            "session_count": len(rows), "sessions_trimmed": tracker.sessions_trimmed,
+            "spans_trimmed": self.lifecycle_meta["spans_trimmed"],
+        }
 
     @callback
     def observe(self):
@@ -293,6 +595,7 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
             self.export.observe(self.export_snapshot(snapshot), now)
         if before != self.ledger.data:
             self.store.async_delay_save(lambda: deepcopy(self.ledger.data), 1)
+        self.collect_lifecycle_spans()
 
     def export_snapshot(self, snapshot):
         """Rows for the export ledger; read-only, unit conversion happens here."""
@@ -357,7 +660,8 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
             export["flags"] = sorted({*export["flags"], "export_binding_changed"})
         now = dt_util.utcnow().isoformat()
         return {**result, "export_shadow": export, "mode": self.mode,
-                "recorder": self.recorder.summary(self, now), "updated_at": now}
+                "recorder": self.recorder.summary(self, now),
+                "lifecycle": self.lifecycle_summary(now), "updated_at": now}
 
     async def _async_update_data(self):
         self.observe()
@@ -377,3 +681,5 @@ class OCPPShadowCoordinator(DataUpdateCoordinator):
         if self.ledger is not None:
             await self.store.async_save(deepcopy(self.ledger.data))
             await self.recorder.close()
+        if self.lifecycle is not None:
+            await self.lifecycle_store.async_save(self.lifecycle_data())

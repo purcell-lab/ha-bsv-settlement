@@ -25,10 +25,12 @@ Attribution contract (see docs/ocpp-lifecycle-replay.md):
 5. Missing, faulted or gapped observation is reported as ``None`` plus quality
    flags, never as zero and never merged into a neighbouring session.
 """
+from copy import deepcopy
 from dataclasses import asdict, dataclass, fields
 from datetime import timedelta
 from decimal import Decimal, DecimalException
 import hashlib
+import re
 
 from .ocpp_shadow_ledger import instant
 
@@ -45,6 +47,13 @@ LATE_FINAL_WINDOW_S = 300
 # SoC agreement across a boundary that counts as continuity evidence (#61 rule).
 SOC_CONTINUITY_PCT = Decimal(2)
 COMPLETE_END_REASONS = ("identity_or_lifecycle_boundary",)
+# Persisted tracker state (live shadow observer): bounded, raw idTags never kept.
+STATE_SCHEMA = 1
+MAX_SESSIONS = 20
+MAX_CLOSED_IDS = 200
+MAX_TRACKER_EVENTS = 100
+INPUT_KEYS = ("status", "transaction", "id_tag", "soc")
+ID_TAG_REF = re.compile(r"idtag-[0-9a-f]{10}")
 
 
 class AttributionError(ValueError):
@@ -131,12 +140,15 @@ class LifecycleTracker:
         self.current = None
         self.closed_ids = {}
         self.status = None
-        self.id_tag = None
+        # Only the one-way reference of the current idTag is held, never the raw tag.
+        self.id_tag_ref = None
         self.outage = None
         # The start is observed only when this tracker saw the connector without
         # a transaction immediately before (not at window start or after an outage).
         self.stopped_seen = False
         self.events = []
+        self.last_seen = {}
+        self.sessions_trimmed = False
 
     def _flag(self, session, flag):
         if flag not in session["quality_flags"]:
@@ -162,8 +174,8 @@ class LifecycleTracker:
             self._flag(session, "start_not_observed")
         self.current = session
         self.sessions.append(session)
-        if self.id_tag:
-            self._tag(self.id_tag)
+        if self.id_tag_ref:
+            self._tag(self.id_tag_ref)
         self.events.append({"at": at, "kind": "session_started", "transaction_id": tx})
 
     def _close(self, at, reason, *flags):
@@ -178,12 +190,11 @@ class LifecycleTracker:
         self.events.append({"at": at, "kind": "session_ended", "reason": reason,
                             "transaction_id": session["transaction_id"]})
 
-    def _tag(self, value):
+    def _tag(self, ref):
         session = self.current
-        if session is None or value in ("", None) or str(value).lower() in UNKNOWN:
+        if session is None or ref is None:
             return
         refs = session["untrusted_metadata"]["id_tag_refs"]
-        ref = id_tag_ref(value)
         if ref not in refs:
             if refs:
                 session["untrusted_metadata"]["id_tag_changes"] += 1
@@ -192,6 +203,8 @@ class LifecycleTracker:
 
     def update(self, key, value, at):
         unknown = value is None or str(value).strip().lower() in UNKNOWN
+        if key in INPUT_KEYS:
+            self.last_seen[key] = at
         if key in ("status", "transaction") and unknown:
             if self.outage is None:
                 self.outage = at
@@ -208,8 +221,8 @@ class LifecycleTracker:
         elif key == "transaction":
             self._transaction(value, at)
         elif key == "id_tag":
-            self.id_tag = None if unknown or value == "" else value
-            self._tag(value)
+            self.id_tag_ref = None if unknown or value == "" else id_tag_ref(value)
+            self._tag(self.id_tag_ref)
         elif key == "soc" and self.current is not None:
             number = _number(value)
             if number is not None and not unknown:
@@ -247,8 +260,9 @@ class LifecycleTracker:
         if tx in self.closed_ids:
             # A closed transaction never reopens: late/duplicate stop evidence only.
             closed = self.closed_ids[tx]
-            self._flag(closed, "late_or_duplicate_transaction_event")
-            closed.setdefault("late_events", []).append(at)
+            if closed is not None:  # None: the closed session aged out of the store
+                self._flag(closed, "late_or_duplicate_transaction_event")
+                closed.setdefault("late_events", []).append(at)
             self.events.append({"at": at, "kind": "late_or_duplicate_transaction_event",
                                 "transaction_id": tx})
             return
@@ -262,6 +276,105 @@ class LifecycleTracker:
         if self.current is not None:
             self._flag(self.current, "open_at_window_end")
         return self.sessions
+
+    # Persistence for the live shadow observer --------------------------------
+    def trim(self):
+        """Bound retained sessions, closed IDs and events. Never drops the open session."""
+        if len(self.sessions) > MAX_SESSIONS:
+            self.sessions = self.sessions[-MAX_SESSIONS:]
+            self.sessions_trimmed = True
+        kept = {s["transaction_id"]: s for s in self.sessions if s["ended_at"]}
+        ids = list(self.closed_ids)[-MAX_CLOSED_IDS:]
+        self.closed_ids = {tx: kept.get(tx) for tx in ids}
+        self.events = self.events[-MAX_TRACKER_EVENTS:]
+
+    def state(self):
+        """JSON-safe tracker state. Holds idTag references only, never a raw idTag."""
+        self.trim()
+        return deepcopy({
+            "schema": STATE_SCHEMA, "charger_id": self.charger_id,
+            "connector_id": self.connector_id, "sessions": self.sessions,
+            "current": self.current is not None, "closed_transaction_ids": list(self.closed_ids),
+            "status": self.status, "id_tag_ref": self.id_tag_ref, "outage": self.outage,
+            "stopped_seen": self.stopped_seen, "last_seen": self.last_seen,
+            "events": self.events, "sessions_trimmed": self.sessions_trimmed,
+            "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER})
+
+    @classmethod
+    def restore(cls, state, charger_id, connector_id):
+        """Validated tracker from ``state()``; raises ValueError rather than guessing."""
+        try:
+            return cls._restore(state, charger_id, connector_id)
+        except (AttributionError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f"Invalid OCPP lifecycle state: {exc}") from None
+
+    @classmethod
+    def _restore(cls, state, charger_id, connector_id):
+        if (not isinstance(state, dict) or state.get("schema") != STATE_SCHEMA
+                or state.get("charger_id") != charger_id
+                or state.get("connector_id") != connector_id
+                or state.get("billing_eligible") is not False
+                or state.get("settlement_owner") != SETTLEMENT_OWNER
+                or not isinstance(state.get("sessions"), list)
+                or len(state["sessions"]) > MAX_SESSIONS
+                or type(state.get("current")) is not bool
+                or not isinstance(state.get("closed_transaction_ids"), list)
+                or len(state["closed_transaction_ids"]) > MAX_CLOSED_IDS
+                or not isinstance(state.get("events"), list)
+                or len(state["events"]) > MAX_TRACKER_EVENTS
+                or type(state.get("stopped_seen")) is not bool
+                or type(state.get("sessions_trimmed")) is not bool
+                or not isinstance(state.get("last_seen"), dict)
+                or set(state["last_seen"]) - set(INPUT_KEYS)):
+            raise ValueError("Invalid or foreign OCPP lifecycle state")
+        ref = state.get("id_tag_ref")
+        if ref is not None and not ID_TAG_REF.fullmatch(str(ref)):
+            raise ValueError("OCPP lifecycle state holds a non-reference idTag")
+        for at in [state.get("outage"), *state["last_seen"].values()]:
+            if at is not None:
+                instant(at)
+        tracker = cls(charger_id, connector_id)
+        sessions = deepcopy(state["sessions"])
+        for index, session in enumerate(sessions):
+            identity = SessionIdentity(**session["identity"])
+            refs = session["untrusted_metadata"]["id_tag_refs"]
+            if (identity.charger_id != charger_id or identity.connector_id != connector_id
+                    or session["transaction_id"] != identity.transaction_id
+                    or session["started_at"] != identity.started_at
+                    or session["billing_eligible"] is not False
+                    or session["settlement_owner"] != SETTLEMENT_OWNER
+                    or session["vehicle_attribution"] != "unresolved"
+                    or not isinstance(refs, list)
+                    or not all(isinstance(r, str) and ID_TAG_REF.fullmatch(r) for r in refs)
+                    or not all(isinstance(f, str) for f in session["quality_flags"])
+                    or not isinstance(session["statuses"], list)
+                    or not isinstance(session["ha_restarts"], list)
+                    or (session["ended_at"] is None) != (state["current"] and index == len(sessions) - 1)):
+                raise ValueError("Invalid OCPP lifecycle session")
+            if session["ended_at"] is not None:
+                instant(session["ended_at"])
+        tracker.sessions = sessions
+        tracker.current = sessions[-1] if state["current"] else None
+        closed = {s["transaction_id"]: s for s in sessions if s["ended_at"]}
+        tracker.closed_ids = {str(tx): closed.get(tx) for tx in state["closed_transaction_ids"]}
+        tracker.status = state.get("status")
+        tracker.id_tag_ref = ref
+        tracker.outage = state.get("outage")
+        tracker.stopped_seen = state["stopped_seen"]
+        tracker.last_seen = dict(state["last_seen"])
+        tracker.events = deepcopy(state["events"])
+        tracker.sessions_trimmed = state["sessions_trimmed"]
+        return tracker
+
+    def resume(self, at):
+        """Observer (re)started: until the connector is seen again this is an outage.
+
+        An HA restart or reload is never a stop. The open session, if any, stays
+        open; the next status/transaction value records the restart on it.
+        """
+        if self.outage is None:
+            self.outage = at
+        self.stopped_seen = False
 
 
 def vehicle_evidence(sessions):
