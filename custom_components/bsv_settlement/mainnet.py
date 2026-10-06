@@ -277,6 +277,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         active = self.saved.get("active_payment")
         payment = self.saved.get("payments", {}).get(active)
         chain = self.saved.get("chain", {})
+        approvals, approval_counts = (self.budgets.summary_window() if hasattr(self, "budgets")
+                                      else ([], {"total": 0, "shown": 0, "unresolved": 0}))
+        session_rows, payment_counts = self.payment_summary_window()
         result.update(
             state="broadcast_enabled_approval_required", broadcast_enabled=True,
             balance_sats=chain.get("balance_sats"), balance_verified=False,
@@ -290,8 +293,10 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
             latest_session_review=self.reviews.latest() if hasattr(self, "reviews") else None,
             automatic_credit=self.auto_credits.summary() if hasattr(self, "auto_credits") else None,
-            driver_approvals=self.budgets.summary() if hasattr(self, "budgets") else [],
-            session_payments=self.payment_summary(),
+            driver_approvals=approvals,
+            driver_approvals_window=approval_counts,
+            session_payments=session_rows,
+            session_payments_window=payment_counts,
             ongoing_credit=self.ongoing_credits.summary() if hasattr(self, "ongoing_credits") else None,
             closed_sessions=self.closures.summary() if hasattr(self, "closures") else [],
             record_audit=self.store.audit.summary() if hasattr(self.store, "audit") else None,
@@ -301,9 +306,29 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         return result
 
     def payment_summary(self):
-        """Compact authenticated display records. Never include signed payloads."""
+        return MainnetWalletAPI.payment_summary_window(self)[0]
+
+    def payment_summary_window(self):
+        """Compact authenticated display records. Never include signed payloads.
+
+        Every unresolved review/collection plus the newest resolved ones (#105)."""
+        from .session_review import now
+        from .summary_window import collection_unresolved, combine, review_unresolved, window
+        payments, clock = self.saved.get("payments", {}), now()
+
+        def review_open(review):
+            return review_unresolved(
+                review, payments.get(review.get("credit_draft_id")),
+                clock >= datetime.fromisoformat(review["expires_at"]))
+
+        budgets = self.saved.get("session_budgets", {})
+        state = getattr(getattr(self, "budgets", None), "state", None)
+        reviews, review_counts = window(self.saved.get("session_reviews", {}).values(), review_open)
+        collections, collection_counts = window(
+            [(k, v) for k, v in self.saved.get("driver_collections", {}).items() if k in budgets],
+            lambda kv: collection_unresolved(kv[1], state(budgets[kv[0]]) if state else None))
         rows = []
-        for review in list(self.saved.get("session_reviews", {}).values())[-20:]:
+        for review in reviews:
             r = self.reviews.public(review)
             p = r.get("credit_draft") or r.get("receipt") or {}
             rows.append({
@@ -318,8 +343,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                 "confirmations": p.get("confirmations"), "output_index": p.get("output_index"),
                 "error": p.get("verification_error"), "source": "manual",
             })
-        for budget_id, item in list(self.saved.get("driver_collections", {}).items())[-20:]:
-            row = self.saved["session_budgets"].get(budget_id)
+        for budget_id, item in collections:
+            row = budgets.get(budget_id)
             if row:
                 session_id = self.collections.session_id(row)
                 rows.append({
@@ -335,7 +360,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                     "recovery": copy.deepcopy(item.get("recovery")),
                     **collection_display_terms(item, budget_id, session_id),
                 })
-        return rows
+        return rows, combine(review_counts, collection_counts)
 
     def public_payment(self, payment):
         if payment is None:

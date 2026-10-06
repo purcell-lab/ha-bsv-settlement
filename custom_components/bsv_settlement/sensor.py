@@ -237,24 +237,43 @@ BALANCE_KEYS = (
     "pending_change_sats", "pending_change_source")
 
 
-def _count(value, key=None):
+def _count(value, key=None, window=None):
+    """True record total from the display window (#105), else the list length."""
+    counts = window.get("total") if isinstance(window, dict) else None
+    if type(counts) is int:
+        return counts
     if key is not None:
         value = value.get(key) if isinstance(value, dict) else None
     return len(value) if isinstance(value, (list, tuple)) else None
 
 
+def _window(value, key):
+    return value.get(key) if isinstance(value, dict) else None
+
+
 def wallet_summary(health):
-    """Recorded counts and flags standing in for the unrecorded ledger fields."""
+    """Recorded counts and flags standing in for the unrecorded ledger fields.
+
+    Counts are true record totals, not the length of a display window."""
     ongoing = health.get("ongoing_credit")
     automatic = health.get("automatic_credit")
     return {
-        "driver_approval_count": _count(health.get("driver_approvals")),
-        "session_payment_count": _count(health.get("session_payments")),
+        "driver_approval_count": _count(health.get("driver_approvals"),
+                                        window=health.get("driver_approvals_window")),
+        "session_payment_count": _count(health.get("session_payments"),
+                                        window=health.get("session_payments_window")),
         "closed_session_count": _count(health.get("closed_sessions")),
-        "ongoing_credit_session_count": _count(ongoing, "sessions"),
+        "ongoing_credit_session_count": _count(ongoing, "sessions", _window(ongoing, "sessions_window")),
         "ongoing_credit_effective": ongoing.get("effective") if isinstance(ongoing, dict) else None,
         "automatic_credit_enabled": automatic.get("enabled") if isinstance(automatic, dict) else None,
-        "automatic_credit_payment_count": _count(automatic, "payments"),
+        "automatic_credit_payment_count": _count(automatic, "payments", _window(automatic, "payments_window")),
+        # Small {total, shown, unresolved} per list: the lists above are views.
+        "display_windows": {name: w for name, w in (
+            ("driver_approvals", health.get("driver_approvals_window")),
+            ("session_payments", health.get("session_payments_window")),
+            ("ongoing_credit_sessions", _window(ongoing, "sessions_window")),
+            ("automatic_credit_payments", _window(automatic, "payments_window")),
+        ) if isinstance(w, dict)},
     }
 
 

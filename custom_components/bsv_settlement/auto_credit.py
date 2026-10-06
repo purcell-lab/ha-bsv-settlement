@@ -60,12 +60,14 @@ class AutomaticCredits:
             "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None}
 
     def summary(self):
+        from .summary_window import credit_unresolved, window
+        shown, counts = window(self.api.saved["automatic_credits"].values(), credit_unresolved)
         return {
             "enabled": self.policy.get("enabled", False),
             "max_total_sats": MAX_TOTAL, "fee_sats": None, "fee_mode": MODE,
             "enabled_at": self.policy.get("enabled_at"),
-            "payments": [self.public(i) for i in
-                         list(self.api.saved["automatic_credits"].values())[-20:]],
+            "payments": [self.public(i) for i in shown],
+            "payments_window": counts,
         }
 
     def guard(self, row):

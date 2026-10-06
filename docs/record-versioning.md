@@ -182,24 +182,40 @@ failed.
 | `ocpp_shadow` import section | `MAX_EVENTS` = 1,000, `MAX_SPANS` = 50. | The oldest journal events and closed spans, with `journal_trimmed` and `spans_trimmed` set. | The open span. Shadow data is never financial (`billing_eligible: false`). | `test_ocpp_shadow.py::test_bounded_retention` |
 | `ocpp_shadow` export section | `MAX_EVENTS` = 1,000, `MAX_SPANS` = 50. | Same as the import section. The trimmed section still passes `validate_section`. | The open span. | `test_export_shadow_journal_and_spans_trim_with_flags_and_reload` |
 | `recorder_reconciliation` | `MAX_RESULTS` = 50. | The oldest results, with `results_trimmed` set. | Lifetime `totals`. | `test_recorder_readiness.py::test_ledger_watermark_retention_and_refusal` |
-| Wallet ledger: payments, reviews, budgets, collections, automatic credits, ongoing routes, closures | No expiry. | Nothing. | Everything. | `test_automatic_credit_summary_window_is_display_only` and the display tests below |
+| Wallet ledger: payments, reviews, budgets, collections, automatic credits, ongoing routes, closures | No expiry. | Nothing. | Everything. | `test_automatic_credit_summary_keeps_old_unresolved_and_caps_resolved` and the display tests below |
 
-**Display windows.** Several status summaries show only the newest 20 rows, by
-insertion order:
+**Display windows.** Several status summaries show every unresolved row plus
+the newest resolved rows filling to 20, in insertion order
+(`summary_window.py`, #105):
 
 - `automatic_credit.payments` (`auto_credit.py`)
 - `driver_approvals`, which excludes weekly children (`budget.py`)
-- `session_payments`: 20 manual reviews plus 20 driver collections
-  (`mainnet.py`)
+- `session_payments`: manual reviews and driver collections, each windowed
+  separately (`mainnet.py`)
 - `ongoing_credit.sessions`, and the routes per receiving registration
   (`ongoing_credit.py`)
 
-`closed_sessions` is not windowed. These windows are views only. The tests
-show that the saved rows are unchanged and stay reachable through their
-per-ID status services. However, a window selects by age, not by state. An
-old, unresolved item leaves the dashboard summary once 20 newer items exist,
-and the `wallet_summary` counts are counts of the windowed lists. This is a
-known gap, recorded in the display tests.
+`closed_sessions` is not windowed. Each list has a `{total, shown, unresolved}`
+companion (`automatic_credit.payments_window`, `driver_approvals_window`,
+`session_payments_window`, `ongoing_credit.sessions_window`). The
+`wallet_summary` counts are ledger totals, and its `display_windows` attribute
+records the companions. These windows are views only: the tests show that the
+saved rows are unchanged and stay reachable through their per-ID status
+services.
+
+Resolved means no further payment action can occur. Any other state,
+including an unknown one, is unresolved and stays visible:
+
+| Record | Resolved |
+| --- | --- |
+| Automatic credit | `provider_confirmed` |
+| Ongoing route | its credit item is `provider_confirmed`; with no item, `no_operator_credit` |
+| Driver collection | `provider_confirmed`; or `ready` (unclaimed) once its approval is `expired`, `revoked` or `charge_waived` |
+| Manual review | `cancelled`, `no_payment_due`, `driver_payment_provider_confirmed`; an unpaid `awaiting_account_approval` or `credit_review_approved` review past `expires_at` with no payment request; with a credit draft, the draft is `provider_confirmed`, `expired`, `cancelled` or `cancelled_driver_changed` |
+| Driver approval | no unresolved collection or credit under it (weekly parents include their children), and it is `expired`, `revoked` or `charge_waived`, or a non-weekly approval whose own collection or credit is `provider_confirmed` |
+
+A large unresolved backlog makes a list longer than 20 rather than hiding
+any of it.
 
 **Expiry of a recorder session.** A session that leaves the latest, previous
 and archive views cannot be sourced again. Collection, review approval,

@@ -18,13 +18,16 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.bsv_settlement import proxy as proxy_module
 from custom_components.bsv_settlement.auto_credit import AutomaticCredits
-from custom_components.bsv_settlement.budget import SessionBudgets
+from custom_components.bsv_settlement.budget import SPENDING_STATE, SessionBudgets
 from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
 from custom_components.bsv_settlement.ocpp_export_shadow_ledger import (
     MAX_EVENTS, MAX_SPANS, ExportShadowLedger, validate_section)
 from custom_components.bsv_settlement.ongoing_credit import OngoingCredits
 from custom_components.bsv_settlement.proxy import ProxyCoordinator, merge_rows, normalize
 from custom_components.bsv_settlement.proxy_ledger import build_records
+from custom_components.bsv_settlement.summary_window import (
+    approval_unresolved, collection_unresolved, credit_unresolved, review_unresolved,
+    route_unresolved, window)
 from custom_components.bsv_settlement.tariff_provenance import MAX_SESSIONS, TariffProvenanceLedger
 from test_ocpp_export_shadow import BINDING as EXPORT_BINDING, simulate, snap, stamp
 from test_proxy import config_entry
@@ -205,10 +208,9 @@ async def test_expired_session_fails_closed_for_review_and_collection(hass):
 
 
 # --- Display windows on wallet route summaries -------------------------------
-# The windows select by insertion order, not by state: an old unresolved item
-# leaves the dashboard summary once 20 newer items exist. It stays in the
-# ledger and its per-ID status service. Known gap (docs/record-versioning.md);
-# a fix that keeps unresolved items visible should change these assertions.
+# Every unresolved item stays visible however old; resolved items fill the
+# rest of the 20-row window, newest kept, in insertion order (#105). Records
+# are never touched; totals count the ledger, not the window.
 
 def unresolved_first(count, state="broadcast_unknown"):
     """Oldest item is unresolved; newer ones are settled. Insertion order = age."""
@@ -217,21 +219,24 @@ def unresolved_first(count, state="broadcast_unknown"):
             for n in range(count)}
 
 
-def test_automatic_credit_summary_window_is_display_only():
+def test_automatic_credit_summary_keeps_old_unresolved_and_caps_resolved():
     api = SimpleNamespace(saved={})
     credits = AutomaticCredits(api)
     api.saved["automatic_credits"] = unresolved_first(WINDOW + 5)
     before = deepcopy(api.saved)
-    shown = [p["budget_id"] for p in credits.summary()["payments"]]
-    assert shown == [f"b{n:02d}" for n in range(5, WINDOW + 5)]
+    summary = credits.summary()
+    shown = [p["budget_id"] for p in summary["payments"]]
+    assert shown == ["b00"] + [f"b{n:02d}" for n in range(6, WINDOW + 5)]
+    assert summary["payments_window"] == {"total": WINDOW + 5, "shown": WINDOW, "unresolved": 1}
     assert api.saved == before and api.saved["automatic_credits"]["b00"]["state"] == "broadcast_unknown"
     assert credits.get({"terms": {"budget_id": "b00"}})["state"] == "broadcast_unknown"
 
 
-def test_payment_summary_windows_reviews_and_collections_without_deleting():
-    reviews = {f"r{n:02d}": {"review_id": f"r{n:02d}", "state": "approved" if n == 0 else "paid"}
+def test_payment_summary_keeps_old_unresolved_reviews_and_collections():
+    reviews = {f"r{n:02d}": {"review_id": f"r{n:02d}", "expires_at": "2099-01-01T00:00:00+00:00",
+                             "state": "awaiting_driver_payment" if n == 0 else "no_payment_due"}
                for n in range(WINDOW + 3)}
-    collections = unresolved_first(WINDOW + 3)
+    collections = unresolved_first(WINDOW + 3, "submitted")
     api = SimpleNamespace(
         saved={"session_reviews": reviews, "driver_collections": collections,
                "session_budgets": {k: {"terms": {"transaction_id": "tx-" + k}} for k in collections}},
@@ -240,30 +245,57 @@ def test_payment_summary_windows_reviews_and_collections_without_deleting():
             "state": r["state"], "direction": "operator_to_driver", "amount_sats": 1}),
         collections=SimpleNamespace(session_id=lambda row: "s"))
     before = deepcopy(api.saved)
-    rows = MainnetWalletAPI.payment_summary(api)
-    assert [r["review_id"] for r in rows if "review_id" in r] == [f"r{n:02d}" for n in range(3, WINDOW + 3)]
-    assert [r["budget_id"] for r in rows if "budget_id" in r] == [f"b{n:02d}" for n in range(3, WINDOW + 3)]
-    assert api.saved == before and "r00" in api.saved["session_reviews"] and "b00" in api.saved["driver_collections"]
+    rows, counts = MainnetWalletAPI.payment_summary_window(api)
+    assert rows == MainnetWalletAPI.payment_summary(api)
+    assert [r["review_id"] for r in rows if "review_id" in r] == [
+        "r00"] + [f"r{n:02d}" for n in range(4, WINDOW + 3)]
+    assert [r["budget_id"] for r in rows if "budget_id" in r] == [
+        "b00"] + [f"b{n:02d}" for n in range(4, WINDOW + 3)]
+    assert counts == {"total": 2 * (WINDOW + 3), "shown": 2 * WINDOW, "unresolved": 2}
+    assert api.saved == before and "r00" in api.saved["session_reviews"]
+    assert "b00" in api.saved["driver_collections"]
 
 
-def test_budget_summary_windows_non_weekly_rows_without_deleting():
+def test_budget_summary_keeps_live_approvals_and_caps_resolved():
     api = SimpleNamespace(saved={"session_budgets": {}},
                           collections=SimpleNamespace(session_id=lambda row: None, get=lambda row: None))
     budgets = SessionBudgets(api)
     for n in range(WINDOW + 4):
         api.saved["session_budgets"][f"b{n:02d}"] = {
-            "state": "awaiting_driver_consent", "terms": {
+            "state": "awaiting_driver_consent" if n == 0 else "revoked", "terms": {
                 "budget_id": f"b{n:02d}", "version": 1, "expires_at": "2099-01-01T00:00:00+00:00",
                 "created_at": t(n), "max_total_sats": 10, "satoshis_per_aud": "100"}}
     api.saved["session_budgets"]["weekly-child"] = {
         "state": "awaiting_driver_consent", "weekly_parent_id": "b00", "terms": {}}
     before = deepcopy(api.saved)
-    shown = [r["budget_id"] for r in budgets.summary()]
-    assert shown == [f"b{n:02d}" for n in range(4, WINDOW + 4)]
+    rows, counts = budgets.summary_window()
+    assert [r["budget_id"] for r in rows] == ["b00"] + [f"b{n:02d}" for n in range(5, WINDOW + 4)]
+    assert [r["budget_id"] for r in budgets.summary()] == [r["budget_id"] for r in rows]
+    assert counts == {"total": WINDOW + 4, "shown": WINDOW, "unresolved": 1}
     assert api.saved == before and len(api.saved["session_budgets"]) == WINDOW + 5
 
 
-def test_ongoing_route_windows_are_display_only():
+def test_expired_approval_with_unresolved_collection_stays_visible():
+    items = {"old": {"state": "broadcast_unknown"}, "dead": {"state": "ready"}}
+    api = SimpleNamespace(saved={"session_budgets": {}}, collections=SimpleNamespace(
+        session_id=lambda row: None, public=dict,
+        get=lambda row: items.get(row["terms"]["budget_id"])))
+    budgets = SessionBudgets(api)
+    for key in ("old", "dead", *(f"n{n:02d}" for n in range(WINDOW))):
+        api.saved["session_budgets"][key] = {"state": SPENDING_STATE, "terms": {
+            "budget_id": key, "version": 2, "expires_at": "2000-01-01T00:00:00+00:00",
+            "created_at": t(0), "max_total_sats": 10, "satoshis_per_aud": "100"}}
+    before = deepcopy(api.saved)
+    assert budgets.unresolved(api.saved["session_budgets"]["old"]) is True
+    assert budgets.unresolved(api.saved["session_budgets"]["dead"]) is False
+    rows, counts = budgets.summary_window()
+    assert [r["budget_id"] for r in rows] == ["old"] + [f"n{n:02d}" for n in range(1, WINDOW)]
+    assert rows[0]["state"] == "expired"
+    assert counts == {"total": WINDOW + 2, "shown": WINDOW, "unresolved": 1}
+    assert api.saved == before
+
+
+def test_ongoing_routes_keep_old_unresolved_and_cap_resolved():
     api = SimpleNamespace(saved={"automatic_credits": {}})
     ongoing = OngoingCredits(api)
     api.auto_credits = SimpleNamespace(policy={"enabled": True})
@@ -271,15 +303,93 @@ def test_ongoing_route_windows_are_display_only():
         rid = f"ongoing:p|s{n:02d}"
         ongoing.routes[rid] = {
             "route_id": rid, "proxy_config_entry_id": "p", "session_id": f"s{n:02d}",
-            "transaction_id": "tx", "state": "credit_queued" if n == 0 else "credit_paid",
+            "transaction_id": "tx", "state": "credit_queued" if n == 0 else "no_operator_credit",
             "satoshis_per_aud": "100", "assigned_at": t(n),
             "recipient": {"address": "fictional", "driver_identity": "02" + "11" * 32, "budget_id": "rb"}}
     before = deepcopy(api.saved)
-    assert [r["session_id"] for r in ongoing.summary()["sessions"]] == [
-        f"s{n:02d}" for n in range(2, WINDOW + 2)]
-    assert [r["session_id"] for r in ongoing.driver_rows({"terms": {"budget_id": "rb"}})] == [
-        f"s{n:02d}" for n in range(2, WINDOW + 2)]
+    expected = ["s00"] + [f"s{n:02d}" for n in range(3, WINDOW + 2)]
+    summary = ongoing.summary()
+    assert [r["session_id"] for r in summary["sessions"]] == expected
+    assert summary["sessions_window"] == {"total": WINDOW + 2, "shown": WINDOW, "unresolved": 1}
+    assert [r["session_id"] for r in ongoing.driver_rows({"terms": {"budget_id": "rb"}})] == expected
     assert api.saved == before and ongoing.routes["ongoing:p|s00"]["state"] == "credit_queued"
+
+
+def test_window_shows_every_unresolved_item_beyond_the_limit():
+    rows = [{"n": n, "open": n % 2 == 0} for n in range(3 * WINDOW)]
+    shown, counts = window(rows, lambda r: r["open"])
+    assert [r["n"] for r in shown] == list(range(0, 3 * WINDOW, 2))
+    assert counts == {"total": 3 * WINDOW, "shown": 3 * WINDOW // 2, "unresolved": 3 * WINDOW // 2}
+    shown, counts = window([{"n": 1}, {"n": 2}], lambda r: r["missing"])  # Raises: fail visible.
+    assert len(shown) == 2 and counts["unresolved"] == 2
+    assert window([], lambda r: True) == ([], {"total": 0, "shown": 0, "unresolved": 0})
+
+
+@pytest.mark.parametrize("state,expected", [
+    ("credit_queued", True), ("credit_review_required", True), ("broadcast_unknown", True),
+    ("submitted", True), ("provider_unconfirmed", True), ("provider_confirmed", False),
+    ("fictional_future_state", True), (None, True)])
+def test_credit_unresolved_states(state, expected):
+    assert credit_unresolved({"state": state}) is expected
+
+
+@pytest.mark.parametrize("route,item,expected", [
+    ("waiting_for_session_end", None, True), ("credit_blocked", None, True),
+    ("credit_queued", None, True), ("no_operator_credit", None, False),
+    ("fictional_future_state", None, True),
+    ("credit_queued", "provider_confirmed", False), ("provider_confirmed", "broadcast_unknown", True),
+    ("no_operator_credit", "credit_review_required", True), ("x", "fictional_future_state", True)])
+def test_route_unresolved_states(route, item, expected):
+    assert route_unresolved({"state": route}, item and {"state": item}) is expected
+
+
+@pytest.mark.parametrize("state,approval,expected", [
+    ("ready", SPENDING_STATE, True), ("ready", "expired", False), ("ready", "revoked", False),
+    ("ready", "charge_waived", False), ("ready", None, True),
+    ("wallet_attempt_reserved", "expired", True), ("recovery_ready", "expired", True),
+    ("submission_authorised", "expired", True), ("broadcast_unknown", "revoked", True),
+    ("submitted", None, True), ("provider_unconfirmed", None, True),
+    ("provider_confirmed", SPENDING_STATE, False), ("fictional_future_state", "expired", True)])
+def test_collection_unresolved_states(state, approval, expected):
+    assert collection_unresolved({"state": state}, approval) is expected
+
+
+DRAFT = {"state": "credit_review_approved", "credit_draft_id": "d"}
+
+
+@pytest.mark.parametrize("review,payment,expired,expected", [
+    ({"state": "awaiting_account_approval"}, None, False, True),
+    ({"state": "awaiting_account_approval"}, None, True, False),
+    ({"state": "credit_review_approved"}, None, True, False),
+    ({"state": "awaiting_driver_payment", "payment_request": {}}, None, True, True),
+    ({"state": "awaiting_driver_payment", "payment_request": {}}, None, False, True),
+    ({"state": "driver_payment_evidence_unavailable"}, None, False, True),
+    ({"state": "driver_payment_provider_unconfirmed"}, None, False, True),
+    ({"state": "driver_payment_provider_confirmed"}, None, False, False),
+    ({"state": "no_payment_due"}, None, False, False),
+    ({"state": "cancelled", "credit_draft_id": "d"}, {"state": "expired"}, False, False),
+    (DRAFT, None, False, True),
+    (DRAFT, {"state": "prepared"}, True, True),
+    (DRAFT, {"state": "broadcast_unknown"}, False, True),
+    (DRAFT, {"state": "submitted"}, False, True),
+    (DRAFT, {"state": "provider_unconfirmed"}, False, True),
+    (DRAFT, {"state": "provider_confirmed"}, False, False),
+    (DRAFT, {"state": "expired"}, False, False),
+    (DRAFT, {"state": "cancelled_driver_changed"}, False, False),
+    (DRAFT, {"state": "fictional_future_state"}, False, True),
+    ({"state": "fictional_future_state"}, None, True, True)])
+def test_review_unresolved_states(review, payment, expired, expected):
+    assert review_unresolved(review, payment, expired) is expected
+
+
+@pytest.mark.parametrize("state,settlements,settled,expected", [
+    ("awaiting_driver_consent", (), False, True), (SPENDING_STATE, (), False, True),
+    (SPENDING_STATE, (False,), True, False), (SPENDING_STATE, (True,), True, True),
+    ("expired", (), False, False), ("revoked", (False, False), False, False),
+    ("charge_waived", (), False, False), ("expired", (False, True), False, True),
+    ("fictional_future_state", (), False, True)])
+def test_approval_unresolved_states(state, settlements, settled, expected):
+    assert approval_unresolved(state, settlements, settled) is expected
 
 
 # --- Other bounded evidence stores ------------------------------------------

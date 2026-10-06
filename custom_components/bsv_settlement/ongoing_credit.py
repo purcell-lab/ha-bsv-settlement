@@ -282,17 +282,24 @@ class OngoingCredits(AutomaticCredits):
             recipient = self.latest() if self.policy.get("proxy_config_entry_id") else None
         except WalletError:
             recipient = None
+        shown, counts = self.route_window(self.routes.values())
         return {"enabled": self.policy.get("enabled", False),
                 "effective": bool(self.policy.get("enabled") and self.api.auto_credits.policy.get("enabled")),
                 "enabled_at": self.policy.get("enabled_at"), "recipient": recipient,
                 "error": self.policy.get("error"), "max_total_sats": MAX_TOTAL,
                 "fee_sats": None, "fee_mode": MODE,
                 "routing": "latest_verified_registration_at_session_open",
-                "sessions": [self.route_public(r) for r in list(self.routes.values())[-20:]]}
+                "sessions": [self.route_public(r) for r in shown], "sessions_window": counts}
+
+    def route_window(self, routes):
+        """Every unresolved route plus the newest resolved ones (#105)."""
+        from .summary_window import route_unresolved, window
+        return window(routes, lambda r: route_unresolved(r, self.get(self.wrapper(r))))
 
     def driver_rows(self, row):
-        return [self.route_public(r) for r in self.routes.values()
-                if r["recipient"]["budget_id"] == row["terms"]["budget_id"]][-20:]
+        return [self.route_public(r) for r in self.route_window(
+            r for r in self.routes.values()
+            if r["recipient"]["budget_id"] == row["terms"]["budget_id"])[0]]
 
     async def driver_receipt(self, row, credit_id):
         route = self.routes.get(credit_id)
