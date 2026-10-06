@@ -127,7 +127,7 @@ async def test_registered_service_requires_admin_and_is_idempotent(tmp_path, mon
     views = []
     hass.http = SimpleNamespace(register_view=views.append)
     c, store, manifest = fixture()
-    monkeypatch.setattr(module, "Store", lambda *args: store)
+    monkeypatch.setattr(module, "VersionedStore", lambda *args: store)
     monkeypatch.setattr(frontend, "MANIFEST_JSON", manifest)
     monkeypatch.setattr(frontend, "add_manifest_json_key", manifest.update_key)
     hass.auth = SimpleNamespace(async_get_user=AsyncMock(
@@ -161,7 +161,7 @@ async def test_bad_saved_configuration_does_not_break_install(tmp_path, monkeypa
     hass.config.external_url = ORIGIN
     hass.http = SimpleNamespace(register_view=lambda view: None)
     _, store, manifest = fixture({"enabled": True, "origin": "https://other.example"})
-    monkeypatch.setattr(module, "Store", lambda *args: store)
+    monkeypatch.setattr(module, "VersionedStore", lambda *args: store)
     monkeypatch.setattr(frontend, "MANIFEST_JSON", manifest)
     monkeypatch.setattr(frontend, "add_manifest_json_key", manifest.update_key)
     await module.install(hass)

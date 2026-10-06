@@ -3,15 +3,17 @@ import asyncio
 import copy
 import hashlib
 import json
+import logging
 
-from homeassistant.helpers.storage import Store
 
 from .api import WalletError
-from .const import DOMAIN
+from .audit import AuditLog, AuditRollback
+from .records import VersionedStore
 
 VERSION = 1
 MARKER = "wallet_checkpoint_version"
 ERROR = "Wallet ledger checkpoint mismatch; stop settlement and reconcile the matching backup"
+_LOGGER = logging.getLogger(__name__)
 
 
 def fingerprint(data):
@@ -30,8 +32,8 @@ class CheckpointedStore:
         self.hass = hass
         self.entry = entry
         self.ledger = ledger
-        self.witness = Store(hass, 1, f"{DOMAIN}.ledger_checkpoint.{entry.entry_id}",
-                             private=True, atomic_writes=True)
+        self.witness = VersionedStore(hass, "ledger_checkpoint", entry.entry_id)
+        self.audit = AuditLog(hass, entry)
         self.existing_identity = bool(entry.data.get("operator_public_key"))
         self.lock = asyncio.Lock()
         self.blocked = True
@@ -82,11 +84,17 @@ class CheckpointedStore:
                 if marker is None:
                     self.hass.config_entries.async_update_entry(
                         self.entry, data={**self.entry.data, MARKER: VERSION})
+                # A retained audit head beyond this ledger means a stale restore.
+                await self.audit.async_load(data, self.sequence, self.last_digest)
                 self.blocked = False
                 return data
             except asyncio.CancelledError:
                 self.blocked = True
                 raise
+            except AuditRollback:
+                self.blocked = True
+                _LOGGER.error("Wallet ledger is older than its retained audit log; stale restore")
+                raise WalletError(ERROR) from None
             except Exception:
                 self.blocked = True
                 raise WalletError(ERROR) from None
@@ -123,3 +131,5 @@ class CheckpointedStore:
         self.sequence = witness["sequence"]
         self.last_digest = digest
         self.blocked = False
+        # After the durable write; reports failures itself and never raises them.
+        await self.audit.record(snapshot, self.sequence, digest)

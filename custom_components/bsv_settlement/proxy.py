@@ -8,11 +8,10 @@ import time
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .records import VersionedStore, check_keys
 from .proxy_ledger import build_records, instant
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,7 +46,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
                          update_interval=timedelta(seconds=15))
         self.entry = entry
         self.sources = {k: entry.data[k + "_entity"] for k in SOURCE_KEYS}
-        self.store = Store(hass, 1, f"{DOMAIN}.proxy.{entry.entry_id}")
+        self.store = VersionedStore(hass, "proxy", entry.entry_id)
         self.observations = {key: [] for key in SOURCE_KEYS}
         self.archive = []
         self.issues = set()
@@ -57,6 +56,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
 
     async def load(self):
         saved = await self.store.async_load()
+        check_keys("proxy", saved)
         if saved:
             self.observations = saved["observations"]
             self.archive = saved.get("archive", [])

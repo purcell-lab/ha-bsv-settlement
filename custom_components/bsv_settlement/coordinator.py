@@ -4,7 +4,6 @@ import copy
 from datetime import timedelta
 from uuid import uuid4
 
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import HomeAssistantError
 import logging
@@ -12,6 +11,7 @@ import logging
 from .api import WalletError
 from .const import DOMAIN, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
 from .ledger import freeze, timestamp, validate_interval
+from .records import VersionedStore, check_keys
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,13 +22,15 @@ class SettlementCoordinator(DataUpdateCoordinator):
                          update_interval=timedelta(seconds=15))
         self.api = api
         self.lock = asyncio.Lock()
-        self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
+        self.store = VersionedStore(hass, "coordinator", entry.entry_id)
         self.saved = {"sessions": {}, "latest": None}
         self.known_status = {}
         self.mode = getattr(api, "mode", "mock")
 
     async def load(self):
-        self.saved = await self.store.async_load() or self.saved
+        saved = await self.store.async_load()
+        check_keys("coordinator", saved)  # Refuse, never reset, unknown data.
+        self.saved = saved or self.saved
 
     async def persist(self):
         await self.store.async_save(self.saved)
