@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.proxy.01FIXTURESENSORPROXY000000",
+  "data": {
+    "observations": {
+      "import": [
+        {
+          "t": "2026-10-06T07:51:27.883769+00:00",
+          "value": "12.345",
+          "unit": "MWh"
+        },
+        {
+          "t": "2026-10-06T07:51:28.358248+00:00",
+          "value": "12.351",
+          "unit": "MWh"
+        }
+      ],
+      "export": [
+        {
+          "t": "2026-10-06T07:51:27.883953+00:00",
+          "value": "1.234",
+          "unit": "MWh"
+        }
+      ],
+      "state": [
+        {
+          "t": "2026-10-06T07:51:27.883977+00:00",
+          "value": "Charging"
+        }
+      ],
+      "import_price": [
+        {
+          "t": "2026-10-06T07:51:27.883988+00:00",
+          "value": "0.30",
+          "unit": "$/kWh"
+        }
+      ],
+      "export_price": [
+        {
+          "t": "2026-10-06T07:51:27.883997+00:00",
+          "value": "0.05",
+          "unit": "$/kWh"
+        }
+      ]
+    },
+    "archive": [],
+    "persistent_issues": [],
+    "checkpoint_at": "2026-10-06T07:51:28.359790+00:00"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "minor_version": 5,
+  "key": "core.config_entries",
+  "data": {
+    "entries": [
+      {
+        "created_at": "2026-10-06T07:51:27.827550+00:00",
+        "data": {
+          "acknowledge_key_custody": true,
+          "backend": "embedded_testnet",
+          "network": "testnet",
+          "operator_public_key": "__FIXTURE_TESTNET_PUBLIC_KEY__"
+        },
+        "disabled_by": null,
+        "discovery_keys": {},
+        "domain": "bsv_settlement",
+        "entry_id": "01FIXTUREEMBEDDEDTESTNET00",
+        "minor_version": 1,
+        "modified_at": "2026-10-06T07:51:27.835131+00:00",
+        "options": {},
+        "pref_disable_new_entities": false,
+        "pref_disable_polling": false,
+        "source": "user",
+        "subentries": [],
+        "title": "BSV Operator Wallet (Testnet, Broadcast Disabled)",
+        "unique_id": "embedded-operator-testnet",
+        "version": 1
+      },
+      {
+        "created_at": "2026-10-06T07:51:27.827581+00:00",
+        "data": {
+          "acknowledge_key_custody": true,
+          "acknowledge_mainnet": true,
+          "backend": "embedded_mainnet",
+          "enable_broadcast": true,
+          "network": "mainnet",
+          "operator_public_key": "__FIXTURE_MAINNET_PUBLIC_KEY__",
+          "wallet_checkpoint_version": 1
+        },
+        "disabled_by": null,
+        "discovery_keys": {},
+        "domain": "bsv_settlement",
+        "entry_id": "01FIXTUREEMBEDDEDMAINNET00",
+        "minor_version": 1,
+        "modified_at": "2026-10-06T07:51:27.853156+00:00",
+        "options": {},
+        "pref_disable_new_entities": false,
+        "pref_disable_polling": false,
+        "source": "user",
+        "subentries": [],
+        "title": "BSV Operator Wallet (Mainnet)",
+        "unique_id": "embedded-operator-mainnet",
+        "version": 1
+      },
+      {
+        "created_at": "2026-10-06T07:51:27.827599+00:00",
+        "data": {
+          "backend": "sensor_proxy",
+          "export_entity": "sensor.demo_charger_export",
+          "export_price_entity": "sensor.demo_export_price",
+          "import_entity": "sensor.demo_charger_import",
+          "import_price_entity": "sensor.demo_import_price",
+          "name": "Demo charging sessions",
+          "state_entity": "sensor.demo_charger_state"
+        },
+        "disabled_by": null,
+        "discovery_keys": {},
+        "domain": "bsv_settlement",
+        "entry_id": "01FIXTURESENSORPROXY000000",
+        "minor_version": 1,
+        "modified_at": "2026-10-06T07:51:27.827599+00:00",
+        "options": {},
+        "pref_disable_new_entities": false,
+        "pref_disable_polling": false,
+        "source": "user",
+        "subentries": [],
+        "title": "Demo charging sessions",
+        "unique_id": "sensor-proxy:sensor.demo_charger_state",
+        "version": 1
+      }
+    ]
+  }
+}
