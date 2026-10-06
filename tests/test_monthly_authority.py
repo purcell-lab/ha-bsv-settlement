@@ -502,3 +502,54 @@ async def test_one_wallet_operation_and_payment_evidence_cannot_cover_two_sessio
     with pytest.raises(WalletError, match="evidence already"):
         await transition(svc, terms, "commit", attempt_id="second", actual_spent_sats=105,
                          evidence_ref="payment-1", booking_month=asdict(Month(2026, 10, "UTC")))
+
+
+async def test_idempotent_transition_replay_does_not_persist_or_bump_revision():
+    """Issue #104: identical replays are no-ops; real transitions still bump."""
+    svc, clock, terms = await bound()
+    store, saves = svc.api.store, []
+    original = store.async_save
+
+    async def counting(data):
+        saves.append(1)
+        await original(data)
+
+    store.async_save = counting
+    month = asdict(Month.at(clock[0], wallet_timezone="UTC"))
+    steps = [
+        ("reserve", dict(attempt_id="a", account_id="proxy|session", debit_sats=100, fee_reserve_sats=10)),
+        ("wallet_pending", dict(attempt_id="a", wallet_action_id="op-1")),
+        ("uncertain", dict(attempt_id="a")),
+        ("commit", dict(attempt_id="a", actual_spent_sats=105, evidence_ref="spend", booking_month=month)),
+    ]
+    for action, data in steps:
+        rev = revision(svc)
+        first = await transition(svc, terms, action, **data)
+        assert first["revision"] == rev + 1 and len(saves) == 1  # Real transition bumps.
+        persisted, saved = json.dumps(store.data, sort_keys=True), copy.deepcopy(svc.api.saved)
+        again = await transition(svc, terms, action, **data)
+        assert again == first and revision(svc) == rev + 1
+        assert len(saves) == 1 and json.dumps(store.data, sort_keys=True) == persisted
+        assert svc.api.saved == saved
+        with pytest.raises(WalletError, match="revision conflict"):  # Stale replay still refused.
+            await svc.transition(terms["authority_id"], action, data, expected_revision=rev)
+        saves.clear()
+    # Another client holding the pre-replay revision can still act.
+    held = revision(svc)
+    await transition(svc, terms, "commit", **steps[-1][1])
+    result = await svc.cancel(terms["authority_id"], proof(terms, cancel=True), expected_revision=held)
+    assert result["revision"] == held + 1 and len(saves) == 1
+
+
+async def test_different_transition_at_stale_revision_is_refused():
+    svc, clock, terms = await reserved()
+    rev = revision(svc)
+    await transition(svc, terms, "reserve", attempt_id="attempt", account_id="proxy|session",
+                     debit_sats=100, fee_reserve_sats=10)
+    assert revision(svc) == rev  # Replay was a no-op.
+    await transition(svc, terms, "wallet_pending", attempt_id="attempt", wallet_action_id="op-1")
+    with pytest.raises(WalletError, match="revision conflict"):
+        await svc.transition(terms["authority_id"], "uncertain", {"attempt_id": "attempt"},
+                             expected_revision=rev)
+    attempt, = decode(svc.snapshot()["authorities"][terms["authority_id"]]["ledger"]).attempts
+    assert attempt.state == "wallet_pending"

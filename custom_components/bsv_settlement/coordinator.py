@@ -35,6 +35,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
     async def persist(self):
         await self.store.async_save(self.saved)
 
+    def unresolved_proxy_sessions(self, proxy_entry_id):
+        """Read-only pin set for the proxy archive (#106); see session_references."""
+        if self.mode != "embedded_mainnet":
+            return set()
+        from .session_references import unresolved_proxy_sessions
+        return unresolved_proxy_sessions(self.api, proxy_entry_id)
+
     async def _async_update_data(self):
         async with self.lock:
             try:
@@ -138,13 +145,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
                 if action in wallet_actions:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")
+                    if not approving_user_id:
+                        raise WalletError("An explicit administrator context is required")
                     if action == "wallet_self_test":
                         result = await self.api.self_test()
                     elif action == "wallet_status":
                         result = self.api.status()
                     else:
-                        if not approving_user_id:
-                            raise WalletError("An explicit administrator context is required")
                         if action == "wallet_refresh_chain":
                             result = await self.api.refresh_chain()
                         elif action == "prepare_operator_payment":

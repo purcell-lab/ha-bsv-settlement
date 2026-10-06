@@ -39,7 +39,7 @@ These are manual **operator-to-driver** wallet payments, not yet automatic settl
 
 All four mainnet actions require an authenticated HA administrator. Calls with no user context, such as ordinary autonomous automation calls, are rejected.
 
-1. **`wallet_refresh_chain`:** read available confirmed funding outputs and reconcile the current submitted transaction. Does not broadcast.
+1. **`wallet_refresh_chain`:** read available confirmed funding outputs and reconcile the current submitted transaction. Does not broadcast. If the provider has no (or invalid) evidence for that transaction, for example one signed but never posted, the balance is still shown (signed inputs excluded), the payment keeps its state and `payment_check_error` reads `payment_evidence_unavailable` (or `payment_evidence_invalid`) until evidence appears. Never resend; reconcile it.
 2. **`prepare_operator_payment`:** supply `config_entry_id`, a unique `reference`, `amount_sats`, and an exact `fee_sats`. The current driver address is the recipient. The response shows the draft ID, address, amount, fee, change and ten-minute expiry. No transaction is signed or broadcast at this stage.
 3. **`broadcast_operator_payment`:** repeat the exact `draft_id`, `recipient_address`, `amount_sats`, and `fee_sats`, and set `confirm_mainnet_payment: true`. This is the real-money action for this manual path. It signs, script-validates, durably stores the exact signed bytes and input reservation, and then submits that transaction.
 4. **`cancel_operator_payment`:** can cancel an unsigned prepared or expired draft, never a signed or submitted transaction.
@@ -75,7 +75,7 @@ signature verification, session-linked payment and BRC-29/BEEF credit receipts,
 but native wallet compatibility and real mainnet operation still require
 supervised validation. These gaps are not hidden behind a “paid” status.
 
-The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path.
+The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path. It signs with the operator key, keeps the signed bytes local and saves only their SHA-256 in the wallet ledger. `wallet_self_test` and `wallet_status` require an authenticated HA administrator, as do the draft actions `bind_session`, `add_interval` and `prepare_session`.
 
 ## Validation boundary
 

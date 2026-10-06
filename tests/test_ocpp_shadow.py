@@ -56,7 +56,8 @@ def test_import_observed_after_activation_not_backfilled_or_billed():
     assert s["current_span"]["sample_count"] == 2
     assert s["current_span"]["source_timestamp"] is None
     assert s["export_kwh"] is s["net_cost_aud"] is None
-    assert not any(s[k] for k in ("billing_eligible", "settlement_owner", "payment_control", "charger_control"))
+    assert not any(s[k] for k in ("billing_eligible", "payment_control", "charger_control"))
+    assert s["settlement_owner"] == s["current_span"]["settlement_owner"] == "legacy_sigen"
     assert "latest_session" not in s
 
 

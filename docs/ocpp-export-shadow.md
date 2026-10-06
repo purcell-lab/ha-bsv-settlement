@@ -11,8 +11,12 @@ a settlement source.
 ## Safety boundary
 
 - No pricing, net amount, export credit, fee or payment is calculated.
-- `billing_eligible` is `false` and `settlement_owner` is `null` on every span,
-  summary and sensor. The stored section is refused if a span claims otherwise.
+- `billing_eligible` is `false` on every span, summary and sensor, and
+  `settlement_owner` is `legacy_sigen` on every summary, emitted span and
+  sensor. Stored spans keep the encoding they were written with (`null`); the
+  value is normalised when emitted, so stores are never rewritten. The stored
+  section is refused if a span claims billing, or any owner other than `null`,
+  `false` or `legacy_sigen`.
 - Which source settles does not change. The Sigenergy `sensor_proxy` recorder
   remains the only accepted payment source; every financial module still
   rejects anything whose mode is not `sensor_proxy`, and the import shadow's
@@ -156,7 +160,7 @@ Both diagnostic, on the observer device:
   span. Attributes: grade, spread, bound deltas, labels, anomaly/quality/
   provenance flags, timestamps, flow counts, reference deltas and divergence,
   thresholds, current span, `billing_eligible: false`,
-  `settlement_owner: null`.
+  `settlement_owner: legacy_sigen`.
 - **OCPP export shadow quality**: latest grade, or `not_bound`. Attributes:
   `grade_counts` over retained spans and retention flags.
 

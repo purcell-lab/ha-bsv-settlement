@@ -107,10 +107,22 @@ class SessionBudgets:
         api.saved.setdefault("session_budgets", {})
 
     def summary(self):
-        """Non-capability summaries for authenticated operator dashboards."""
+        return self.summary_window()[0]
+
+    def summary_window(self):
+        """Non-capability summaries for authenticated operator dashboards.
+
+        Every unresolved approval plus the newest resolved ones (#105)."""
+        from .summary_window import window
+        saved = self.api.saved["session_budgets"].values()
+        children = {}
+        for r in saved:
+            if r.get("weekly_parent_id"):
+                children.setdefault(r["weekly_parent_id"], []).append(r)
+        shown, counts = window([r for r in saved if not r.get("weekly_parent_id")],
+                               lambda r: self.unresolved(r, children))
         rows = []
-        for row in [r for r in self.api.saved["session_budgets"].values()
-                    if not r.get("weekly_parent_id")][-20:]:
+        for row in shown:
             t = row["terms"]
             rows.append({
                 "budget_id": t["budget_id"], "session_id": self.api.collections.session_id(row),
@@ -129,7 +141,30 @@ class SessionBudgets:
             if t.get("version") == 3:
                 from .weekly import summary
                 rows[-1]["multi_session"] = summary(self.api, row)
-        return rows
+        return rows, counts
+
+    def unresolved(self, row, children=None):
+        """Display predicate: live approval, or any unresolved settlement under it."""
+        from .summary_window import (COLLECTION_RESOLVED, CREDIT_RESOLVED, approval_unresolved,
+                                     collection_unresolved, credit_unresolved)
+        state, flags, settled = self.state(row), [], False
+        family = [row]
+        if row["terms"].get("version") == 3:
+            family += (children or {}).get(row["terms"].get("budget_id"), [])
+        for r in family:
+            if hasattr(self.api, "collections") and (item := self.api.collections.get(r)):
+                flags.append(collection_unresolved(item, self.state(r)))
+                settled |= r is row and item.get("state") in COLLECTION_RESOLVED
+            if hasattr(self.api, "auto_credits") and (item := self.api.auto_credits.get(r)):
+                flags.append(credit_unresolved(item))
+                settled |= r is row and item.get("state") in CREDIT_RESOLVED
+        return approval_unresolved(state, flags, settled and row["terms"].get("version") != 3)
+
+    def state(self, row):
+        """Stored approval state with lazy expiry, as public() reports it."""
+        if row["state"] not in ("revoked", "charge_waived") and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
+            return "expired"
+        return row["state"]
 
     def match_candidate(self, row):
         """Read-only UI hint, never authority or automatic session selection."""
@@ -157,8 +192,7 @@ class SessionBudgets:
         for key in ("proxy_config_entry_id", "session_key", "created_by", "accepted_by",
                     "driver_token_hash", "driver_link_scheme"):
             result.pop(key, None)
-        if row["state"] not in ("revoked", "charge_waived") and now() >= datetime.fromisoformat(row["terms"]["expires_at"]):
-            result["state"] = "expired"
+        result["state"] = self.state(row)
         if hasattr(self.api, "collections") and (collection := self.api.collections.get(row)):
             result["collection"] = self.api.collections.public(collection)
         if hasattr(self.api, "auto_credits"):

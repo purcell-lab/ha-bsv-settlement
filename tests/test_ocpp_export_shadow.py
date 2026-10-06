@@ -26,7 +26,8 @@ from custom_components.bsv_settlement.sensor import OCPPExportShadowSensor
 BINDING = {"register": {"unique_id": "ocpp.charger.energy_active_export_register.sensor"}}
 START = datetime(2026, 10, 4, 0, 0, tzinfo=timezone.utc)
 DERIVED = "derived_from_negative_import"
-FINANCIAL = ("billing_eligible", "settlement_owner", "payment_control", "charger_control")
+FINANCIAL = ("billing_eligible", "payment_control", "charger_control")
+OWNER = "legacy_sigen"  # Every emitted OCPP shadow output (#117).
 # Live stepped V2G run: (seconds, signed import W). Negative import is discharge.
 V2G = [(0, 16527), (60, -249), (120, -269), (180, -359), (240, -229), (300, -7048),
        (361, -7269), (421, -7267), (481, -7332), (541, -7601), (601, -18819),
@@ -128,7 +129,8 @@ def test_live_v2g_replay_graded_unreliable_with_bounds_bracketing_inverter():
     assert span["grading"] == DEFAULT_GRADING
     assert {"context_defaulted_by_integration", "transport_unencrypted"} <= set(
         span["provenance_flags"])
-    assert span["billing_eligible"] is False and span["settlement_owner"] is None
+    assert span["billing_eligible"] is False and span["settlement_owner"] == OWNER
+    assert ledger.data["spans"][-1]["settlement_owner"] is None  # Stored encoding unchanged.
     summary = ledger.summary()
     assert summary["latest_grade"] == "unreliable"
     assert summary["grade_counts"]["unreliable"] == 1
@@ -643,13 +645,17 @@ async def test_coordinator_replay_reference_mwh_sensors_and_no_financial_paths(t
         assert summary["export_kwh"] is summary["net_cost_aud"] is None
         assert not any(summary[k] for k in FINANCIAL)
         assert not any(export[k] for k in FINANCIAL)
+        assert summary["settlement_owner"] == export["settlement_owner"] == OWNER
         last = OCPPExportShadowSensor(coord, entry, "export_last_span", "Last", "kWh")
         quality = OCPPExportShadowSensor(coord, entry, "export_quality", "Quality", None)
         coord.async_set_updated_data(summary)
         assert last.native_value == Decimal(span["estimate_kwh"])
         assert last.extra_state_attributes["grade"] == "unreliable"
         assert last.extra_state_attributes["billing_eligible"] is False
-        assert last.extra_state_attributes["settlement_owner"] is None
+        assert last.extra_state_attributes["settlement_owner"] == OWNER
+        assert quality.extra_state_attributes["settlement_owner"] == OWNER
+        assert last.extra_state_attributes["current_span"] is None or last.extra_state_attributes[
+            "current_span"]["settlement_owner"] == OWNER
         assert last.extra_state_attributes["reference_divergence_kwh"] == span[
             "reference_divergence_kwh"]
         assert last.entity_category == "diagnostic"

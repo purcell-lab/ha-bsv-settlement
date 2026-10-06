@@ -222,6 +222,8 @@ async def test_real_ha_recorder_persists_provenance_privately_across_restart(tmp
     from custom_components.bsv_settlement.session_review import digest as account_digest
     from test_proxy import config_entry, fixture as proxy_fixture
     hass = HomeAssistant(str(tmp_path / "ha"))
+    from test_proxy import load_registries
+    await load_registries(hass)
     dt_util.set_default_time_zone(dt_util.get_time_zone("Australia/Brisbane"))
     entry = config_entry()
     raw = {}

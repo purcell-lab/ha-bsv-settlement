@@ -26,6 +26,15 @@ def encode(ledger):
     return asdict(ledger)
 
 
+def _plain(value):
+    """JSON shape (tuples as lists) so in-memory and reloaded state compare equal."""
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
 def decode(data):
     """Strict schema: corrupt state must never become a fresh allowance."""
     try:
@@ -152,9 +161,12 @@ class MonthlyAuthorities:
             raise WalletError("Invalid monthly authority store; reconcile storage") from None
         return state
 
-    async def _persist(self, state, expected_revision):
+    def _check_revision(self, expected_revision):
         if type(expected_revision) is not int or expected_revision != self._state()["revision"]:
             raise WalletError("Monthly ledger revision conflict; reload without retrying payment")
+
+    async def _persist(self, state, expected_revision):
+        self._check_revision(expected_revision)
         state["revision"] = expected_revision + 1
         snapshot = copy.deepcopy(self.api.saved)
         snapshot[KEY] = copy.deepcopy(state)
@@ -433,6 +445,10 @@ class MonthlyAuthorities:
                 except AllowanceError as exc:
                     raise WalletError(str(exc)) from None
             row["ledger"] = encode(proposed)
+            if _plain(state) == _plain(self.api.saved.get(KEY)):
+                # Idempotent replay: nothing changed, so no write and no revision bump.
+                self._check_revision(expected_revision)
+                return {"ledger": copy.deepcopy(row["ledger"]), "revision": state["revision"]}
             revision = await self._persist(state, expected_revision)
             return {"ledger": copy.deepcopy(row["ledger"]), "revision": revision}
 

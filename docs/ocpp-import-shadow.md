@@ -181,6 +181,17 @@ on disk untouched. Future versions are refused without rewriting. Schema 3 adds
 the [export shadow](ocpp-export-shadow.md#storage) section (`export: null` for
 migrated schema 2 stores); `migrated_from_schema` keeps the oldest schema.
 
+Every summary, emitted span and sensor attribute carries
+`settlement_owner: legacy_sigen`. Stored spans keep the encoding they were
+written with (`false`); the value is normalised when emitted, and the store is
+not rewritten or re-versioned.
+
+This integration never stores a raw idTag. The OCPP fork's `id_tag` sensor is
+outside this integration, so HA's recorder keeps that sensor's history and
+DEBUG logs can include its states. See
+[Privacy: raw idTags in Home Assistant history](ocpp-lifecycle-replay.md#privacy-raw-idtags-in-home-assistant-history)
+for the optional recorder exclude.
+
 Only the existing `refresh` service is accepted for this entry. Every wallet,
 consent, payment and charger action is refused. There is no wallet API object,
 no settleable `latest_session` schema and no `sensor_proxy` mode. Existing

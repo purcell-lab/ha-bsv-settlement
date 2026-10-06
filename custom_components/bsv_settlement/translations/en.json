@@ -102,6 +102,20 @@
     }
   },
   "services": {
+    "purge_removed_backend_stores": {
+      "name": "Remove stores of a deleted testnet or mock entry",
+      "description": "Administrator only. Permanently delete the coordinator, wallet-ledger and unencrypted operator-key stores left by a deleted mock or embedded_testnet entry. Refused, with nothing removed, while any config entry has this ID or if any store is a mainnet wallet, another backend's or unrecognised.",
+      "fields": {
+        "entry_id": {
+          "name": "Deleted entry ID",
+          "description": "ID of the deleted mock or embedded_testnet config entry (the suffix of its .storage files)."
+        },
+        "confirm": {
+          "name": "Confirm deletion",
+          "description": "Confirm permanent deletion of that entry's stores."
+        }
+      }
+    },
     "configure_automatic_credit": {
       "name": "Set automatic operator credit policy",
       "description": "Enable or stop prospective automatic credits. Maximum total 1000 sat per session, including a fixed 10 sat fee. No per-payment approval.",
@@ -195,17 +209,17 @@
     },
     "wallet_status": {
       "name": "Operator wallet status",
-      "description": "Read public embedded-wallet status. No network request or key export.",
+      "description": "Administrator only. Read public embedded-wallet status. No network request or key export.",
       "fields": {"config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."}}
     },
     "wallet_self_test": {
       "name": "Offline operator wallet self-test",
-      "description": "Verify an SDK identity signature and sign a fictional-source transaction offline. Does not broadcast, move funds or export signed bytes.",
+      "description": "Administrator only. Verify an SDK identity signature and sign a fictional-source transaction offline with the operator key; only a digest is saved. Does not broadcast, move funds or export signed bytes.",
       "fields": {"config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."}}
     },
     "bind_session": {
       "name": "Bind session",
-      "description": "Start a frozen, draft-only session against the external driver wallet. Never pays.",
+      "description": "Administrator only. Start a frozen, draft-only session against the external driver wallet. Never pays.",
       "fields": {
         "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Unique site, charger, connector and transaction reference."},
@@ -215,7 +229,7 @@
     },
     "add_interval": {
       "name": "Add metered interval",
-      "description": "Persist one validated interval with final directional prices.",
+      "description": "Administrator only. Persist one validated interval with final directional prices.",
       "fields": {
         "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Previously bound session."},
@@ -224,7 +238,7 @@
     },
     "prepare_session": {
       "name": "Prepare session",
-      "description": "Reconcile energy, freeze the ledger and record a blocked settlement draft; never pays.",
+      "description": "Administrator only. Reconcile energy, freeze the ledger and record a blocked settlement draft; never pays.",
       "fields": {
         "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Previously bound session."},

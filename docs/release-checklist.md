@@ -84,6 +84,11 @@ protection uses that name.
       `bsv_settlement` errors in the log. Exception: legacy `mock` or
       `embedded_testnet` entries show **Failed to set up** (backend removed);
       delete them, see [Downgrade hazards](#downgrade-hazards).
+- [ ] After deleting each legacy entry, archive its stores privately if needed,
+      then, as an administrator, call `bsv_settlement.purge_removed_backend_stores`
+      with that `entry_id` and `confirm: true`. The response lists the removed
+      store keys (the testnet operator key is unencrypted until then). A refusal
+      removes nothing; a mainnet wallet is always refused.
 - [ ] Each wallet entry still shows the `operator_public_key` from the
       inventory. The key was never regenerated.
 - [ ] Every unresolved payment, monthly binding and pending collection from the
@@ -91,6 +96,12 @@ protection uses that name.
 - [ ] `/bsv_settlement/operator-card.js`, `/bsv_settlement/session-review-card.js`,
       `/bsv_settlement/budget-card.js` and `/bsv_settlement/driver/` return
       200. Installed file hashes match the commit's source.
+- [ ] Each sensor-proxy entry has `source_identity` in its config entry data.
+      On the first load after #107 an older entry logs one "adopted its
+      current source registry identities" warning and stores
+      `source_binding_adopted_at`. The recorder status shows no
+      `source_binding_changed` issue and `source_identity` reads `pinned` (or
+      `unregistered`, which only warns) for every source.
 - [ ] Record the evidence (redacted) on the deployment PR or tracking issue.
       Include the SHA, HA version, backup identifier and checks performed.
 
@@ -127,14 +138,17 @@ added later:
 | `ocpp_lifecycle` store (new, version 1) | Releases before T7 neither read nor write it, so lifecycle tracking pauses while downgraded and the file is left untouched. On re-upgrade the whole downgrade is one outage from the last save. An open session continues with `ha_restart_during_session`, or ends as `superseded_without_stop`. Sessions that began and ended while downgraded are not recorded. Shadow only, with no payment effect | Accept, and read the gap from `outage_since`/`ha_restarts` |
 | Unresolved payments and reservations | Older code may not know newer states (e.g. automatic or ongoing credits) and could reuse a reserved input | Resolve or record every unresolved payment first. Recovery owner approval needed |
 | `provenance_archive` store and `tariff_provenance_ref` fields (#12) | Older releases do not read the archive and ignore the ledger references. Their new reviews and automatic records carry no frozen provenance. A pre-archive release shows a manual review's reference in its status output (digests and counts only). The archive file is left in place | Accept. Evidence only, with no payment effect. Records made while downgraded show `not_recorded` after upgrade |
-| Removed `mock` / `embedded_testnet` backends | Upgrading: their entries fail with `ConfigEntryError` ("backend was removed"); other entries load. Their `.storage` files (`bsv_settlement.<entry>`, `bsv_settlement.embedded.<entry>`, `bsv_settlement.operator_key.<entry>`) are left untouched. Downgrading after deleting the entry does not recreate it | Delete each legacy entry. Keep or archive the left-over stores privately (the testnet key file is key material); deleting the entry does not remove them. Re-add only through an older release if ever needed |
+| Removed `mock` / `embedded_testnet` backends | Upgrading: their entries fail with `ConfigEntryError` ("backend was removed"); other entries load. Their `.storage` files (`bsv_settlement.<entry>`, `bsv_settlement.embedded.<entry>`, `bsv_settlement.operator_key.<entry>`) are left untouched. Downgrading after deleting the entry does not recreate it | Delete each legacy entry. Archive the left-over stores privately if needed (the testnet key file is key material); deleting the entry does not remove them, `purge_removed_backend_stores` does (administrator only, refuses mainnet and existing entries). Re-add only through an older release if ever needed |
+| Proxy config entry data `source_identity`, `source_binding_adopted_at` (#107) | Older releases ignore them and do not check source identity; a takeover of a source entity ID is observed silently while downgraded. Re-upgrading keeps the original pin; it does not re-adopt | Accept for a short rollback, or check the source entities while downgraded |
+| Proxy config entry data `recorder_issue_windows` (#108) | Older releases ignore acknowledged windows: re-derived latest/previous sessions lose the overlap flag (archived summaries keep it). They cannot re-raise an acknowledged issue | Do not settle sessions listed in `acknowledged_issues` while downgraded |
+| Proxy archive pinned beyond 50 (#106) | Older releases load the longer archive and cut it to the newest 50 on the next prune; referenced older summaries are then lost | Settle or cancel bound sessions before downgrading |
 | New top-level keys | Settlement and wallet ledgers are re-saved whole, so newer keys survive but are not enforced. The sensor-proxy store rewrites only the keys it knows | Treat newer-feature state as inactive while downgraded |
 
 ## Automated evidence and its limits
 
 | Evidence | What it shows |
 |---|---|
-| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 42 actions (41 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
+| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 44 actions (43 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
 | `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by the earlier main layout load in full HA. Mainnet identity, proxy observations and an uncertain-broadcast reservation are kept. Legacy mock (v0.1.2) and testnet entries fail closed and can be deleted, with their stores left byte-identical. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
 | Python/HA CI matrix | The full regression suite on each supported HA version |
 

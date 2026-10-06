@@ -4,6 +4,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
+# Fixed on every OCPP shadow output; settlement stays with the legacy recorder (#117).
+SETTLEMENT_OWNER = "legacy_sigen"
+
 SENSORS = [
     ("session_import_energy", "Session import energy", "kWh"),
     ("session_export_energy", "Session export energy", "kWh"),
@@ -74,11 +77,11 @@ class OCPPShadowSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
-        return {k: data.get(k) for k in (
+        return {**{k: data.get(k) for k in (
             "mode", "quality_flags", "provenance", "current_span", "previous_span",
             "retained_span_count", "journal_trimmed", "spans_trimmed",
-            "billing_eligible", "settlement_owner", "payment_control",
-            "charger_control", "export_kwh", "net_cost_aud")}
+            "billing_eligible", "payment_control",
+            "charger_control", "export_kwh", "net_cost_aud")}, "settlement_owner": SETTLEMENT_OWNER}
 
 
 class OCPPExportShadowSensor(OCPPShadowSensor):
@@ -104,7 +107,7 @@ class OCPPExportShadowSensor(OCPPShadowSensor):
         export = self.export
         common = {"mode": (self.coordinator.data or {}).get("mode"), "state": export.get("state"),
                   "flags": export.get("flags"), "grading": export.get("grading"),
-                  "billing_eligible": False, "settlement_owner": None,
+                  "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                   "payment_control": False, "charger_control": False}
         if self.key == "export_quality":
             return {**common, "grade_counts": export.get("grade_counts"),
@@ -149,7 +152,7 @@ class RecorderReadinessSensor(OCPPShadowSensor):
     @property
     def extra_state_attributes(self):
         recorder = self.recorder
-        common = {"billing_eligible": False, "settlement_owner": recorder.get("settlement_owner"),
+        common = {"billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                   "selector_implemented": False, "payment_control": False,
                   "charger_control": False}
         if self.key == "session_recorder":
@@ -208,7 +211,7 @@ class OCPPLifecycleSensor(OCPPShadowSensor):
     @property
     def extra_state_attributes(self):
         # Fixed on every output regardless of the summary contents.
-        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": "legacy_sigen",
+        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                 "selector_implemented": False, "payment_control": False,
                 "charger_control": False}
 
@@ -220,7 +223,7 @@ WALLET_SUMMARY_KEYS = (
     "receive_address", "operator_public_key", "driver_identity_status",
     "chain_checked_at", "chain_error", "balance_source", "last_payment",
     "chain_attempted_at", "pending_change_sats", "pending_change_source",
-    "max_payment_sats", "max_fee_sats")
+    "max_payment_sats", "max_fee_sats", "payment_check_error", "payment_check_attempted_at")
 # Ledger-sized fields the dashboard cards read from the live state. Together
 # they reach ~50 KB on a live mainnet wallet, past the recorder's 16 KB
 # attribute limit, so they are kept out of the recorder (history keeps the
@@ -231,27 +234,47 @@ WALLET_DETAIL_KEYS = (
 BALANCE_KEYS = (
     "mode", "network", "backend", "balance_verified", "balance_source",
     "chain_checked_at", "chain_attempted_at", "chain_error",
+    "payment_check_error", "payment_check_attempted_at",
     "pending_change_sats", "pending_change_source")
 
 
-def _count(value, key=None):
+def _count(value, key=None, window=None):
+    """True record total from the display window (#105), else the list length."""
+    counts = window.get("total") if isinstance(window, dict) else None
+    if type(counts) is int:
+        return counts
     if key is not None:
         value = value.get(key) if isinstance(value, dict) else None
     return len(value) if isinstance(value, (list, tuple)) else None
 
 
+def _window(value, key):
+    return value.get(key) if isinstance(value, dict) else None
+
+
 def wallet_summary(health):
-    """Recorded counts and flags standing in for the unrecorded ledger fields."""
+    """Recorded counts and flags standing in for the unrecorded ledger fields.
+
+    Counts are true record totals, not the length of a display window."""
     ongoing = health.get("ongoing_credit")
     automatic = health.get("automatic_credit")
     return {
-        "driver_approval_count": _count(health.get("driver_approvals")),
-        "session_payment_count": _count(health.get("session_payments")),
+        "driver_approval_count": _count(health.get("driver_approvals"),
+                                        window=health.get("driver_approvals_window")),
+        "session_payment_count": _count(health.get("session_payments"),
+                                        window=health.get("session_payments_window")),
         "closed_session_count": _count(health.get("closed_sessions")),
-        "ongoing_credit_session_count": _count(ongoing, "sessions"),
+        "ongoing_credit_session_count": _count(ongoing, "sessions", _window(ongoing, "sessions_window")),
         "ongoing_credit_effective": ongoing.get("effective") if isinstance(ongoing, dict) else None,
         "automatic_credit_enabled": automatic.get("enabled") if isinstance(automatic, dict) else None,
-        "automatic_credit_payment_count": _count(automatic, "payments"),
+        "automatic_credit_payment_count": _count(automatic, "payments", _window(automatic, "payments_window")),
+        # Small {total, shown, unresolved} per list: the lists above are views.
+        "display_windows": {name: w for name, w in (
+            ("driver_approvals", health.get("driver_approvals_window")),
+            ("session_payments", health.get("session_payments_window")),
+            ("ongoing_credit_sessions", _window(ongoing, "sessions_window")),
+            ("automatic_credit_payments", _window(automatic, "payments_window")),
+        ) if isinstance(w, dict)},
     }
 
 

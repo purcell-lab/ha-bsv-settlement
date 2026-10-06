@@ -15,6 +15,20 @@ MAX_SPANS = 50
 MAX_AGE_SECONDS = 180
 ACTIVE = {"Charging", "SuspendedEV", "SuspendedEVSE"}
 UNITS = {"Wh": Decimal("0.001"), "kWh": Decimal(1), "MWh": Decimal(1000)}
+# Settlement stays with the legacy recorder. Spans keep their stored encoding
+# (import False, export None) so stores are never rewritten and older versions
+# still load them; every emitted output carries this canonical value (#117).
+SETTLEMENT_OWNER = "legacy_sigen"
+
+
+def stored_owner_ok(value):
+    """Stored span owner encodings accepted on read: legacy False/None or canonical."""
+    return value is False or value is None or value == SETTLEMENT_OWNER
+
+
+def emitted_span(span):
+    """Copy of a stored span for output, with the canonical settlement owner."""
+    return None if span is None else {**deepcopy(span), "settlement_owner": SETTLEMENT_OWNER}
 
 
 def instant(value):
@@ -172,7 +186,8 @@ class ImportShadowLedger:
                         or type(span.get("sample_count")) is not int or span["sample_count"] < 1
                         or not isinstance(span.get("provenance"), dict)
                         or not isinstance(span.get("provenance_flags"), list)
-                        or type(span.get("provenance_changed")) is not bool):
+                        or type(span.get("provenance_changed")) is not bool
+                        or not stored_owner_ok(span.get("settlement_owner"))):
                     raise ValueError("Invalid OCPP shadow span")
                 energy(span["observed_import_kwh"], "kWh")
                 instant(span["first_meter_ha_updated_at"])
@@ -318,12 +333,12 @@ class ImportShadowLedger:
                                                 "partial_import_span", "export_not_observed",
                                                 "source_timestamp_unavailable"}),
             "provenance": deepcopy(self.provenance),
-            "current_span": deepcopy(current),
-            "previous_span": deepcopy(self.data["spans"][-1]) if self.data["spans"] else None,
+            "current_span": emitted_span(current),
+            "previous_span": emitted_span(self.data["spans"][-1]) if self.data["spans"] else None,
             "retained_span_count": len(self.data["spans"]),
             "journal_trimmed": self.data["journal_trimmed"],
             "spans_trimmed": self.data["spans_trimmed"],
-            "billing_eligible": False, "settlement_owner": False,
+            "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
             "payment_control": False, "charger_control": False,
             "export_kwh": None, "net_cost_aud": None,
         }

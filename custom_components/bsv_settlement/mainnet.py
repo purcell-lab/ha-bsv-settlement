@@ -277,12 +277,17 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         active = self.saved.get("active_payment")
         payment = self.saved.get("payments", {}).get(active)
         chain = self.saved.get("chain", {})
+        approvals, approval_counts = (self.budgets.summary_window() if hasattr(self, "budgets")
+                                      else ([], {"total": 0, "shown": 0, "unresolved": 0}))
+        session_rows, payment_counts = self.payment_summary_window()
         result.update(
             state="broadcast_enabled_approval_required", broadcast_enabled=True,
             balance_sats=chain.get("balance_sats"), balance_verified=False,
             balance_source="WhatsOnChain confirmed UTXOs, not independently SPV verified",
             chain_checked_at=chain.get("checked_at"), chain_error=chain.get("error"),
             chain_attempted_at=chain.get("attempted_at"),
+            payment_check_error=chain.get("payment_check_error"),
+            payment_check_attempted_at=chain.get("payment_check_attempted_at"),
             pending_change_sats=self.pending_change(),
             pending_change_source="Locally signed operator change; not confirmed or spendable",
             driver_identity_status="submitted_unverified" if self.saved["driver"]["driver_public_identity"] else "not_submitted",
@@ -290,8 +295,10 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             max_payment_sats=MAX_PAYMENT_SATS, max_fee_sats=MAX_FEE_SATS,
             latest_session_review=self.reviews.latest() if hasattr(self, "reviews") else None,
             automatic_credit=self.auto_credits.summary() if hasattr(self, "auto_credits") else None,
-            driver_approvals=self.budgets.summary() if hasattr(self, "budgets") else [],
-            session_payments=self.payment_summary(),
+            driver_approvals=approvals,
+            driver_approvals_window=approval_counts,
+            session_payments=session_rows,
+            session_payments_window=payment_counts,
             ongoing_credit=self.ongoing_credits.summary() if hasattr(self, "ongoing_credits") else None,
             closed_sessions=self.closures.summary() if hasattr(self, "closures") else [],
             record_audit=self.store.audit.summary() if hasattr(self.store, "audit") else None,
@@ -301,9 +308,29 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         return result
 
     def payment_summary(self):
-        """Compact authenticated display records. Never include signed payloads."""
+        return MainnetWalletAPI.payment_summary_window(self)[0]
+
+    def payment_summary_window(self):
+        """Compact authenticated display records. Never include signed payloads.
+
+        Every unresolved review/collection plus the newest resolved ones (#105)."""
+        from .session_review import now
+        from .summary_window import collection_unresolved, combine, review_unresolved, window
+        payments, clock = self.saved.get("payments", {}), now()
+
+        def review_open(review):
+            return review_unresolved(
+                review, payments.get(review.get("credit_draft_id")),
+                clock >= datetime.fromisoformat(review["expires_at"]))
+
+        budgets = self.saved.get("session_budgets", {})
+        state = getattr(getattr(self, "budgets", None), "state", None)
+        reviews, review_counts = window(self.saved.get("session_reviews", {}).values(), review_open)
+        collections, collection_counts = window(
+            [(k, v) for k, v in self.saved.get("driver_collections", {}).items() if k in budgets],
+            lambda kv: collection_unresolved(kv[1], state(budgets[kv[0]]) if state else None))
         rows = []
-        for review in list(self.saved.get("session_reviews", {}).values())[-20:]:
+        for review in reviews:
             r = self.reviews.public(review)
             p = r.get("credit_draft") or r.get("receipt") or {}
             rows.append({
@@ -318,8 +345,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                 "confirmations": p.get("confirmations"), "output_index": p.get("output_index"),
                 "error": p.get("verification_error"), "source": "manual",
             })
-        for budget_id, item in list(self.saved.get("driver_collections", {}).items())[-20:]:
-            row = self.saved["session_budgets"].get(budget_id)
+        for budget_id, item in collections:
+            row = budgets.get(budget_id)
             if row:
                 session_id = self.collections.session_id(row)
                 rows.append({
@@ -335,7 +362,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                     "recovery": copy.deepcopy(item.get("recovery")),
                     **collection_display_terms(item, budget_id, session_id),
                 })
-        return rows
+        return rows, combine(review_counts, collection_counts)
 
     def public_payment(self, payment):
         if payment is None:
@@ -410,18 +437,33 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             # as spendable, even when submission outcome is unknown.
             used = {(p["source_txid"], p["source_index"]) for p in self.signed_payments()}
             rows = [r for r in rows if (r["tx_hash"], r["tx_pos"]) not in used]
-            self.saved["chain"] = {"balance_sats": sum(r["value"] for r in rows),
-                                   "checked_at": utcnow().isoformat(),
-                                   "attempted_at": attempted_at, "error": None}
+            previous = self.saved.get("chain") or {}
+            chain = self.saved["chain"] = {"balance_sats": sum(r["value"] for r in rows),
+                                           "checked_at": utcnow().isoformat(),
+                                           "attempted_at": attempted_at, "error": None}
             p = self.saved["payments"].get(self.saved["active_payment"])
             if reconcile_payment and p and p.get("txid") and p["state"] in (
                 "broadcast_unknown", "submitted", "provider_unconfirmed", "provider_confirmed"):
-                details = await self.chain.details(p["txid"])
-                confirmations = details.get("confirmations", 0)
-                if type(confirmations) is not int or confirmations < 0:
-                    raise WalletError("Invalid chain confirmation evidence")
-                p["confirmations"] = confirmations
-                p["state"] = "provider_confirmed" if confirmations else "provider_unconfirmed"
+                try:
+                    details = await self.chain.details(p["txid"])
+                    confirmations = details.get("confirmations", 0)
+                    if type(confirmations) is not int or confirmations < 0:
+                        raise ValueError
+                except (WalletError, ValueError) as exc:
+                    # #102: missing payment evidence (e.g. signed, never posted) keeps the
+                    # balance read above (signed inputs excluded) and leaves the payment
+                    # exactly as it was: never resent, cancelled, released or failed.
+                    chain["payment_check_error"] = ("payment_evidence_invalid" if isinstance(exc, ValueError)
+                                                    else "payment_evidence_unavailable")
+                    chain["payment_check_attempted_at"] = attempted_at
+                else:
+                    p["confirmations"] = confirmations
+                    p["state"] = "provider_confirmed" if confirmations else "provider_unconfirmed"
+            elif previous.get("payment_check_error") and p and p.get("txid") and p["state"] in (
+                    "broadcast_unknown", "submitted", "provider_unconfirmed"):
+                # Not reconciled this time: the earlier condition still stands.
+                for key in ("payment_check_error", "payment_check_attempted_at"):
+                    chain[key] = previous.get(key)
             await self.store.async_save(self.saved)
             return self.status()
         except WalletError:

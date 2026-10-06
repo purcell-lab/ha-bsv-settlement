@@ -34,6 +34,8 @@ def _self_test(secret):
 
     The testnet key encoding is historical and only affects the fictional,
     never-broadcast transaction below; it must not change mainnet behaviour.
+    It does sign with the live mainnet key: the signed bytes stay local and only
+    their SHA-256 is persisted (#113, informational; deliberately unchanged).
     """
     key = PrivateKey(bytes.fromhex(secret), network=Network.TESTNET)
     challenge = b"ha-bsv-settlement:offline-self-test:" + secrets.token_bytes(32)

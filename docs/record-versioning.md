@@ -34,7 +34,13 @@ also carries `schema: monthly-authorities-v1`; the ledger carries the
 `wallet_service` SQLite mock is outside this registry. Entries of the removed
 `mock` and `embedded_testnet` backends left files under the same `coordinator`,
 `operator_key` and `wallet_ledger` keys; the registry still recognises them,
-and setup refuses those entries without reading or rewriting the files.
+and setup refuses those entries without reading or rewriting the files. After
+the entry is deleted, `purge_removed_backend_stores` (administrator only,
+`entry_id` plus `confirm: true`) removes exactly those three files through HA's
+Store API. It refuses, removing nothing, while any config entry has that ID,
+when any other per-entry store (e.g. `ledger_checkpoint`) exists for it, when a
+store is unrecognised, or unless every present store is positively testnet/mock
+(testnet key re-derived, testnet-only ledger records, no mainnet draft) (#114).
 
 Existing files were not rewritten. The HA envelope already records
 `version`/`minor_version` for every store; that envelope is the explicit
@@ -161,8 +167,9 @@ monthly revision); the rest return the stored record. Cancellation inside
 collection and automatic-credit calls stays in their interruption matrices.
 Limits: monthly attempt states and unused challenges are not in the audit
 projection (#103), so the monthly audit comparison covers authorities and
-bindings only. A manual credit signed but never posted stays `broadcast_unknown` and
-the balance refresh reports `chain_check_failed` until reconciled (#102).
+bindings only. A manual credit signed but never posted stays `broadcast_unknown`; the
+balance refresh keeps the balance and reports `payment_check_error:
+payment_evidence_unavailable` until the provider has evidence (#102).
 
 ## Retention and expiry
 
@@ -174,39 +181,64 @@ failed.
 | Store / section | Bound | What is dropped | What is never dropped | Pinned by |
 |---|---|---|---|---|
 | `proxy` `observations` | Pruned when three or more sessions are derived. Each source keeps one baseline row before the previous session's opening, plus every row since. | Rows before the cut. | The counter baseline, and all rows of the latest and previous sessions. | `test_proxy_archive_keeps_exactly_newest_fifty_and_prunes_to_one_baseline` |
-| `proxy` `observations` cap | `MAX_ROWS` = 60,000 per source. | New rows. | Existing rows. Sets the persistent `observation_limit_reached` issue: the recorder is `degraded`, the latest net cost is withheld, and wallet paths that check recorder issues refuse. | `test_observation_cap_is_a_persistent_degrading_issue` |
-| `proxy` `archive` | Newest 50 derived summaries, in insertion order, deduplicated by `session_id`. A re-derived session replaces its summary in place. | Older summaries. | The latest and previous sessions, which are never archived. Wallet records bound to an expired session stay. Review, collection, closure, budget, ongoing and monthly sourcing refuse it (for example "not in retained history") and do not reprice it. `previous_session` falls back to `archive[-1]`. | `test_proxy_archive_keeps_…`, `test_rederived_session_replaces_its_archived_summary_in_place`, `test_previous_session_falls_back_to_the_archive`, `test_expired_session_fails_closed_for_review_and_collection` |
-| `proxy` `persistent_issues` | Only `observation_limit_reached` and `restart_gap_exceeds_24_hour_backfill`. | Transient issues, which are recomputed on each load or refresh. | Both persistent issues. There is no clear service. | `test_observation_cap_is_a_persistent_degrading_issue` |
+| `proxy` `observations` cap | `MAX_ROWS` = 60,000 per source. | New rows. | Existing rows. Sets the persistent `observation_limit_reached` issue: the recorder is `degraded`, the latest net cost is withheld, and wallet paths that check recorder issues refuse. An administrator clears it with `acknowledge_proxy_issue` only once every source is below the cap (#108). | `test_observation_cap_is_a_persistent_degrading_issue`, `test_observation_limit_acknowledgement_needs_room_and_keeps_overlap_flagged` |
+| `proxy` `archive` | Newest 50 derived summaries, in insertion order, deduplicated by `session_id`, plus up to 200 older summaries pinned because an open wallet record references them (#106). A re-derived session replaces its summary in place. | Older unpinned summaries. Beyond 200 pinned, the oldest pinned, with the persistent `pinned_session_limit_exceeded` issue (never silent). | The latest and previous sessions, which are never archived. A summary referenced by a non-terminal review, budget, collection, automatic credit, ongoing route or monthly binding (`session_references.py`). While any enabled mainnet entry is not loaded or its references fail, nothing already archived is evicted (`session_references_unavailable` warning). A session that does expire stays bound in the ledger; review, collection, closure, budget, ongoing and monthly sourcing refuse it ("not in retained history") and do not reprice it. `previous_session` falls back to `archive[-1]`. The stored format is unchanged: a list of the same summary dicts. | `test_proxy_archive_keeps_…`, `test_referenced_session_is_pinned_beyond_fifty_and_expires_once_resolved`, `test_unknown_references_pause_eviction_and_warn`, `test_pinned_overflow_keeps_newest_pinned_raises_issue_and_warns_near_limit`, `test_rederived_session_replaces_its_archived_summary_in_place`, `test_previous_session_falls_back_to_the_archive`, `test_expired_session_fails_closed_for_review_and_collection` |
+| `proxy` `persistent_issues` | Only `observation_limit_reached`, `restart_gap_exceeds_24_hour_backfill` and `pinned_session_limit_exceeded`. | Transient issues, which are recomputed on each load or refresh. | The persistent issues, until an administrator runs `acknowledge_proxy_issue` (audited log line; refused for other issues and non-administrators). Acknowledging `observation_limit_reached` or `restart_gap_exceeds_24_hour_backfill` stores its window `{issue, since, until, acknowledged_at, acknowledged_by}` in the proxy config entry data `recorder_issue_windows` (newest 20), not in the store. Every session overlapping a window gets that issue as a quality flag, which blocks review and settlement; archived summaries keep it. Observation limit: from the first lost row to the prune that made room; after a restart the start is unknown, so every session opened before the acknowledgement is flagged. Restart gap: checkpoint to the start of the 24 h backfill, or to load time if backfill fell short; unknown after a further restart. | `test_observation_cap_is_a_persistent_degrading_issue`, `test_observation_limit_acknowledgement_needs_room_and_keeps_overlap_flagged`, `test_restored_limit_without_window_flags_every_session_opened_before_acknowledgement`, `test_restart_gap_acknowledgement_flags_only_sessions_spanning_the_gap`, `test_pinned_limit_acknowledgement_and_admin_service_boundary` |
 | `proxy` `tariff_provenance` | 12 versions per session; 200 sessions, evicting the oldest first capture; 2,000 intervals per direction. | Versions after the 12th (`version_limit_reached`), the oldest sessions, and intervals beyond the cap (marked incomplete). | The session being captured. Copies frozen into manual reviews are unaffected. | `test_tariff_provenance.py::test_version_limit_is_flagged_and_never_overwrites`, `test_tariff_provenance_evicts_oldest_captured_session_beyond_cap` |
 | `wallet_audit` | `MAX_ENTRIES` = 2,000. | The oldest entries. | `anchor`: the sequence and hash of the last dropped entry. The retained chain verifies from it. | `test_record_versioning.py::test_retention_is_bounded_and_trimmed_chain_still_verifies` |
 | `ocpp_shadow` import section | `MAX_EVENTS` = 1,000, `MAX_SPANS` = 50. | The oldest journal events and closed spans, with `journal_trimmed` and `spans_trimmed` set. | The open span. Shadow data is never financial (`billing_eligible: false`). | `test_ocpp_shadow.py::test_bounded_retention` |
 | `ocpp_shadow` export section | `MAX_EVENTS` = 1,000, `MAX_SPANS` = 50. | Same as the import section. The trimmed section still passes `validate_section`. | The open span. | `test_export_shadow_journal_and_spans_trim_with_flags_and_reload` |
 | `recorder_reconciliation` | `MAX_RESULTS` = 50. | The oldest results, with `results_trimmed` set. | Lifetime `totals`. | `test_recorder_readiness.py::test_ledger_watermark_retention_and_refusal` |
-| Wallet ledger: payments, reviews, budgets, collections, automatic credits, ongoing routes, closures | No expiry. | Nothing. | Everything. | `test_automatic_credit_summary_window_is_display_only` and the display tests below |
+| Wallet ledger: payments, reviews, budgets, collections, automatic credits, ongoing routes, closures | No expiry. | Nothing. | Everything. | `test_automatic_credit_summary_keeps_old_unresolved_and_caps_resolved` and the display tests below |
 
-**Display windows.** Several status summaries show only the newest 20 rows, by
-insertion order:
+**Display windows.** Several status summaries show every unresolved row plus
+the newest resolved rows filling to 20, in insertion order
+(`summary_window.py`, #105):
 
 - `automatic_credit.payments` (`auto_credit.py`)
 - `driver_approvals`, which excludes weekly children (`budget.py`)
-- `session_payments`: 20 manual reviews plus 20 driver collections
-  (`mainnet.py`)
+- `session_payments`: manual reviews and driver collections, each windowed
+  separately (`mainnet.py`)
 - `ongoing_credit.sessions`, and the routes per receiving registration
   (`ongoing_credit.py`)
 
-`closed_sessions` is not windowed. These windows are views only. The tests
-show that the saved rows are unchanged and stay reachable through their
-per-ID status services. However, a window selects by age, not by state. An
-old, unresolved item leaves the dashboard summary once 20 newer items exist,
-and the `wallet_summary` counts are counts of the windowed lists. This is a
-known gap, recorded in the display tests.
+`closed_sessions` is not windowed. Each list has a `{total, shown, unresolved}`
+companion (`automatic_credit.payments_window`, `driver_approvals_window`,
+`session_payments_window`, `ongoing_credit.sessions_window`). The
+`wallet_summary` counts are ledger totals, and its `display_windows` attribute
+records the companions. These windows are views only: the tests show that the
+saved rows are unchanged and stay reachable through their per-ID status
+services.
+
+Resolved means no further payment action can occur. Any other state,
+including an unknown one, is unresolved and stays visible:
+
+| Record | Resolved |
+| --- | --- |
+| Automatic credit | `provider_confirmed` |
+| Ongoing route | its credit item is `provider_confirmed`; with no item, `no_operator_credit` |
+| Driver collection | `provider_confirmed`; or `ready` (unclaimed) once its approval is `expired`, `revoked` or `charge_waived` |
+| Manual review | `cancelled`, `no_payment_due`, `driver_payment_provider_confirmed`; an unpaid `awaiting_account_approval` or `credit_review_approved` review past `expires_at` with no payment request; with a credit draft, the draft is `provider_confirmed`, `expired`, `cancelled` or `cancelled_driver_changed` |
+| Driver approval | no unresolved collection or credit under it (weekly parents include their children), and it is `expired`, `revoked` or `charge_waived`, or a non-weekly approval whose own collection or credit is `provider_confirmed` |
+
+A large unresolved backlog makes a list longer than 20 rather than hiding
+any of it.
 
 **Expiry of a recorder session.** A session that leaves the latest, previous
 and archive views cannot be sourced again. Collection, review approval,
 closure or waiver, budget binding and monthly sourcing all refuse it. The
-ledger row stays unresolved and nothing is signed, but there is no in-product
-completion path. Settle or cancel bound sessions before 50 newer sessions are
-recorded.
+ledger row stays unresolved and nothing is signed. Since #106 a session that an
+open wallet record references is pinned in the archive and does not expire
+with the newest-50 window; it expires once every referencing record is
+terminal (review cancelled, no payment due or paid; budget revoked, waived or
+expired with no attempt in flight; collection or credit `provider_confirmed`
+or waived; ongoing route paid or `no_operator_credit`). Anything not
+positively terminal stays pinned, including expired reviews that were never
+cancelled and every monthly binding. The recorder status reports
+`archive_retention` counts and the warnings `pinned_sessions_near_limit` (within
+5 of the 200 cap), `referenced_session_not_retained` (already expired, for
+example before this release) and `session_references_unavailable`. Sessions
+that expired before upgrading are not restored.
 
 ## OCPP and proxy identifiers
 
@@ -242,10 +274,20 @@ options flow or reconfigure flow for the proxy.
   the entity back restores observation. A new proxy entry on the new ID is a
   separate recorder: it has a new entry ID and store, and different session
   IDs, because the ID hashes the state entity_id. Existing wallet rows remain
-  bound to the old entry. The proxy pins no registry `unique_id`. If a
-  different sensor later takes the old `entity_id`, the proxy observes it
-  without an identity check. Only the unit checks in the session derivation
-  apply.
+  bound to the old entry. Since #107 each source's registry identity
+  (`platform`, `unique_id`, `config_entry_id`) is pinned in config entry data
+  as `source_identity`: at creation, or adopted once on the first load of an
+  older entry (`source_binding_adopted_at`, logged). If a different sensor
+  takes a pinned `entity_id` (another `unique_id`, platform or config entry, or
+  a registered entity on an `unregistered` pin, or a state on an ID whose
+  registered entity is gone), the recorder reports `source_binding_changed`,
+  is `degraded`, withholds the net cost, records and backfills nothing from
+  that source, and every wallet path that checks recorder issues refuses. The
+  issue is recomputed against the pin on every refresh and restart, so it lasts
+  while the mismatch does; the pin is never re-adopted. A source with no
+  registry entry is pinned as `unregistered`: it does not block, but the
+  status warns `<source>:source_unregistered`, since its identity cannot be
+  checked. To accept a genuinely replaced sensor, create a new proxy entry.
 - **OCPP shadow.** Each source is pinned by registry `unique_id`, config entry
   and device (`source_binding`). A rename, a moved device or a changed
   `unique_id` makes the running coordinator `incompatible`. It closes the open
@@ -253,7 +295,9 @@ options flow or reconfigure flow for the proxy.
   setup raises and leaves the store untouched. Metadata, export and reference
   bindings degrade to `metadata_binding_changed` or `export_binding_changed`,
   or are ignored. These cases are pinned by
-  `test_renamed_proxy_source_degrades_and_is_not_followed` and
+  `test_renamed_proxy_source_degrades_and_is_not_followed`,
+  `test_different_sensor_on_pinned_entity_id_degrades_and_is_not_recorded`,
+  `test_proxy_adopts_source_identity_once_and_keeps_it_across_restart` and
   `test_renamed_ocpp_shadow_source_is_incompatible_and_refuses_reload`.
 
 **Boundary-rule changes.** Changes to the open and close rules in

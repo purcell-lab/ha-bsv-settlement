@@ -82,3 +82,19 @@ def test_summary_tolerates_missing_or_odd_ledger_fields():
     assert attributes["ongoing_credit_effective"] is None
     assert attributes["automatic_credit_payment_count"] is None
     assert attributes["automatic_credit_enabled"] is None
+
+
+def test_counts_are_ledger_totals_not_display_window_lengths():
+    health = busy_health()
+    window = {"total": 57, "shown": 20, "unresolved": 3}
+    health.update(driver_approvals_window=window, session_payments_window={**window, "total": 90})
+    health["ongoing_credit"]["sessions_window"] = {**window, "total": 41}
+    health["automatic_credit"]["payments_window"] = {**window, "total": 64}
+    stored = recorded(sensor("operator_wallet_status", health))
+    assert (stored["driver_approval_count"], stored["session_payment_count"],
+            stored["ongoing_credit_session_count"], stored["automatic_credit_payment_count"]) == (57, 90, 41, 64)
+    assert stored["display_windows"] == {
+        "driver_approvals": window, "session_payments": {**window, "total": 90},
+        "ongoing_credit_sessions": {**window, "total": 41},
+        "automatic_credit_payments": {**window, "total": 64}}
+    assert len(json.dumps(stored)) < RECORDER_LIMIT

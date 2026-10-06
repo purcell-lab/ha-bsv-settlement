@@ -304,6 +304,8 @@ session_review_status:
       selector:
         boolean:
 bind_session:
+  name: Bind session
+  description: Administrator only. Start a frozen, draft-only session against the external driver wallet. Never pays.
   fields:
     config_entry_id:
       required: true
@@ -325,6 +327,8 @@ bind_session:
       selector:
         text:
 add_interval:
+  name: Add metered interval
+  description: Administrator only. Persist one validated interval with final directional prices.
   fields:
     config_entry_id:
       required: true
@@ -340,6 +344,8 @@ add_interval:
       selector:
         object:
 prepare_session:
+  name: Prepare session
+  description: Administrator only. Reconcile energy, freeze the ledger and record a blocked settlement draft; never pays.
   fields:
     config_entry_id:
       required: true
@@ -379,7 +385,7 @@ refresh:
           integration: bsv_settlement
 wallet_status:
   name: Operator wallet status
-  description: Read the mainnet operator wallet status without network access or key export.
+  description: Administrator only. Read the mainnet operator wallet status without network access or key export.
   fields:
     config_entry_id:
       required: true
@@ -387,7 +393,7 @@ wallet_status:
         text:
 wallet_self_test:
   name: Offline operator wallet self-test
-  description: Verify a real SDK signature and sign a fictional-source transaction. No broadcast or funds.
+  description: Administrator only. Verify a real SDK signature and sign a fictional-source transaction with the operator key; only a digest is saved. No broadcast or funds.
   fields:
     config_entry_id:
       required: true
@@ -473,6 +479,20 @@ cancel_operator_payment:
       required: true
       selector:
         text:
+purge_removed_backend_stores:
+  name: Remove stores of a deleted testnet or mock entry
+  description: Administrator only. Permanently delete the coordinator, wallet-ledger and unencrypted operator-key stores left by a deleted mock or embedded_testnet entry. Refused, with nothing removed, while any config entry has this ID, or if any store is a mainnet wallet, another backend's or unrecognised. Archive the files first if you may need them. Returns the removed store keys; repeat calls remove nothing.
+  fields:
+    entry_id:
+      description: ID of the deleted mock or embedded_testnet config entry (the suffix of its .storage files).
+      required: true
+      selector:
+        text:
+    confirm:
+      description: Confirm permanent deletion of that entry's stores.
+      required: true
+      selector:
+        boolean:
 create_session_budget:
   name: Create session budget invitation
   description: Sign an invitation before charging, or for a named open session. No payment, funds reservation or charger control.
@@ -618,6 +638,24 @@ configure_ongoing_credit:
     confirm_ongoing_mainnet_credits:
       selector:
         boolean:
+acknowledge_proxy_issue:
+  name: Acknowledge a sensor-proxy issue
+  description: Administrator only, audited in the log. Clears one persistent recorder issue on a sensor-proxy entry. observation_limit_reached clears only once every source is below the 60,000-observation cap. Sessions that overlapped an observation-limit or restart-gap window keep that quality flag and stay blocked. Never changes amounts, pays or controls the charger.
+  fields:
+    config_entry_id:
+      required: true
+      description: The sensor-proxy entry.
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    issue:
+      required: true
+      selector:
+        select:
+          options:
+            - observation_limit_reached
+            - restart_gap_exceeds_24_hour_backfill
+            - pinned_session_limit_exceeded
 get_credit_receipt_link:
   name: Recover original private link for a confirmed driver credit
   description: Administrator only. Returns the existing private session link after matching the confirmed credit, transaction and original receiving wallet. No payment, refresh, new invitation, token rotation or change to consent. Share the response only with the original driver.

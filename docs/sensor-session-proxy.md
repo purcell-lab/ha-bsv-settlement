@@ -24,6 +24,17 @@ flag. The operator must check that the energy and state entities represent the
 same physical charger. The configuration flow validates entity existence,
 distinctness and units; it does not certify metering or prove device identity.
 
+Each source's entity-registry identity (`platform`, `unique_id`,
+`config_entry_id`) is pinned in the config entry as `source_identity`.
+Entries created before this pin adopt the current identities once on their
+first load and record `source_binding_adopted_at`. If a different sensor later
+appears under a pinned entity ID, the recorder reports
+`source_binding_changed`, is `degraded`, withholds the net cost and ignores
+that source until the original identity returns. A renamed or removed source
+reads as `<source>:unavailable`, as before. A source without a registry entry
+is pinned as `unregistered` and only warns. The status entity shows
+`source_identity` per source.
+
 No source entity names, wallet addresses or private installation identifiers
 are hardcoded into the published component. It requires HA recorder history
 for startup/restart gap recovery; ensure all five source sensors are recorded.
@@ -81,8 +92,14 @@ flagged and costs are held for review rather than silently bridged.
 Private HA storage checkpoints every five minutes, on a new latest session and
 on integration unload. This reduces repeated large storage writes; recorder
 history is required to recover observations since the previous checkpoint.
-The latest two sessions retain source observations for repricing, and up to 50
-older summary records are retained. Their amounts are not immutable commercial
+The latest two sessions retain source observations for repricing, and the 50
+newest older summary records are retained. Up to 200 further summaries stay
+pinned while an open wallet record (review, budget, collection, credit, ongoing
+route or monthly binding) still references them; they expire once those
+records are terminal. Beyond 200 the oldest pinned is dropped and the
+persistent `pinned_session_limit_exceeded` issue degrades the recorder. If a
+mainnet wallet entry is not loaded, nothing already archived is evicted. The
+status entity reports `archive_retention` and non-blocking `warnings`. Their amounts are not immutable commercial
 invoices. This is not an unlimited audit archive or a substitute for recorder
 backup and retention management.
 
@@ -97,6 +114,17 @@ fails closed with a visible issue; it does not silently discard energy and
 continue billing. A long uninterrupted session may require an explicit
 retention redesign before this limit is reached.
 
+`observation_limit_reached`, `restart_gap_exceeds_24_hour_backfill` and
+`pinned_session_limit_exceeded` persist until an HA administrator runs
+`bsv_settlement.acknowledge_proxy_issue` with the proxy entry and the issue.
+The action is logged with the user ID. It refuses the observation limit while
+any source still holds 60,000 rows after pruning, and refuses any other issue.
+Sessions that overlapped an acknowledged observation-limit or restart-gap
+window keep that issue as a quality flag and cannot be reviewed or settled;
+when the window start is unknown (the issue was restored after a restart),
+every session opened before the acknowledgement stays flagged. The status
+entity lists `acknowledged_issues`.
+
 ## Entities and dashboard
 
 The recorder exposes status, proxy transaction ID, session import/export kWh
@@ -108,8 +136,9 @@ attributes.
 Native Markdown dashboard cards can reference those attributes and update
 automatically. Label the ID origin, provisional costs and stale/unavailable
 states. Do not connect these sensors directly to a wallet broadcast action.
-The generic `refresh` action may refresh this backend; all wallet/session
-mutation actions are rejected for it.
+The generic `refresh` action may refresh this backend, and
+`acknowledge_proxy_issue` (administrator only) may clear a persistent issue;
+all wallet/session mutation actions are rejected for it.
 
 ## Validation boundary
 
