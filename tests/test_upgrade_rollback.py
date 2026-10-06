@@ -5,7 +5,9 @@ by the v0.1.2 release itself and ``main`` by main at fdbcacc (see its
 ``manifest.json``). Private keys are never committed: each run generates a new,
 unfunded identity and substitutes it before loading.
 
-"Upgrade" means the current integration loads those stores. "Rollback
+"Upgrade" means the current integration loads those stores; entries of the
+removed ``mock`` and ``embedded_testnet`` backends are refused instead, and
+their stores are left byte-identical. "Rollback
 compatibility" means that, after the current code has loaded and re-saved them,
 the on-disk store versions are unchanged and every earlier top-level key is
 still present, so the previous release can read them again. This is automated
@@ -13,24 +15,21 @@ evidence only; it is not the protected restore drill tracked by #4, and it does
 not make a downgrade safe after new features have written state (see
 docs/release-checklist.md, "Downgrade hazards").
 """
-import copy
 import json
 from pathlib import Path
 import re
 import socket
-from types import MappingProxyType
 
 import pytest
 
 pytest.importorskip("homeassistant")
 from homeassistant import bootstrap, loader
-from homeassistant.config_entries import ConfigEntries, ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntries, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
 from custom_components.bsv_settlement.api import WalletError
-from custom_components.bsv_settlement.coordinator import SettlementCoordinator
 from custom_components.bsv_settlement.embedded import _identity
 from custom_components.bsv_settlement.ledger_checkpoint import fingerprint
 from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
@@ -100,57 +99,66 @@ def assert_rollback_readable(before, after):
         assert type(after["data"][key]) is type(value), f"{before['key']}: {key} retyped"
 
 
+MOCK_ENTRY = {
+    # Shape written by the removed mock config flow: no "backend" key.
+    "created_at": "2026-10-02T00:00:00+00:00", "data": {
+        "service_url": "http://wallet-mock.invalid:8091", "api_token": "fictional-token"},
+    "disabled_by": None, "discovery_keys": {}, "domain": "bsv_settlement", "entry_id": MOCK,
+    "minor_version": 1, "modified_at": "2026-10-02T00:00:00+00:00", "options": {},
+    "pref_disable_new_entities": False, "pref_disable_polling": False, "source": "user",
+    "subentries": [], "title": "BSV Settlement (Mock)",
+    "unique_id": "http://wallet-mock.invalid:8091", "version": 1}
+
+
+def storage_snapshot(config_dir, entry_id):
+    return {p.name: p.read_bytes() for p in (Path(config_dir) / ".storage").iterdir()
+            if p.name.endswith(entry_id)}
+
+
 @pytest.mark.asyncio
-async def test_upgrade_loads_previous_testnet_and_proxy_entries_in_full_ha(tmp_path):
-    """HA reads the earlier config entries and stores from disk and sets them up."""
-    identities = materialize(tmp_path, entries=(TESTNET, PROXY))
-    names = [f"bsv_settlement.{TESTNET}", f"bsv_settlement.embedded.{TESTNET}",
-             f"bsv_settlement.operator_key.{TESTNET}", f"bsv_settlement.proxy.{PROXY}"]
-    before = {name: read_store(tmp_path, name) for name in names}
-    key_bytes = (tmp_path / ".storage" / f"bsv_settlement.operator_key.{TESTNET}").read_bytes()
+async def test_removed_mock_and_testnet_entries_fail_closed_and_can_be_deleted(tmp_path):
+    """Legacy entries raise ConfigEntryError; stores untouched; other entries load; delete works."""
+    materialize(tmp_path, entries=(TESTNET, PROXY))
+    entries_path = tmp_path / ".storage" / "core.config_entries"
+    config = json.loads(entries_path.read_text())
+    config["data"]["entries"].append(MOCK_ENTRY)
+    entries_path.write_text(json.dumps(config))
+    legacy = {entry_id: storage_snapshot(tmp_path, entry_id) for entry_id in (TESTNET, MOCK)}
+    assert len(legacy[TESTNET]) == 3 and len(legacy[MOCK]) == 1
+    proxy_before = read_store(tmp_path, f"bsv_settlement.proxy.{PROXY}")
     hass = HomeAssistant(str(tmp_path))
     hass.config.skip_pip = True
     loader.async_setup(hass)
     hass.config_entries = ConfigEntries(hass, {})
     try:
-        assert "bsv_settlement" in await loader.async_get_custom_components(hass)
         assert await bootstrap.async_load_base_functionality(hass)
         assert await async_setup_component(hass, "bsv_settlement", {})
         await hass.async_block_till_done()
         entries = {e.entry_id: e for e in hass.config_entries.async_entries("bsv_settlement")}
-        assert set(entries) == {TESTNET, PROXY}
-        assert all(e.state is ConfigEntryState.LOADED for e in entries.values())
-
-        # Identity: same key, no rotation, same public key in the entry and sensor.
-        public_key = identities["testnet"]["public_key"]
-        assert entries[TESTNET].data["operator_public_key"] == public_key
-        coordinator = hass.data["bsv_settlement"][TESTNET]
-        assert coordinator.api.identity["public_key"] == public_key
-        registry = er.async_get(hass)
-        wallet = next(r for r in er.async_entries_for_config_entry(registry, TESTNET)
-                      if r.unique_id.endswith("operator_wallet_status"))
-        state = hass.states.get(wallet.entity_id)
-        assert state.state == "ready_broadcast_disabled"
-        assert state.attributes["operator_public_key"] == public_key
-
-        # Account history: sessions, frozen payloads and wallet records unchanged.
-        assert coordinator.saved == before[names[0]]["data"]
-        assert coordinator.api.saved == before[names[1]]["data"]
-
+        assert set(entries) == {TESTNET, PROXY, MOCK}
+        assert entries[PROXY].state is ConfigEntryState.LOADED
+        for entry_id, backend in ((TESTNET, "embedded_testnet"), (MOCK, "mock")):
+            assert entries[entry_id].state is ConfigEntryState.SETUP_ERROR
+            assert entries[entry_id].reason.startswith(f"The '{backend}' backend was removed")
+            assert "Delete this entry" in entries[entry_id].reason
+            assert entry_id not in hass.data["bsv_settlement"]
+            assert not er.async_entries_for_config_entry(er.async_get(hass), entry_id)
         proxy = hass.data["bsv_settlement"][PROXY]
-        for key, rows in before[names[3]]["data"]["observations"].items():
-            assert proxy.observations[key][:len(rows)] == rows
-        assert proxy.archive[:len(before[names[3]]["data"]["archive"])] == before[names[3]]["data"]["archive"]
-
-        for entry_id in (TESTNET, PROXY):
-            assert await hass.config_entries.async_unload(entry_id)
+        assert proxy.archive[:len(proxy_before["data"]["archive"])] == proxy_before["data"]["archive"]
+        # A reload retries and fails the same way, still without touching storage.
+        assert not await hass.config_entries.async_reload(TESTNET)
+        assert entries[TESTNET].state is ConfigEntryState.SETUP_ERROR
+        for entry_id in (TESTNET, MOCK):
+            assert (await hass.config_entries.async_remove(entry_id))["require_restart"] is False
+        await hass.async_block_till_done()
+        assert {e.entry_id for e in hass.config_entries.async_entries("bsv_settlement")} == {PROXY}
+        assert entries[PROXY].state is ConfigEntryState.LOADED
+        assert await hass.config_entries.async_unload(PROXY)
         await hass.async_block_till_done()
     finally:
         await hass.async_stop(force=True)
-    assert (tmp_path / ".storage" / f"bsv_settlement.operator_key.{TESTNET}").read_bytes() == key_bytes
-    for name in names:
-        assert_rollback_readable(before[name], read_store(tmp_path, name))
-    assert read_store(tmp_path, names[1])["data"] == before[names[1]]["data"]
+    for entry_id, files in legacy.items():
+        assert storage_snapshot(tmp_path, entry_id) == files  # Left in place, byte-identical.
 
 
 @pytest.mark.asyncio
@@ -224,56 +232,6 @@ async def test_split_restore_of_older_mainnet_ledger_fails_closed(tmp_path):
     finally:
         await hass.async_stop(force=True)
     assert json.loads(ledger_path.read_text()) == older  # Left intact for operator review.
-
-
-@pytest.mark.asyncio
-async def test_upgrade_from_v012_release_store_keeps_history_and_open_session(tmp_path):
-    """The v0.1.2 mock coordinator store loads, refreshes and accepts the open session."""
-    materialize(tmp_path, entries=())
-    name = f"bsv_settlement.{MOCK}"
-    before = read_store(tmp_path, name)
-    sessions = before["data"]["sessions"]
-    done = next(s for s in sessions.values() if s.get("payload"))
-    open_session = next(s for s in sessions.values() if not s.get("payload"))
-
-    class StubMockService:
-        """Returns the stored settlement; any other call would be a new payment path."""
-        mode = "mock"
-        calls = []
-
-        async def call(self, method, path, data=None):
-            self.calls.append((method, path))
-            if (method, path) == ("GET", "/v1/health"):
-                return {"status": "ok", "mode": "mock"}
-            if (method, path) == ("GET", f"/v1/settlements/{done['settlement_id']}"):
-                return copy.deepcopy(done["remote"])
-            raise AssertionError(f"unexpected wallet call {method} {path}")
-
-    entry = ConfigEntry(version=1, minor_version=1, domain="bsv_settlement",
-                        title="BSV Settlement (Mock)",
-                        data={"service_url": "http://wallet-mock.invalid:8091",
-                              "api_token": "fictional-token"},
-                        source="user", unique_id="http://wallet-mock.invalid:8091", options={},
-                        discovery_keys=MappingProxyType({}), subentries_data=[], entry_id=MOCK)
-    hass = HomeAssistant(str(tmp_path))
-    try:
-        coord = SettlementCoordinator(hass, entry, StubMockService())
-        await coord.load()
-        assert coord.saved == before["data"]
-        data = await coord._async_update_data()
-        assert data["sessions"][done["session_id"]]["remote"]["receipt_id"] == done["remote"]["receipt_id"]
-        assert data["latest"] == before["data"]["latest"]
-        interval = {**open_session["intervals"][0],
-                    "start": open_session["intervals"][0]["end"],
-                    "end": open_session["intervals"][0]["end"].replace(":30:", ":59:")}
-        await coord.execute("add_interval", {"session_id": open_session["session_id"],
-                                             "interval": interval})
-        assert len(coord.saved["sessions"][open_session["session_id"]]["intervals"]) == 2
-    finally:
-        await hass.async_stop(force=True)
-    after = read_store(tmp_path, name)
-    assert_rollback_readable(before, after)
-    assert after["data"]["sessions"][done["session_id"]] == done
 
 
 def test_store_versions_are_pinned_for_rollback_review():

@@ -202,7 +202,7 @@ async def test_real_ha_proxy_storage_restart_and_read_only(tmp_path, monkeypatch
         sensor = ProxySensor(c, entry, "transaction_id", "Transaction", None)
         assert sensor.native_value == original
         with pytest.raises(HomeAssistantError, match="read-only"):
-            await c.execute("request_payment", {})
+            await c.execute("prepare_session", {})
         with pytest.raises(HomeAssistantError, match="read-only"):
             await c.execute("broadcast_operator_payment", {})
         await c.close()

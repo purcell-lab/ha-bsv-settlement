@@ -1,6 +1,6 @@
 {
   "domain": "bsv_settlement",
-  "name": "BSV Settlement (Mock PoC)",
+  "name": "BSV Settlement",
   "version": "0.1.2",
   "documentation": "https://github.com/purcell-lab/ha-bsv-settlement",
   "issue_tracker": "https://github.com/purcell-lab/ha-bsv-settlement/issues",

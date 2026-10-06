@@ -1,10 +1,10 @@
 {
-  "title": "BSV Settlement (Mock PoC)",
+  "title": "BSV Settlement",
   "config": {
     "step": {
       "user": {
         "title": "Select settlement backend",
-        "description": "Choose a mock wallet, an embedded operator wallet, or a separate read-only sensor session recorder.",
+        "description": "Choose a read-only sensor session recorder, a read-only OCPP import shadow, or the guarded mainnet operator wallet (real funds).",
         "data": {"backend": "Backend"}
       },
       "proxy": {
@@ -38,11 +38,6 @@
           "boot_notification_entity": "Boot notification sensor (Boot.Notification)"
         }
       },
-      "embedded": {
-        "title": "Embedded testnet operator wallet",
-        "description": "Creates a real private key on this Home Assistant. It is stored in an owner-only local file, not encrypted or hardware protected. HA administrators and backups can access it. Keep backups secure. Do not fund this validation wallet. Broadcasting, driver payment approval and the budget gate are not implemented. The driver wallet stays external.",
-        "data": {"acknowledge_key_custody": "I accept local operator-key custody and will not fund this wallet"}
-      },
       "mainnet": {
         "title": "Mainnet operator wallet: real funds",
         "description": "Creates a separate mainnet key stored locally in an owner-only file, not encrypted or hardware-protected. HA administrators and backups can access it. Protect and verify a backup before funding. Identity submission is unverified; a separate receiving address and exact administrator approval are required for each operator payment. Network checks disclose the operator address to WhatsOnChain. Driver debits and automatic charging-session settlement remain disabled.",
@@ -51,19 +46,13 @@
           "acknowledge_mainnet": "I understand this wallet uses real BSV mainnet funds",
           "enable_broadcast": "Enable guarded broadcasting with exact payment approval"
         }
-      },
-      "mock": {
-        "title": "Connect to a mock wallet service",
-        "description": "Mock only. No real funds, private keys or wallet approval credentials. HTTP is permitted only for isolated mock testing; use HTTPS on shared networks.",
-        "data": {"service_url": "Service URL", "api_token": "Service API token"}
       }
     },
-    "error": {"cannot_connect": "Cannot connect, invalid URL/token, or service is not in mock mode.",
-              "invalid_ocpp_shadow_sources": "Choose enabled OCPP import-register, transaction-ID and connector-status sensors from the same connector, with a numeric Wh/kWh/MWh import register.",
+    "error": {"invalid_ocpp_shadow_sources": "Choose enabled OCPP import-register, transaction-ID and connector-status sensors from the same connector, with a numeric Wh/kWh/MWh import register.",
               "invalid_ocpp_shadow_metadata": "Choose enabled Version.OCPP, Configuration.Keys and Boot.Notification sensors from the same OCPP entry and charger as the observed sources, or leave them blank.",
               "invalid_proxy_sources": "Choose five different existing sensor entities.",
               "invalid_proxy_units": "Energy counters must be MWh and price sensors must be $/kWh.",
-              "acknowledgement_required": "Acknowledge the local-key custody and unfunded validation restrictions."},
+              "acknowledgement_required": "Accept every acknowledgement to continue; no entry was created."},
     "abort": {"already_configured": "This backend is already configured."}
   },
   "options": {
@@ -207,55 +196,47 @@
     "wallet_status": {
       "name": "Operator wallet status",
       "description": "Read public embedded-wallet status. No network request or key export.",
-      "fields": {"config_entry_id": {"name": "Integration", "description": "The embedded operator-wallet entry."}}
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."}}
     },
     "wallet_self_test": {
       "name": "Offline operator wallet self-test",
       "description": "Verify an SDK identity signature and sign a fictional-source transaction offline. Does not broadcast, move funds or export signed bytes.",
-      "fields": {"config_entry_id": {"name": "Integration", "description": "The embedded operator-wallet entry."}}
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."}}
     },
     "bind_session": {
       "name": "Bind session",
-      "description": "Associate a new session with the synthetic driver wallet.",
+      "description": "Start a frozen, draft-only session against the external driver wallet. Never pays.",
       "fields": {
-        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Unique site, charger, connector and transaction reference."},
         "started_at": {"name": "Started at", "description": "ISO timestamp including timezone."},
-        "driver_binding_id": {"name": "Driver binding", "description": "Use driver-demo-01 for this mock."}
+        "driver_binding_id": {"name": "Driver binding", "description": "Only driver-external is accepted."}
       }
     },
     "add_interval": {
       "name": "Add metered interval",
       "description": "Persist one validated interval with final directional prices.",
       "fields": {
-        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Previously bound session."},
         "interval": {"name": "Interval", "description": "Full interval object as shown in README."}
       }
     },
     "prepare_session": {
       "name": "Prepare session",
-      "description": "Reconcile energy, freeze the ledger and prepare a mock settlement; does not approve payment.",
+      "description": "Reconcile energy, freeze the ledger and record a blocked settlement draft; never pays.",
       "fields": {
-        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
+        "config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."},
         "session_id": {"name": "Session ID", "description": "Previously bound session."},
         "ended_at": {"name": "Ended at", "description": "ISO timestamp including timezone."},
         "final_import_wh": {"name": "Final import", "description": "Session import delta from validated meter counters, in Wh."},
         "final_export_wh": {"name": "Final export", "description": "Session export delta from validated meter counters, in Wh."}
       }
     },
-    "request_payment": {
-      "name": "Request mock payment",
-      "description": "Request simulated payer approval. This does not approve or send real funds.",
-      "fields": {
-        "config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."},
-        "session_id": {"name": "Session ID", "description": "Prepared session."}
-      }
-    },
     "refresh": {
       "name": "Refresh",
       "description": "Reconcile existing settlements without approving a payment.",
-      "fields": {"config_entry_id": {"name": "Integration", "description": "The mock settlement integration entry."}}
+      "fields": {"config_entry_id": {"name": "Integration", "description": "The mainnet operator-wallet entry."}}
     }
   }
 }

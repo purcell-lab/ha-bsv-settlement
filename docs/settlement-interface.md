@@ -1,6 +1,6 @@
 # Home Assistant and BSV wallet settlement
 
-> Historical interface draft for the original mock. The current target design retains a budget gate, and development now includes an embedded, broadcast-disabled SDK wallet. See the [current README](../README.md) and [embedded-wallet guide](embedded-operator-wallet.md). The no-budget flow below describes the existing mock, not the full target design.
+> Historical interface draft for the original mock. The current target design retains a budget gate, and development now includes an embedded, broadcast-disabled SDK wallet. See the [current README](../README.md) and [embedded-wallet guide](embedded-operator-wallet.md). The no-budget flow below describes the standalone mock service, not the full target design. The HA integration no longer has a mock backend or a `request_payment` action; the remaining `bind_session`, `add_interval` and `prepare_session` actions only record never-paying drafts on the mainnet operator-wallet entry.
 
 ## Minimal proof-of-concept interface
 

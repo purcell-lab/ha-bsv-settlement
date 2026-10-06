@@ -1,18 +1,18 @@
-"""Mock settlement and isolated, broadcast-disabled embedded operator wallet."""
+"""Guarded mainnet operator wallet, sensor session proxy and OCPP import shadow."""
 from pathlib import Path
 import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.importlib import async_import_module
 
-from .api import WalletAPI
 from .const import DOMAIN, SERVICES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
+# Removed backends: such entries are refused, never migrated; their stores are left untouched.
+REMOVED_BACKENDS = ("mock", "embedded_testnet")
 
 
 async def async_setup(hass, config):
@@ -88,13 +88,12 @@ async def async_setup(hass, config):
             vol.Optional("expected_recipient_address"): str,
             vol.Optional("confirm_ongoing_mainnet_credits"): bool},
         "bind_session": {**per_session, vol.Required("started_at"): str,
-                         vol.Required("driver_binding_id", default="driver-demo-01"): vol.In(
-                             ["driver-demo-01", "driver-external"])},
+                         vol.Required("driver_binding_id", default="driver-external"): vol.In(
+                             ["driver-external"])},
         "add_interval": {**per_session, vol.Required("interval"): dict},
         "prepare_session": {**per_session, vol.Required("ended_at"): str,
                             vol.Required("final_import_wh"): vol.All(int, vol.Range(min=0)),
                             vol.Required("final_export_wh"): vol.All(int, vol.Range(min=0))},
-        "request_payment": per_session,
         "refresh": common,
         "wallet_status": common,
         "wallet_self_test": common,
@@ -234,7 +233,17 @@ async def async_setup(hass, config):
     return True
 
 
+def removed_backend(entry):
+    # Mock entries stored no "backend" key, only service_url/api_token.
+    backend = entry.data.get("backend") or ("mock" if "service_url" in entry.data else None)
+    return backend if backend in REMOVED_BACKENDS else None
+
+
 async def async_setup_entry(hass, entry):
+    if removed := removed_backend(entry):
+        raise ConfigEntryError(
+            f"The '{removed}' backend was removed from this integration. Delete this entry; "
+            "its stored records are left in place and are not read or changed.")
     if entry.data.get("backend") == "ocpp_import_shadow":
         from .ocpp_shadow import OCPPShadowCoordinator
         coordinator = OCPPShadowCoordinator(hass, entry)
@@ -263,18 +272,15 @@ async def async_setup_entry(hass, entry):
             hass.data[DOMAIN].pop(entry.entry_id, None)
             raise
         return True
-    if entry.data.get("backend") in ("embedded_testnet", "embedded_mainnet"):
-        from .api import WalletError
-        is_mainnet = entry.data["backend"] == "embedded_mainnet"
-        module = await async_import_module(
-            hass, f"custom_components.{DOMAIN}.{'mainnet' if is_mainnet else 'embedded'}")
-        api = (module.MainnetWalletAPI if is_mainnet else module.EmbeddedWalletAPI)(hass, entry)
-        try:
-            await api.load()
-        except WalletError as exc:
-            raise ConfigEntryNotReady(str(exc)) from None
-    else:
-        api = WalletAPI(async_get_clientsession(hass), entry.data["service_url"], entry.data["api_token"])
+    if entry.data.get("backend") != "embedded_mainnet":
+        raise ConfigEntryError("Unknown BSV Settlement backend; delete this entry")
+    from .api import WalletError
+    module = await async_import_module(hass, f"custom_components.{DOMAIN}.mainnet")
+    api = module.MainnetWalletAPI(hass, entry)
+    try:
+        await api.load()
+    except WalletError as exc:
+        raise ConfigEntryNotReady(str(exc)) from None
     coordinator = SettlementCoordinator(hass, entry, api)
     await coordinator.load()
     await coordinator.async_config_entry_first_refresh()
@@ -284,6 +290,8 @@ async def async_setup_entry(hass, entry):
 
 
 async def async_unload_entry(hass, entry):
+    if removed_backend(entry):
+        return True  # Never set up: nothing to unload, and nothing on disk is touched.
     platforms = [Platform.SENSOR] if entry.data.get("backend") == "ocpp_import_shadow" else PLATFORMS
     unloaded = await hass.config_entries.async_unload_platforms(entry, platforms)
     if unloaded:

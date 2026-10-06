@@ -39,11 +39,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("net_cost_aud", "Provisional session cost", "AUD"),
         ))
         return
-    specs = SENSORS
-    if coordinator.mode.startswith("embedded_"):
-        specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None)]
-    if coordinator.mode == "embedded_mainnet":
-        specs = [*specs, ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
+    specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None),
+             ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
     async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in specs)
 
 
@@ -242,14 +239,9 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_info = {"identifiers": {(DOMAIN, entry.entry_id)},
-                                  "name": (f"BSV Operator Wallet ({coordinator.api.network.title()})"
-                                           if coordinator.mode.startswith("embedded_")
-                                           else "BSV Settlement (Mock)"),
+                                  "name": f"BSV Operator Wallet ({coordinator.api.network.title()})",
                                   "manufacturer": "Proof of concept",
-                                  "model": ("Embedded SDK, guarded mainnet" if coordinator.mode == "embedded_mainnet"
-                                            else "Embedded SDK, broadcast disabled"
-                                            if coordinator.mode == "embedded_testnet"
-                                            else "Simulated settlement only")}
+                                  "model": "Embedded SDK, guarded mainnet"}
 
     @property
     def session(self):

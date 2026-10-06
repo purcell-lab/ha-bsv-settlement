@@ -23,7 +23,9 @@ From the repository root, using the prepared Python environment:
 
 `python scripts/clean_install_smoke.py` installs only the HACS payload into an
 empty temporary configuration. An isolated interpreter then sets it up through
-the config flows, checks entities, actions and frontend paths, and unloads it,
+the config flows (sensor proxy, OCPP import shadow, mainnet refusal without every
+acknowledgement, and no mock/testnet choice), checks entities, actions and
+frontend paths, and unloads it,
 with no network. The Python suite runs it too (`tests/test_clean_install.py`).
 CI also runs it in a separate job with only HA and the manifest requirements
 installed. `tests/test_upgrade_rollback.py` loads fixture stores written by

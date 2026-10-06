@@ -1,4 +1,4 @@
-"""Persist session input and reconcile settlement state across HA restarts."""
+"""Mainnet operator-wallet coordinator: wallet actions, ticks and frozen session drafts."""
 import asyncio
 import copy
 from datetime import timedelta
@@ -25,7 +25,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
         self.store = VersionedStore(hass, "coordinator", entry.entry_id)
         self.saved = {"sessions": {}, "latest": None}
         self.known_status = {}
-        self.mode = getattr(api, "mode", "mock")
+        self.mode = api.mode
 
     async def load(self):
         saved = await self.store.async_load()
@@ -52,7 +52,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
                             session["remote"] = await self.api.call(
                                 "PUT", f"/v1/settlements/{sid}", session["payload"])
                         elif session["remote"]["state"] not in (
-                            "mock_confirmed", "no_payment_due", "declined", "blocked_live_settlement"
+                            "no_payment_due", "blocked_live_settlement"
                         ):
                             session["remote"] = await self.api.call("GET", f"/v1/settlements/{sid}")
                 await self.persist()
@@ -136,15 +136,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
                                   "prepare_operator_payment", "broadcast_operator_payment",
                                   "cancel_operator_payment")
                 if action in wallet_actions:
-                    if not self.mode.startswith("embedded_"):
-                        raise WalletError("Select the embedded operator wallet entry")
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
                     if action == "wallet_self_test":
                         result = await self.api.self_test()
                     elif action == "wallet_status":
                         result = self.api.status()
                     else:
-                        if self.mode != "embedded_mainnet":
-                            raise WalletError("Select the separate mainnet operator wallet")
                         if not approving_user_id:
                             raise WalletError("An explicit administrator context is required")
                         if action == "wallet_refresh_chain":
@@ -161,9 +159,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
                 if action == "bind_session":
                     timestamp(data["started_at"])
                     bound = await self.api.call("GET", "/v1/wallet-bindings/" + data["driver_binding_id"])
-                    expected = ("synthetic_mock_only" if self.mode == "mock"
-                                else "external_unverified_draft_only")
-                    if bound["verification_status"] != expected:
+                    if bound["verification_status"] != "external_unverified_draft_only":
                         raise ValueError("Wallet binding does not match the selected backend")
                     existing = self.saved["sessions"].get(session_id)
                     if existing:
@@ -180,6 +176,8 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     self.saved["latest"] = session_id
                     await self.persist()
                 elif action != "refresh":
+                    if action not in ("add_interval", "prepare_session"):
+                        raise ValueError("Unsupported settlement action")
                     if session_id not in self.saved["sessions"]:
                         raise ValueError("Bind the session first")
                     session = self.saved["sessions"][session_id]
@@ -202,8 +200,7 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     elif action == "prepare_session":
                         payload = freeze(session, data["ended_at"], data["final_import_wh"],
                                          data["final_export_wh"])
-                        if self.mode.startswith("embedded_"):
-                            payload["operator_binding_id"] = "embedded-operator-" + self.api.network
+                        payload["operator_binding_id"] = "embedded-operator-" + self.api.network
                         if session.get("payload") and session["payload"] != payload:
                             raise ValueError("Frozen ledger cannot be changed")
                         session.setdefault("settlement_id", str(uuid4()))
@@ -211,20 +208,6 @@ class SettlementCoordinator(DataUpdateCoordinator):
                         await self.persist()  # Persist before first external request.
                         sid = session["settlement_id"]
                         session["remote"] = await self.api.call("PUT", f"/v1/settlements/{sid}", payload)
-                        if session["remote"]["state"] == "expired":
-                            await self.api.call("POST", f"/v1/settlements/{sid}/quotes",
-                                                {"replaces_quote_id": session["remote"]["quote"]["quote_id"]})
-                            session["remote"] = await self.api.call("GET", f"/v1/settlements/{sid}")
-                        await self.persist()
-                    elif action == "request_payment":
-                        if self.mode.startswith("embedded_"):
-                            raise WalletError("Automatic session payments are disabled; use the guarded operator-payment workflow")
-                        if not session.get("remote"):
-                            raise ValueError("Prepare the session first")
-                        sid = session["settlement_id"]
-                        session["remote"] = await self.api.call(
-                            "POST", f"/v1/settlements/{sid}/request-payment",
-                            {"quote_id": session["remote"]["quote"]["quote_id"]})
                         await self.persist()
             await self.async_request_refresh()
             if session_id:

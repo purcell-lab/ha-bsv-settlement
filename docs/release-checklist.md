@@ -61,8 +61,7 @@ protection uses that name.
       when the release owner tells you to.
 - [ ] **Backup.** Take a full Home Assistant backup. It includes `.storage`,
       which holds the operator key stores, so keep it protected and off the
-      device. If the mock wallet service is in use, also back up its database.
-      Record the backup's identifier and time, never its contents.
+      device. Record the backup's identifier and time, never its contents.
 - [ ] **Pre-upgrade inventory.** For each `bsv_settlement` entry, record its
       backend, its `operator_public_key` (public), any unresolved payments
       (`broadcast_unknown`, `submitted`, `provider_unconfirmed`), active monthly
@@ -73,7 +72,7 @@ protection uses that name.
 
 ## Install (deployment operator, with explicit authority)
 
-1. HACS → BSV Settlement (Mock PoC) → **Redownload**, then select the exact
+1. HACS → BSV Settlement → **Redownload**, then select the exact
    recorded commit or release. Do not take the moving default branch.
 2. Restart Home Assistant (needs restart authority).
 3. Change dashboard resources only when the release notes require it. Update
@@ -82,7 +81,9 @@ protection uses that name.
 ## Post-install verification (validation owner)
 
 - [ ] Every `bsv_settlement` entry is **Loaded**. There are no new
-      `bsv_settlement` errors in the log.
+      `bsv_settlement` errors in the log. Exception: legacy `mock` or
+      `embedded_testnet` entries show **Failed to set up** (backend removed);
+      delete them, see [Downgrade hazards](#downgrade-hazards).
 - [ ] Each wallet entry still shows the `operator_public_key` from the
       inventory. The key was never regenerated.
 - [ ] Every unresolved payment, monthly binding and pending collection from the
@@ -125,14 +126,15 @@ added later:
 | `ocpp_shadow` store (version 3) | Older releases that know only versions 1 or 2 refuse the file, so the shadow entry does not load. The data is kept. Observation only, with no payment effect | Accept, or restore the matching backup |
 | Unresolved payments and reservations | Older code may not know newer states (e.g. automatic or ongoing credits) and could reuse a reserved input | Resolve or record every unresolved payment first. Recovery owner approval needed |
 | `provenance_archive` store and `tariff_provenance_ref` fields (#12) | Older releases do not read the archive and ignore the ledger references. Their new reviews and automatic records carry no frozen provenance. A pre-archive release shows a manual review's reference in its status output (digests and counts only). The archive file is left in place | Accept. Evidence only, with no payment effect. Records made while downgraded show `not_recorded` after upgrade |
+| Removed `mock` / `embedded_testnet` backends | Upgrading: their entries fail with `ConfigEntryError` ("backend was removed"); other entries load. Their `.storage` files (`bsv_settlement.<entry>`, `bsv_settlement.embedded.<entry>`, `bsv_settlement.operator_key.<entry>`) are left untouched. Downgrading after deleting the entry does not recreate it | Delete each legacy entry. Keep or archive the left-over stores privately (the testnet key file is key material); deleting the entry does not remove them. Re-add only through an older release if ever needed |
 | New top-level keys | Settlement and wallet ledgers are re-saved whole, so newer keys survive but are not enforced. The sensor-proxy store rewrites only the keys it knows | Treat newer-feature state as inactive while downgraded |
 
 ## Automated evidence and its limits
 
 | Evidence | What it shows |
 |---|---|
-| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (embedded testnet, sensor proxy, mainnet refusal, mock form). Entities, 42 actions and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
-| `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by v0.1.2 and by the earlier main layout load in full HA. Identity, history, proxy observations and an uncertain-broadcast reservation are kept. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
+| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 42 actions (41 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
+| `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by the earlier main layout load in full HA. Mainnet identity, proxy observations and an uncertain-broadcast reservation are kept. Legacy mock (v0.1.2) and testnet entries fail closed and can be deleted, with their stores left byte-identical. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
 | Python/HA CI matrix | The full regression suite on each supported HA version |
 
 These are offline, fictional-data tests. They are **not**:

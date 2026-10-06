@@ -25,12 +25,15 @@ name is missing.
 | `recorder_reconciliation` | `bsv_settlement.recorder_reconciliation.<entry>` | 1.1 | `recorder` | Inner `schema: 1` |
 | `grouped_wallet_test` | `bsv_settlement_grouped_wallet_test` | 1.1 | `grouped_wallet_test` | Exact keys; optional diagnostic |
 
-The mainnet/testnet wallet ledger has 27 registered top-level namespaces
+The mainnet wallet ledger has 27 registered top-level namespaces
 (`LEDGER_NAMESPACES`), each with a primary owner module. `monthly_authorities`
 also carries `schema: monthly-authorities-v1`; the ledger carries the
 `wallet_checkpoint_version` marker on mainnet. A source scan test requires every
 `api.saved["..."]` namespace to be registered. The separate development
-`wallet_service` SQLite mock is outside this registry.
+`wallet_service` SQLite mock is outside this registry. Entries of the removed
+`mock` and `embedded_testnet` backends left files under the same `coordinator`,
+`operator_key` and `wallet_ledger` keys; the registry still recognises them,
+and setup refuses those entries without reading or rewriting the files.
 
 Existing files were not rewritten. The HA envelope already records
 `version`/`minor_version` for every store; that envelope is the explicit

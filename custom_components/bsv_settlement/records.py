@@ -68,7 +68,9 @@ LEDGER_NAMESPACES = {
 STORES = {
     "coordinator": StoreSpec(
         f"{DOMAIN}.{{entry_id}}", 1, 1, "coordinator", keys=frozenset({"sessions", "latest"}),
-        note="Mock/external backend session bindings and frozen payloads."),
+        note="Mainnet session bindings and frozen draft payloads. Removed mock/testnet entries "
+             "left files of the same key families (with operator_key, wallet_ledger); kept registered "
+             "so they stay recognised, and never rewritten."),
     "operator_key": StoreSpec(
         f"{DOMAIN}.operator_key.{{entry_id}}", 1, 1, "embedded", private=True, atomic=True,
         secret=True, note="Operator key; identity re-derived and compared on load."),

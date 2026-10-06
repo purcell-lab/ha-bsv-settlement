@@ -78,11 +78,11 @@ an implemented control. The original no-budget mock documentation remains below.
 
 - **[Settlement interface](settlement-interface.md):** proposed responsibility split, HA actions and entities, pricing rules, API contract, approval and recovery safeguards.
 - **[Settlement sequence](settlement-sequence.md):** no-budget flow and explicit mock implementation boundary.
-- **[Setup guide](../README.md):** runnable mock service and HA scaffold.
+- **[Setup guide](../README.md):** standalone mock service; the HA integration no longer has a mock backend.
 - **[API schema](../openapi.json):** generated from the implemented service.
 - **[Verification results](../TEST_RESULTS.md):** 27 passing tests for v0.1.2 and an HTTP demonstration, with untested boundaries identified.
 
-The design document describes the target interface. The implementation deliberately uses `mock_received` and `mock_confirmed`, adds the HA `add_interval` action and provides synthetic identities and manual mock-approval endpoints. No live-wallet capability should be inferred from the design.
+The design document describes the target interface. The implementation deliberately uses `mock_received` and `mock_confirmed`, adds the HA `add_interval` action and provides synthetic identities and manual mock-approval endpoints. No live-wallet capability should be inferred from the design. The HA mock and embedded testnet backends have since been removed; only the standalone service remains.
 
 ## Research and history
 

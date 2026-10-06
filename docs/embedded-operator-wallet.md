@@ -1,5 +1,7 @@
 # Embedded operator wallet in Home Assistant
 
+> **Historical record.** The `embedded_testnet` backend (and the `mock` backend) have been removed from the integration. Existing testnet entries now fail to load with a "backend was removed" error and must be deleted; their stored files are left in place. The shared key-custody and offline self-test code now serves only the [mainnet operator wallet](mainnet-operator-wallet.md), where `wallet_self_test` still runs offline.
+
 Development milestone, 2 October 2026. No release/version bump.
 
 ## Decision and verified scope

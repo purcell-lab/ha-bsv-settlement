@@ -1,6 +1,7 @@
 """Fictional configuration only; no HA writes or private installation IDs."""
 from copy import deepcopy
-from frontend.dashboard import cards, redesign
+import json
+from frontend.dashboard import cards, redesign, removed_backend_card
 import pytest
 
 
@@ -31,6 +32,40 @@ def test_legacy_then_repeat_is_idempotent_without_mutating_input():
     assert redesign(first) == first
     assert any(c.get("type")=="custom:bsv-receive-qr-card" for c in cards(first))
     assert any(c.get("title")=="Manual-payment recipient" for c in cards(first))
+    assert not any(removed_backend_card(c) for c in cards(first))
+    assert "testnet" not in json.dumps(first) and "mock" not in json.dumps(first).lower()
+
+
+def previous_release_output():
+    """Redesigned layout as the earlier release left it, with testnet/mock diagnostics."""
+    current = redesign(legacy())
+    testing = next(v for v in current["views"] if v["path"] == "testing")
+    old = legacy()["views"][0]["cards"]
+    testing["sections"][0]["cards"].append({"type":"markdown","content":"Operator-added note"})
+    testing["sections"] += [
+        {"type":"grid","cards":[old[6], old[5], old[7]]},
+        {"type":"grid","cards":[
+            {"type":"entities","title":"Fictional mock results","entities":[old[8]["entity"]],
+             "show_header_toggle":False},
+            {"type":"markdown","content":"Mock and offline tests do not move money. Their results are not proof of live payment readiness."}]},
+        {"type":"grid","cards":[old[8], {"type":"markdown","content":"Operator-kept card"}]}]
+    return current
+
+
+def test_repeat_removes_testnet_and_mock_diagnostics_only():
+    current = previous_release_output()
+    before = deepcopy(current)
+    migrated = redesign(current)
+    assert current == before
+    assert not any(removed_backend_card(c) for c in cards(migrated))
+    assert "testnet" not in json.dumps(migrated) and "bsv_settlement_mock" not in json.dumps(migrated)
+    testing = next(v for v in migrated["views"] if v["path"] == "testing")
+    contents = [c.get("content") for c in cards(testing)]
+    assert "Operator-added note" in contents and "Operator-kept card" in contents
+    assert len(testing["sections"]) == 2  # Emptied sections are dropped, others kept.
+    others = [v for v in migrated["views"] if v["path"] != "testing"]
+    assert others == [v for v in redesign(legacy())["views"] if v["path"] != "testing"]
+    assert redesign(migrated) == migrated
 
 
 def test_repeat_preserves_user_cards_extra_views_metadata_and_order():

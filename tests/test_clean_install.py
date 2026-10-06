@@ -47,9 +47,12 @@ def test_version_parsing_for_hacs_minimum(text, expected):
 def test_clean_install_smoke_sets_up_and_unloads():
     pytest.importorskip("homeassistant")
     report = smoke.run()
-    assert report["entries"] == ["embedded_testnet", "sensor_proxy"]
+    from custom_components.bsv_settlement.const import SERVICES
+    assert report["entries"] == ["ocpp_import_shadow", "sensor_proxy"]
     assert report["unloaded"] is True
-    assert report["entities"]["embedded_testnet"] >= 1 and report["entities"]["sensor_proxy"] >= 1
+    assert report["entities"]["ocpp_import_shadow"] >= 1 and report["entities"]["sensor_proxy"] >= 1
+    assert report["actions"] == len(SERVICES) + 1  # Plus the grouped wallet test action.
+    assert "request_payment" not in SERVICES
     assert report["static_paths"] == sorted(smoke.STATIC_PATHS)
 
 

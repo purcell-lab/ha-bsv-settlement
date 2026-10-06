@@ -19,7 +19,6 @@ from custom_components.bsv_settlement.api import WalletError
 from custom_components.bsv_settlement.audit import (
     GENESIS, MARKER as AUDIT_MARKER, digest, project, ref, transitions, verify)
 from custom_components.bsv_settlement.coordinator import SettlementCoordinator
-from custom_components.bsv_settlement.embedded import EmbeddedWalletAPI
 from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
 from custom_components.bsv_settlement.records import (
     LEDGER_NAMESPACES, STORES, RecordVersionError, VersionedStore, check_keys,
@@ -210,9 +209,9 @@ async def test_coordinator_refuses_unknown_keys_instead_of_resetting(tmp_path):
     entry = make_entry()
     hass = await make_hass(tmp_path, entry)
     try:
-        coordinator = SettlementCoordinator(hass, entry, EmbeddedWalletAPI(hass, entry))
+        coordinator = SettlementCoordinator(hass, entry, MainnetWalletAPI(hass, entry))
         await coordinator.store.async_save({"sessions": {"s": {}}, "latest": "s", "extra": 1})
-        fresh = SettlementCoordinator(hass, entry, EmbeddedWalletAPI(hass, entry))
+        fresh = SettlementCoordinator(hass, entry, MainnetWalletAPI(hass, entry))
         with pytest.raises(RecordVersionError):
             await fresh.load()
         await coordinator.store.async_save({"sessions": {"s": {}}, "latest": "s"})
