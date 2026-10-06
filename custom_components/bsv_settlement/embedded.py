@@ -10,10 +10,9 @@ import secrets
 from bsv import PrivateKey, P2PKH, Transaction, TransactionInput, TransactionOutput
 from bsv.constants import Network
 from bsv.script.spend import Spend
-from homeassistant.helpers.storage import Store
 
 from .api import WalletError
-from .const import DOMAIN
+from .records import VersionedStore, check_keys
 
 MODE = "embedded_testnet"
 
@@ -76,10 +75,8 @@ class EmbeddedWalletAPI:
     def __init__(self, hass, entry):
         self.hass = hass
         self.entry = entry
-        self.key_store = Store(hass, 1, f"{DOMAIN}.operator_key.{entry.entry_id}",
-                               private=True, atomic_writes=True)
-        self.store = Store(hass, 1, f"{DOMAIN}.embedded.{entry.entry_id}",
-                           private=True, atomic_writes=True)
+        self.key_store = VersionedStore(hass, "operator_key", entry.entry_id)
+        self.store = VersionedStore(hass, "wallet_ledger", entry.entry_id)
         self.identity = None
         self.saved = {"records": {}, "last_self_test": None}
 
@@ -110,6 +107,8 @@ class EmbeddedWalletAPI:
                                       "operator_public_key": identity["public_key"]})
             self.identity = identity
             self.saved = await self.store.async_load() or self.saved
+            # A namespace from a newer release must not be ignored and overwritten.
+            check_keys("wallet_ledger", self.saved)
         except Exception:
             # SDK exceptions and persisted values must never leak key material.
             raise WalletError("Operator wallet could not load safely; restore its matching backup") from None

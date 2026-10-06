@@ -9,9 +9,9 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .records import VersionedStore
 
 KEY = DOMAIN + "_grouped_wallet_test"
 SERVICE = "configure_grouped_wallet_test"
@@ -121,7 +121,7 @@ async def install(hass):
         return
     from homeassistant.components.frontend import MANIFEST_JSON, add_manifest_json_key
     controller = GroupedWalletTest(
-        Store(hass, 1, KEY), MANIFEST_JSON, add_manifest_json_key,
+        VersionedStore(hass, "grouped_wallet_test"), MANIFEST_JSON, add_manifest_json_key,
         lambda: (hass.config.external_url or "").rstrip("/"),
     )
     try:

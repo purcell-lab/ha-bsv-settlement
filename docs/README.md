@@ -44,6 +44,9 @@ an implemented control. The original no-budget mock documentation remains below.
   test references, evidence classes and remaining gates.
 - **[Recovery drill](operator-recovery-drill.md):** isolated unfunded restore
   procedure; not a claim that a protected restore has been completed.
+- **[Record versioning and audit log](record-versioning.md):** registry of every
+  persisted store, fail-closed version/migration policy and the hash-chained
+  transition log. Does not detect a coherent full-backup rollback.
 - **[Release, upgrade and rollback checklist](release-checklist.md):** owner
   roles, supported HA versions, backup and HACS exact-commit pre-flight,
   verification, rollback and downgrade hazards. Automated evidence is separate

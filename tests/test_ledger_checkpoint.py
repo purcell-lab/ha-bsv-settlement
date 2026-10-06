@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from custom_components.bsv_settlement.api import WalletError
+from custom_components.bsv_settlement.audit import MARKER as AUDIT_MARKER
 from custom_components.bsv_settlement.ledger_checkpoint import MARKER, fingerprint
 from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
 from test_auto_credit import ready
@@ -105,8 +106,10 @@ async def test_legacy_adoption_is_one_time_baseline_not_freshness_attestation(tm
     legacy.pop(MARKER)
     await api.store.ledger.async_save(legacy)
     await api.store.witness.async_remove()
+    await api.store.audit.store.async_remove()  # Pre-checkpoint data had no audit log.
     entry_data = dict(api.entry.data)
     entry_data.pop(MARKER)
+    entry_data.pop(AUDIT_MARKER)
     api.hass.config_entries.async_update_entry(api.entry, data=entry_data)
     restored = await reload(api)
     assert restored.saved[MARKER] == 1 and restored.entry.data[MARKER] == 1
@@ -130,14 +133,43 @@ async def test_legacy_missing_ledger_is_rejected_before_adoption(tmp_path):
     assert not api.chain.posts
 
 
-async def test_coherent_rollback_is_explicitly_outside_local_witness_assurance(tmp_path):
+async def test_ledger_and_witness_rollback_is_refused_by_retained_audit_log(tmp_path):
     _, api, _, row, _, _ = await ready(tmp_path)
     old_ledger = copy.deepcopy(api.saved)
     old_witness = await api.store.witness.async_load()
     await api.auto_credits.tick()
     await api.store.ledger.async_save(old_ledger)
     await api.store.witness.async_save(old_witness)
+    with pytest.raises(WalletError, match="restore"):
+        await reload(api)
+    assert len(api.chain.posts) == 1
+
+
+async def test_legacy_adoption_with_a_retained_newer_audit_head_is_refused(tmp_path):
+    _, api, _, _, _, _ = await ready(tmp_path)
+    await api.auto_credits.tick()
+    legacy = copy.deepcopy(api.saved)
+    legacy.pop(MARKER)
+    await api.store.ledger.async_save(legacy)
+    await api.store.witness.async_remove()
+    entry_data = dict(api.entry.data)
+    entry_data.pop(MARKER)
+    api.hass.config_entries.async_update_entry(api.entry, data=entry_data)
+    with pytest.raises(WalletError, match="restore"):
+        await reload(api)
+
+
+async def test_coherent_rollback_is_explicitly_outside_local_witness_assurance(tmp_path):
+    _, api, _, row, _, _ = await ready(tmp_path)
+    old_ledger = copy.deepcopy(api.saved)
+    old_witness = await api.store.witness.async_load()
+    old_audit = await api.store.audit.store.async_load()
+    await api.auto_credits.tick()
+    await api.store.ledger.async_save(old_ledger)
+    await api.store.witness.async_save(old_witness)
+    await api.store.audit.store.async_save(old_audit)
     restored = await reload(api)
+    assert restored.store.audit.state == "ready"
     assert restored.auto_credits.get(row) is None
     # Never tick or enable a restored production copy based on this check.
     # Both old files agree, so independent retained evidence remains mandatory.

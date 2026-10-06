@@ -40,13 +40,18 @@ monotonic hardware, independent storage or an external append-only audit log.
 It also does not protect against an administrator who modifies both files.
 This limitation has an explicit regression fixture, not an assumed guarantee.
 
+The [transition audit log](record-versioning.md) narrows one case: if the audit
+log is retained while only the ledger and checkpoint are rolled back, its head
+names a later revision and loading is refused. Restoring all three together
+(with the config entry) still passes.
+
 All post-adoption ledger contents are hashed, but this is not full business
 schema validation, a migration framework or proof that chain evidence is
 current. Legacy adoption cannot reconstruct records already absent.
 
 ## Recovery and deployment
 
-Back up the config entry, matching key, wallet ledger, checkpoint, coordinator
+Back up the config entry, matching key, wallet ledger, checkpoint, audit log, coordinator
 and proxy records together. Keep an independently retained high-water record
 and reconcile signed transactions, inputs and session ownership against current
 evidence before enabling a restored production instance. Keep network broadcast

@@ -9,12 +9,11 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
-from .const import DOMAIN
+from .records import VersionedStore
 from .ocpp_export_shadow_ledger import ExportShadowLedger, grading_rules
 from .ocpp_shadow_ledger import ImportShadowLedger, energy, provenance_flags
 from .recorder import RecorderMonitor
@@ -196,11 +195,11 @@ def reference_kwh(state):
         return None
 
 
-class ShadowStore(Store):
+class ShadowStore(VersionedStore):
     """Schemas 1 and 2 are validated in full before HA rewrites the file."""
 
     def __init__(self, hass, entry_id, binding):
-        super().__init__(hass, STORE_VERSION, f"{DOMAIN}.ocpp_shadow.{entry_id}")
+        super().__init__(hass, "ocpp_shadow", entry_id)
         self.binding = binding
 
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):

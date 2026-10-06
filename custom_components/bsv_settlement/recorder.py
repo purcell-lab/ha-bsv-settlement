@@ -24,10 +24,10 @@ import logging
 from typing import Protocol
 
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
+from .records import VersionedStore
 from .ocpp_export_shadow_ledger import DERIVED_SOURCE
 from .ocpp_shadow_ledger import energy, instant, provenance_flags
 from .proxy_ledger import ACTIVE as LEGACY_ACTIVE, PREPARING as LEGACY_PREPARING
@@ -317,11 +317,11 @@ class OCPPShadowRecorder:
                               ("not_settlement_source", "selector_not_implemented"))
 
 
-class ReconciliationStore(Store):
+class ReconciliationStore(VersionedStore):
     """Separate store; there is no earlier schema, so any other version is refused."""
 
     def __init__(self, hass, entry_id):
-        super().__init__(hass, SCHEMA, f"{DOMAIN}.recorder_reconciliation.{entry_id}")
+        super().__init__(hass, "recorder_reconciliation", entry_id)
 
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
         raise ValueError("Unsupported recorder reconciliation store version")
