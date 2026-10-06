@@ -182,8 +182,8 @@ failed.
 |---|---|---|---|---|
 | `proxy` `observations` | Pruned when three or more sessions are derived. Each source keeps one baseline row before the previous session's opening, plus every row since. | Rows before the cut. | The counter baseline, and all rows of the latest and previous sessions. | `test_proxy_archive_keeps_exactly_newest_fifty_and_prunes_to_one_baseline` |
 | `proxy` `observations` cap | `MAX_ROWS` = 60,000 per source. | New rows. | Existing rows. Sets the persistent `observation_limit_reached` issue: the recorder is `degraded`, the latest net cost is withheld, and wallet paths that check recorder issues refuse. | `test_observation_cap_is_a_persistent_degrading_issue` |
-| `proxy` `archive` | Newest 50 derived summaries, in insertion order, deduplicated by `session_id`. A re-derived session replaces its summary in place. | Older summaries. | The latest and previous sessions, which are never archived. Wallet records bound to an expired session stay. Review, collection, closure, budget, ongoing and monthly sourcing refuse it (for example "not in retained history") and do not reprice it. `previous_session` falls back to `archive[-1]`. | `test_proxy_archive_keeps_…`, `test_rederived_session_replaces_its_archived_summary_in_place`, `test_previous_session_falls_back_to_the_archive`, `test_expired_session_fails_closed_for_review_and_collection` |
-| `proxy` `persistent_issues` | Only `observation_limit_reached` and `restart_gap_exceeds_24_hour_backfill`. | Transient issues, which are recomputed on each load or refresh. | Both persistent issues. There is no clear service. | `test_observation_cap_is_a_persistent_degrading_issue` |
+| `proxy` `archive` | Newest 50 derived summaries, in insertion order, deduplicated by `session_id`, plus up to 200 older summaries pinned because an open wallet record references them (#106). A re-derived session replaces its summary in place. | Older unpinned summaries. Beyond 200 pinned, the oldest pinned, with the persistent `pinned_session_limit_exceeded` issue (never silent). | The latest and previous sessions, which are never archived. A summary referenced by a non-terminal review, budget, collection, automatic credit, ongoing route or monthly binding (`session_references.py`). While any enabled mainnet entry is not loaded or its references fail, nothing already archived is evicted (`session_references_unavailable` warning). A session that does expire stays bound in the ledger; review, collection, closure, budget, ongoing and monthly sourcing refuse it ("not in retained history") and do not reprice it. `previous_session` falls back to `archive[-1]`. The stored format is unchanged: a list of the same summary dicts. | `test_proxy_archive_keeps_…`, `test_referenced_session_is_pinned_beyond_fifty_and_expires_once_resolved`, `test_unknown_references_pause_eviction_and_warn`, `test_pinned_overflow_keeps_newest_pinned_raises_issue_and_warns_near_limit`, `test_rederived_session_replaces_its_archived_summary_in_place`, `test_previous_session_falls_back_to_the_archive`, `test_expired_session_fails_closed_for_review_and_collection` |
+| `proxy` `persistent_issues` | Only `observation_limit_reached`, `restart_gap_exceeds_24_hour_backfill` and `pinned_session_limit_exceeded`. | Transient issues, which are recomputed on each load or refresh. | The persistent issues. There is no clear service. | `test_observation_cap_is_a_persistent_degrading_issue` |
 | `proxy` `tariff_provenance` | 12 versions per session; 200 sessions, evicting the oldest first capture; 2,000 intervals per direction. | Versions after the 12th (`version_limit_reached`), the oldest sessions, and intervals beyond the cap (marked incomplete). | The session being captured. Copies frozen into manual reviews are unaffected. | `test_tariff_provenance.py::test_version_limit_is_flagged_and_never_overwrites`, `test_tariff_provenance_evicts_oldest_captured_session_beyond_cap` |
 | `wallet_audit` | `MAX_ENTRIES` = 2,000. | The oldest entries. | `anchor`: the sequence and hash of the last dropped entry. The retained chain verifies from it. | `test_record_versioning.py::test_retention_is_bounded_and_trimmed_chain_still_verifies` |
 | `ocpp_shadow` import section | `MAX_EVENTS` = 1,000, `MAX_SPANS` = 50. | The oldest journal events and closed spans, with `journal_trimmed` and `spans_trimmed` set. | The open span. Shadow data is never financial (`billing_eligible: false`). | `test_ocpp_shadow.py::test_bounded_retention` |
@@ -227,9 +227,18 @@ any of it.
 **Expiry of a recorder session.** A session that leaves the latest, previous
 and archive views cannot be sourced again. Collection, review approval,
 closure or waiver, budget binding and monthly sourcing all refuse it. The
-ledger row stays unresolved and nothing is signed, but there is no in-product
-completion path. Settle or cancel bound sessions before 50 newer sessions are
-recorded.
+ledger row stays unresolved and nothing is signed. Since #106 a session that an
+open wallet record references is pinned in the archive and does not expire
+with the newest-50 window; it expires once every referencing record is
+terminal (review cancelled, no payment due or paid; budget revoked, waived or
+expired with no attempt in flight; collection or credit `provider_confirmed`
+or waived; ongoing route paid or `no_operator_credit`). Anything not
+positively terminal stays pinned, including expired reviews that were never
+cancelled and every monthly binding. The recorder status reports
+`archive_retention` counts and the warnings `pinned_sessions_near_limit` (within
+5 of the 200 cap), `referenced_session_not_retained` (already expired, for
+example before this release) and `session_references_unavailable`. Sessions
+that expired before upgrading are not restored.
 
 ## OCPP and proxy identifiers
 

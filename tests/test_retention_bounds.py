@@ -172,6 +172,193 @@ async def test_observation_cap_is_a_persistent_degrading_issue(hass, monkeypatch
         await restored.close()
 
 
+def wallet(hass, pins):
+    """A loaded mainnet coordinator as the proxy sees it: only the pin API."""
+    from custom_components.bsv_settlement.const import DOMAIN
+    coordinator = SimpleNamespace(mode="embedded_mainnet", unresolved_proxy_sessions=lambda pid: set(pins))
+    hass.data.setdefault(DOMAIN, {})["wallet-entry"] = coordinator
+    return coordinator
+
+
+def grow(proxy, first, count):
+    proxy.observations["state"] = merge_rows(proxy.observations["state"], sessions(first, count))
+
+
+@pytest.mark.asyncio
+async def test_referenced_session_is_pinned_beyond_fifty_and_expires_once_resolved(hass):
+    proxy = recorder(hass, observations(60))
+    first = build_records(observations(60), proxy.sources["state"], t(0))[0]["session_id"]
+    pins = {first}
+    wallet(hass, pins)
+    data = await proxy._async_update_data()
+    ids = [r["session_id"] for r in proxy.archive]
+    assert ids[0] == first and len(ids) == 51
+    assert [r["opened_at"] for r in proxy.archive[1:]] == [t(10 * n) for n in range(8, 58)]
+    assert data["archive_retention"]["pinned_beyond_window"] == 1 and not data["warnings"]
+    grow(proxy, 60, 60)
+    data = await proxy._async_update_data()
+    assert proxy.archive[0]["session_id"] == first and len(proxy.archive) == 51
+    assert [r["opened_at"] for r in proxy.archive[1:]] == [t(10 * n) for n in range(68, 118)]
+    # Persisted as the same list of summary dicts: the previous release loads it.
+    await proxy.persist()
+    saved = await proxy.store.async_load()
+    assert saved["archive"] == proxy.archive and set(saved) == {
+        "observations", "archive", "persistent_issues", "checkpoint_at", "tariff_provenance"}
+    assert all(set(r) == set(proxy.archive[-1]) for r in saved["archive"])
+    # Resolution unpins it; the next prune applies the plain newest-50 window.
+    pins.clear()
+    grow(proxy, 120, 1)
+    await proxy._async_update_data()
+    assert first not in {r["session_id"] for r in proxy.archive}
+    assert [r["opened_at"] for r in proxy.archive] == [t(10 * n) for n in range(69, 119)]
+
+
+@pytest.mark.asyncio
+async def test_unreferenced_archive_keeps_newest_fifty_with_a_wallet_loaded(hass):
+    wallet(hass, {"sigen-proxy-not-retained"})
+    proxy = recorder(hass, observations(60))
+    data = await proxy._async_update_data()
+    assert [r["opened_at"] for r in proxy.archive] == [t(10 * n) for n in range(8, 58)]
+    assert data["warnings"] == ["referenced_session_not_retained"] and not data["issues"]
+    assert data["archive_retention"]["referenced_not_retained"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pinned_session_lookups_succeed_after_sixty_newer(hass):
+    from custom_components.bsv_settlement.collection import DriverCollections
+    from custom_components.bsv_settlement.const import DOMAIN
+    from custom_components.bsv_settlement.session_closure import ClosedSessions
+    from custom_components.bsv_settlement.session_review import SessionReviews
+    proxy = recorder(hass, observations(3))
+    proxy.async_set_updated_data(await proxy._async_update_data())
+    pinned = proxy.archive[0]["session_id"]
+    wallet(hass, {pinned})
+    grow(proxy, 3, 60)
+    proxy.async_set_updated_data(await proxy._async_update_data())
+    assert pinned in {r["session_id"] for r in proxy.archive}
+    hass.data[DOMAIN][proxy.entry.entry_id] = proxy
+
+    async def refresh():
+        proxy.async_set_updated_data(await proxy._async_update_data())
+    proxy.async_request_refresh = refresh
+    reviews = SessionReviews.__new__(SessionReviews)
+    reviews.hass = hass
+    with pytest.raises(Exception) as found:
+        await reviews.source(proxy.entry.entry_id, pinned)
+    # Found; refused only on its own (fictional, unpriced) account quality.
+    assert "retained history" not in str(found.value)
+    collections = DriverCollections(SimpleNamespace(saved={}, hass=hass))
+    collections.session_id = lambda row: row["terms"]["session_id"]
+    row = {"proxy_config_entry_id": proxy.entry.entry_id, "terms": {"session_id": pinned}}
+    assert (await collections.source(row))["session_id"] == pinned
+    api = SimpleNamespace(hass=hass, saved={"session_budgets": {}, "closed_sessions": {}})
+    with pytest.raises(Exception) as found:
+        await ClosedSessions(api).inspect({"proxy_config_entry_id": proxy.entry.entry_id,
+                                           "session_id": pinned})
+    assert "retained history" not in str(found.value)
+
+
+@pytest.mark.asyncio
+async def test_unknown_references_pause_eviction_and_warn(hass):
+    from custom_components.bsv_settlement.const import DOMAIN
+    proxy = recorder(hass, observations(60))
+    await proxy._async_update_data()
+    before = [r["session_id"] for r in proxy.archive]
+
+    def broken(pid):
+        raise RuntimeError("fictional ledger fault")
+    hass.data.setdefault(DOMAIN, {})["wallet-entry"] = SimpleNamespace(
+        mode="embedded_mainnet", unresolved_proxy_sessions=broken)
+    grow(proxy, 60, 3)
+    data = await proxy._async_update_data()
+    assert [r["session_id"] for r in proxy.archive][:50] == before
+    assert len(proxy.archive) == 53 and "session_references_unavailable" in data["warnings"]
+    assert not data["issues"]
+
+
+@pytest.mark.asyncio
+async def test_unloaded_mainnet_entry_pauses_eviction(hass):
+    from homeassistant.config_entries import ConfigEntries
+    from test_recorder_readiness import config_entry as make_entry
+    hass.config_entries = ConfigEntries(hass, {})
+    await hass.config_entries.async_initialize()
+    pending = make_entry("bsv_settlement", {"backend": "embedded_mainnet"})
+    hass.config_entries._entries[pending.entry_id] = pending
+    proxy = recorder(hass, observations(60))
+    await proxy._async_update_data()
+    grow(proxy, 60, 2)
+    data = await proxy._async_update_data()
+    assert len(proxy.archive) == 52 and data["archive_retention"]["references_complete"] is False
+
+
+@pytest.mark.asyncio
+async def test_pinned_overflow_keeps_newest_pinned_raises_issue_and_warns_near_limit(hass, monkeypatch):
+    monkeypatch.setattr(proxy_module, "MAX_PINNED", 7)
+    proxy = recorder(hass, observations(60))
+    every = {r["session_id"] for r in build_records(observations(60), proxy.sources["state"], t(0))}
+    wallet(hass, every)
+    await proxy._async_update_data()
+    # 58 archivable: newest 50 plus the newest 7 of the 8 older pinned.
+    assert [r["opened_at"] for r in proxy.archive] == [t(10 * n) for n in range(1, 58)]
+    assert "pinned_session_limit_exceeded" in proxy.issues
+    await proxy.persist()
+    assert "pinned_session_limit_exceeded" in (await proxy.store.async_load())["persistent_issues"]
+    data = await proxy._async_update_data()
+    assert "pinned_session_limit_exceeded" in data["issues"] and data["state"] == "degraded"
+    assert "pinned_sessions_near_limit" in data["warnings"]
+    assert proxy_module.retain([{"session_id": str(n)} for n in range(6)], {"0", "1", "2"},
+                               limit=2, max_pinned=2) == (
+        [{"session_id": n} for n in ("1", "2", "4", "5")], [{"session_id": "0"}])
+
+
+def test_wallet_references_count_only_non_terminal_records():
+    from custom_components.bsv_settlement.coordinator import SettlementCoordinator
+    from custom_components.bsv_settlement.session_references import unresolved_proxy_sessions
+    future, past = "2999-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00"
+
+    def budget(bid, sid, expires=future, state="spending_authorised"):
+        return {"proxy_config_entry_id": "P", "state": state,
+                "terms": {"budget_id": bid, "session_id": sid, "expires_at": expires}}
+    saved = {
+        "session_reviews": {
+            "r1": {"proxy_config_entry_id": "P", "state": "awaiting_account_approval",
+                   "account": {"session_id": "s-review"}},
+            "r2": {"proxy_config_entry_id": "P", "state": "cancelled", "account": {"session_id": "s-cancelled"}},
+            "r3": {"proxy_config_entry_id": "P", "state": "credit_review_approved",
+                   "credit_draft_id": "d1", "account": {"session_id": "s-credited"}},
+            "r4": {"proxy_config_entry_id": "Q", "state": "awaiting_account_approval",
+                   "account": {"session_id": "s-other-proxy"}},
+            "r5": {"proxy_config_entry_id": "P", "state": "awaiting_account_approval",
+                   "account_kind": "manual_energy_adjustment", "account": {"session_id": "s-adjust"}},
+        },
+        "payments": {"d1": {"state": "provider_confirmed"}},
+        "session_budgets": {
+            "b1": budget("b1", "s-budget"), "b2": budget("b2", "s-expired", past),
+            "b3": budget("b3", "s-revoked", state="revoked"), "b4": budget("b4", "s-collected"),
+            "b5": budget("b5", "s-stale-collection", past), "b6": budget("b6", "s-paying", past),
+        },
+        "driver_collections": {"b4": {"state": "provider_confirmed"}, "b5": {"state": "ready"},
+                               "b6": {"state": "broadcast_unknown"}},
+        "driver_collection_index": {"P|s-collected": "b4", "P|s-stale-collection": "b5",
+                                    "P|s-paying": "b6"},
+        "automatic_credits": {"c1": {"state": "credit_queued"}, "c2": {"state": "provider_confirmed"}},
+        "automatic_credit_index": {"P|s-credit": "c1", "P|s-credit-done": "c2", "P|s-missing": "c9"},
+        "ongoing_credit_routes": {"ongoing:P|s-route": {"state": "waiting_for_session_end"},
+                                  "ongoing:P|s-route-none": {"state": "no_operator_credit"}},
+        "monthly_authorities": {"schema": "monthly-authorities-v1",
+                                "bindings": {"P|s-monthly": {"authority_id": "a"}}},
+        "closed_sessions": {"P|s-closed": {"state": "waived"}},
+    }
+    api = SimpleNamespace(saved=saved, collections=SimpleNamespace(
+        session_id=lambda row: row["terms"].get("session_id")))
+    expected = {"s-review", "s-budget", "s-paying", "s-credit", "s-missing", "s-route", "s-monthly"}
+    assert unresolved_proxy_sessions(api, "P") == expected
+    coordinator = SettlementCoordinator.__new__(SettlementCoordinator)
+    coordinator.api, coordinator.mode = api, "embedded_mainnet"
+    assert coordinator.unresolved_proxy_sessions("P") == expected
+    assert coordinator.unresolved_proxy_sessions("Q") == {"s-other-proxy"}
+
+
 @pytest.mark.asyncio
 async def test_expired_session_fails_closed_for_review_and_collection(hass):
     """Once a session leaves latest/previous/archive it cannot be re-sourced.

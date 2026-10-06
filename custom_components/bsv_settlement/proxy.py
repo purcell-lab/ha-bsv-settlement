@@ -11,6 +11,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
 from .records import VersionedStore, check_keys
 from .proxy_ledger import build_records, instant
 from .tariff_provenance import TariffProvenanceLedger, capture, summary
@@ -18,6 +19,12 @@ from .tariff_provenance import TariffProvenanceLedger, capture, summary
 _LOGGER = logging.getLogger(__name__)
 SOURCE_KEYS = ("import", "export", "state", "import_price", "export_price")
 MAX_ROWS = 60000
+ARCHIVE_LIMIT = 50   # Newest summaries kept regardless of references.
+MAX_PINNED = 200     # Older summaries kept because an open wallet record needs them.
+PIN_MARGIN = 5       # Warn this many places before a pinned summary would be dropped.
+PERSISTENT_ISSUES = frozenset({
+    "observation_limit_reached", "restart_gap_exceeds_24_hour_backfill",
+    "pinned_session_limit_exceeded"})
 
 
 def normalize(state):
@@ -30,6 +37,19 @@ def normalize(state):
             ("start", "start_time"), ("end", "end_time"), ("estimate", "estimate"))
            if field in attrs},
     }
+
+
+def retain(summaries, pinned, limit=None, max_pinned=None):
+    """Newest ``limit`` plus up to ``max_pinned`` older pinned, in order.
+
+    Returns (kept, dropped pinned summaries); the newest pinned stay.
+    """
+    limit = ARCHIVE_LIMIT if limit is None else limit
+    max_pinned = MAX_PINNED if max_pinned is None else max_pinned
+    older = [r for r in summaries[:-limit] if r["session_id"] in pinned]
+    dropped = older[:-max_pinned] if len(older) > max_pinned else []
+    keep = {id(r) for r in (*older[len(dropped):], *summaries[-limit:])}
+    return [r for r in summaries if id(r) in keep], dropped
 
 
 def merge_rows(existing, incoming):
@@ -92,6 +112,43 @@ class ProxyCoordinator(DataUpdateCoordinator):
             self.hass, list(self.sources.values()), self._state_changed)
         self.snapshot_current()
 
+    def referenced_sessions(self):
+        """(IDs open wallet records still need, complete?) via a small duck API.
+
+        Each loaded mainnet coordinator answers ``unresolved_proxy_sessions``.
+        An enabled mainnet entry that is not loaded, or a provider fault, makes
+        the answer incomplete; the caller then evicts nothing already archived.
+        """
+        pins, complete, answered = set(), True, set()
+        for entry_id, coordinator in list(self.hass.data.get(DOMAIN, {}).items()):
+            provider = getattr(coordinator, "unresolved_proxy_sessions", None)
+            if getattr(coordinator, "mode", None) != "embedded_mainnet" or provider is None:
+                continue
+            try:
+                pins |= {sid for sid in provider(self.entry.entry_id) if isinstance(sid, str)}
+                answered.add(entry_id)
+            except Exception:  # noqa: BLE001 - unknown pins never evict
+                _LOGGER.exception("Wallet session references unavailable; archive eviction paused")
+                complete = False
+        entries = getattr(self.hass, "config_entries", None)
+        if entries is not None:
+            for entry in entries.async_entries(DOMAIN):
+                if (entry.data.get("backend") == "embedded_mainnet" and entry.disabled_by is None
+                        and entry.entry_id not in answered):
+                    complete = False
+        return pins, complete
+
+    def _retain_archive(self, records, pins, complete):
+        known = {r["session_id"]: r for r in self.archive}
+        known.update({r["session_id"]: r for r in records})
+        held = pins if complete else pins | {r["session_id"] for r in self.archive}
+        self.archive, dropped = retain(list(known.values()), held)
+        if dropped:
+            # Never silent: blocks until an administrator acknowledges it.
+            _LOGGER.warning("Proxy archive dropped %d referenced session summaries beyond %d pinned",
+                            len(dropped), MAX_PINNED)
+            self.issues.add("pinned_session_limit_exceeded")
+
     @callback
     def _state_changed(self, event):
         state = event.data.get("new_state")
@@ -132,25 +189,25 @@ class ProxyCoordinator(DataUpdateCoordinator):
             if (state := self.hass.states.get(entity)) is None
             or state.state in ("unknown", "unavailable")
         ]
+        pins, complete = self.referenced_sessions()
+        # Keep latest ended session plus current/most recent session for repricing.
+        # Keep the preceding baseline for each source and a bounded summary archive.
+        if len(records) > 2:
+            cut = instant(records[-2]["opened_at"])
+            self._retain_archive(records[:-2], pins, complete)
+            for key, rows in self.observations.items():
+                before = [r for r in rows if instant(r["t"]) < cut]
+                after = [r for r in rows if instant(r["t"]) >= cut]
+                self.observations[key] = before[-1:] + after
         latest = records[-1] if records else None
         previous = records[-2] if len(records) > 1 else (self.archive[-1] if self.archive else None)
         issues = sorted(self.issues | {key + ":unavailable" for key in unavailable})
+        retention = self._retention_warnings(records, pins, complete)
         if issues and latest:
             latest = {**latest, "net_cost_aud": None, "net_cost_aud_unrounded": None,
                       "quality_flags": sorted(set(latest["quality_flags"]) | set(issues))}
         provenance_changed = await self._capture_provenance(
             observations, [*records[:-1], latest] if latest else records)
-        # Keep latest ended session plus current/most recent session for repricing.
-        # Keep the preceding baseline for each source and a small summary archive.
-        if len(records) > 2:
-            cut = instant(records[-2]["opened_at"])
-            known = {r["session_id"]: r for r in self.archive}
-            known.update({r["session_id"]: r for r in records[:-2]})
-            self.archive = list(known.values())[-50:]
-            for key, rows in self.observations.items():
-                before = [r for r in rows if instant(r["t"]) < cut]
-                after = [r for r in rows if instant(r["t"]) >= cut]
-                self.observations[key] = before[-1:] + after
         current_id = latest["session_id"] if latest else None
         if (provenance_changed or current_id != self.last_latest_id
                 or time.monotonic() - self.last_save >= 300):
@@ -160,7 +217,24 @@ class ProxyCoordinator(DataUpdateCoordinator):
             "state": "degraded" if issues else "recording" if latest and not latest["ended_at"] else "waiting",
             "updated_at": as_of, "latest_session": latest, "previous_session": previous,
             "issues": issues, "source_entities": self.sources, "billing_eligible": False,
+            "warnings": retention["warnings"], "archive_retention": retention["retention"],
         }
+
+    def _retention_warnings(self, records, pins, complete):
+        """Operator-visible, non-blocking retention warnings (#106)."""
+        live = {r["session_id"] for r in records} | {r["session_id"] for r in self.archive}
+        pinned = max(0, len(self.archive) - ARCHIVE_LIMIT)
+        warnings = []
+        if not complete:
+            warnings.append("session_references_unavailable")
+        if pinned >= MAX_PINNED - PIN_MARGIN:
+            warnings.append("pinned_sessions_near_limit")
+        if pins - live:
+            warnings.append("referenced_session_not_retained")
+        return {"warnings": warnings, "retention": {
+            "retained": len(self.archive), "window": ARCHIVE_LIMIT, "max_pinned": MAX_PINNED,
+            "pinned_beyond_window": pinned, "referenced": len(pins),
+            "referenced_not_retained": len(pins - live), "references_complete": complete}}
 
     async def _capture_provenance(self, observations, records):
         """Evidence capture only; a fault here never changes or blocks an account."""
@@ -193,8 +267,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
         await self.store.async_save({
             "observations": copy.deepcopy(self.observations),
             "archive": copy.deepcopy(self.archive),
-            "persistent_issues": sorted(self.issues & {
-                "observation_limit_reached", "restart_gap_exceeds_24_hour_backfill"}),
+            "persistent_issues": sorted(self.issues & PERSISTENT_ISSUES),
             "checkpoint_at": dt_util.utcnow().isoformat(),
             "tariff_provenance": self.provenance.stored(),
         })

@@ -35,6 +35,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
     async def persist(self):
         await self.store.async_save(self.saved)
 
+    def unresolved_proxy_sessions(self, proxy_entry_id):
+        """Read-only pin set for the proxy archive (#106); see session_references."""
+        if self.mode != "embedded_mainnet":
+            return set()
+        from .session_references import unresolved_proxy_sessions
+        return unresolved_proxy_sessions(self.api, proxy_entry_id)
+
     async def _async_update_data(self):
         async with self.lock:
             try:

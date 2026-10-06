@@ -81,8 +81,14 @@ flagged and costs are held for review rather than silently bridged.
 Private HA storage checkpoints every five minutes, on a new latest session and
 on integration unload. This reduces repeated large storage writes; recorder
 history is required to recover observations since the previous checkpoint.
-The latest two sessions retain source observations for repricing, and up to 50
-older summary records are retained. Their amounts are not immutable commercial
+The latest two sessions retain source observations for repricing, and the 50
+newest older summary records are retained. Up to 200 further summaries stay
+pinned while an open wallet record (review, budget, collection, credit, ongoing
+route or monthly binding) still references them; they expire once those
+records are terminal. Beyond 200 the oldest pinned is dropped and the
+persistent `pinned_session_limit_exceeded` issue degrades the recorder. If a
+mainnet wallet entry is not loaded, nothing already archived is evicted. The
+status entity reports `archive_retention` and non-blocking `warnings`. Their amounts are not immutable commercial
 invoices. This is not an unlimited audit archive or a substitute for recorder
 backup and retention management.
 
