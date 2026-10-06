@@ -1,0 +1,14 @@
+{"schema":1,"fixture":"synthetic-fault-zero-energy","evidence":"synthetic","description":"Transaction 4001 starts, never reaches Charging, Finishing, cleared, Faulted.","charger":"charger-1","connector":1,"window":{"start":"2026-01-01T00:00:00+00:00","end":"2026-01-01T00:10:00+00:00"},"sanitisation":{"id_tags":"synthetic placeholders","kept":"synthetic data only","initial_state_keys":[]},"units":{"export_register":"kWh","import_register":"kWh","power_export":"kW","power_import":"kW","ref_export":"MWh","ref_import":"MWh","session_export":"kWh","soc":"%"},"metadata":{"version":{"state":"1.6","attributes":{"subprotocol":"ocpp1.6","transport":"ws"}},"configuration":{"state":"6","attributes":{"MeterValueSampleInterval":"60","SupportedFeatureProfiles":"Core","measurands_configurable":false}},"boot":{"state":"SIGEN","attributes":{"charge_point_vendor":"SIGEN","charge_point_model":"EVDC 25 7.5S2","firmware_version":"V100R001C21SPC117"}}},"events":[
+["2026-01-01T00:00:00+00:00","status","Available"],
+["2026-01-01T00:00:00+00:00","transaction","0"],
+["2026-01-01T00:00:00+00:00","id_tag",""],
+["2026-01-01T00:00:00+00:00","import_register","15800.000",{"context":"Sample.Periodic","context_source":"defaulted"}],
+["2026-01-01T00:00:00+00:00","ref_import","15.80000"],
+["2026-01-01T00:00:00+00:00","ref_export","11.10000"],
+["2026-01-01T00:01:00+00:00","status","Preparing"],
+["2026-01-01T00:01:00+00:00","transaction","4001"],
+["2026-01-01T00:01:00+00:00","id_tag","IDTAG-01"],
+["2026-01-01T00:01:32+00:00","status","Finishing"],
+["2026-01-01T00:01:35+00:00","status","Faulted"],
+["2026-01-01T00:01:35+00:00","transaction","0"],
+["2026-01-01T00:01:35+00:00","id_tag",""]]}
