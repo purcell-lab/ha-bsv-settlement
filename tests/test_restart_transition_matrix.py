@@ -473,8 +473,10 @@ def replay(name):
             await call(name, api.ctx["rev"])(api)  # Returns the stored record unchanged.
         else:
             await refused(call(name, api.ctx["rev"])(api), "revision conflict")
-        if name in TRANSITIONS:  # At the current revision the model returns the same attempt.
-            await call(name, revision(api))(api)
+        if name in TRANSITIONS:  # At the current revision: same attempt, no write (#104).
+            rev = revision(api)
+            await call(name, rev)(api)
+            assert revision(api) == rev
         assert attempts(api) == before
     return again
 
