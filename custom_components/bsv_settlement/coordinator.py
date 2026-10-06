@@ -100,6 +100,9 @@ class SettlementCoordinator(DataUpdateCoordinator):
                         raise WalletError("Select the mainnet operator wallet")
                     from .collection_recovery import execute
                     result = await execute(self.api.collections, action, data, approving_user_id)
+                    if action == "inspect_driver_collection":
+                        # Diagnostic reads must not trigger health projection or ticks.
+                        return result
                     self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
                     return result
                 if action == "configure_automatic_credit":

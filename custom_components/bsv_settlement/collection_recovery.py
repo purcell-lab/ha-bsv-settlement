@@ -115,6 +115,9 @@ def review(collections, row):
 async def execute(collections, action, data, user_id):
     if not user_id:
         raise WalletError("An authenticated administrator must review collection recovery")
+    if action == "inspect_driver_collection":
+        from .collection_diagnostics import inspect
+        return inspect(collections, data["budget_id"])
     row = collections.api.saved["session_budgets"].get(data["budget_id"])
     if not row:
         raise WalletError("Unknown spending approval")
