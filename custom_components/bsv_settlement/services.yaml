@@ -638,6 +638,24 @@ configure_ongoing_credit:
     confirm_ongoing_mainnet_credits:
       selector:
         boolean:
+acknowledge_proxy_issue:
+  name: Acknowledge a sensor-proxy issue
+  description: Administrator only, audited in the log. Clears one persistent recorder issue on a sensor-proxy entry. observation_limit_reached clears only once every source is below the 60,000-observation cap. Sessions that overlapped an observation-limit or restart-gap window keep that quality flag and stay blocked. Never changes amounts, pays or controls the charger.
+  fields:
+    config_entry_id:
+      required: true
+      description: The sensor-proxy entry.
+      selector:
+        config_entry:
+          integration: bsv_settlement
+    issue:
+      required: true
+      selector:
+        select:
+          options:
+            - observation_limit_reached
+            - restart_gap_exceeds_24_hour_backfill
+            - pinned_session_limit_exceeded
 get_credit_receipt_link:
   name: Recover original private link for a confirmed driver credit
   description: Administrator only. Returns the existing private session link after matching the confirmed credit, transaction and original receiving wallet. No payment, refresh, new invitation, token rotation or change to consent. Share the response only with the original driver.

@@ -114,6 +114,17 @@ fails closed with a visible issue; it does not silently discard energy and
 continue billing. A long uninterrupted session may require an explicit
 retention redesign before this limit is reached.
 
+`observation_limit_reached`, `restart_gap_exceeds_24_hour_backfill` and
+`pinned_session_limit_exceeded` persist until an HA administrator runs
+`bsv_settlement.acknowledge_proxy_issue` with the proxy entry and the issue.
+The action is logged with the user ID. It refuses the observation limit while
+any source still holds 60,000 rows after pruning, and refuses any other issue.
+Sessions that overlapped an acknowledged observation-limit or restart-gap
+window keep that issue as a quality flag and cannot be reviewed or settled;
+when the window start is unknown (the issue was restored after a restart),
+every session opened before the acknowledgement stays flagged. The status
+entity lists `acknowledged_issues`.
+
 ## Entities and dashboard
 
 The recorder exposes status, proxy transaction ID, session import/export kWh
@@ -125,8 +136,9 @@ attributes.
 Native Markdown dashboard cards can reference those attributes and update
 automatically. Label the ID origin, provisional costs and stale/unavailable
 states. Do not connect these sensors directly to a wallet broadcast action.
-The generic `refresh` action may refresh this backend; all wallet/session
-mutation actions are rejected for it.
+The generic `refresh` action may refresh this backend, and
+`acknowledge_proxy_issue` (administrator only) may clear a persistent issue;
+all wallet/session mutation actions are rejected for it.
 
 ## Validation boundary
 

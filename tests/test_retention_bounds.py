@@ -165,6 +165,11 @@ async def test_observation_cap_is_a_persistent_degrading_issue(hass, monkeypatch
     try:
         await restored.load()
         assert {"observation_limit_reached", "restart_gap_exceeds_24_hour_backfill"} <= restored.issues
+        # Restored: the loss start is unknown. Fresh gap: from the checkpoint.
+        assert restored.issue_window["observation_limit_reached"] == (None, None)
+        assert restored.issue_window["restart_gap_exceeds_24_hour_backfill"][0] == saved["checkpoint_at"]
+        restored._append("import", {"t": t(900), "value": "2", "unit": "MWh"})
+        assert restored.issue_window["observation_limit_reached"] == (None, None)
         assert restored.archive == saved["archive"]
         await restored.persist()
         assert (await restored.store.async_load())["persistent_issues"] == [
@@ -358,6 +363,151 @@ def test_wallet_references_count_only_non_terminal_records():
     coordinator.api, coordinator.mode = api, "embedded_mainnet"
     assert coordinator.unresolved_proxy_sessions("P") == expected
     assert coordinator.unresolved_proxy_sessions("Q") == {"s-other-proxy"}
+
+
+def capped(proxy):
+    """Fill import to the (patched) cap of 8; the last two rows are lost."""
+    for n in range(9):
+        proxy._append("import", {"t": t(20 + n), "value": f"1.00{n}", "unit": "MWh"})
+    assert "observation_limit_reached" in proxy.issues
+
+
+@pytest.mark.asyncio
+async def test_observation_limit_acknowledgement_needs_room_and_keeps_overlap_flagged(hass, monkeypatch):
+    from homeassistant.config_entries import ConfigEntries
+    from homeassistant.exceptions import HomeAssistantError
+    monkeypatch.setattr(proxy_module, "MAX_ROWS", 8)
+    hass.config_entries = ConfigEntries(hass, {})
+    await hass.config_entries.async_initialize()
+    proxy = recorder(hass, {**observations(0), "state": [
+        {"t": t(15), "value": "Charging"}, {"t": t(30), "value": "Idle"}]})
+    hass.config_entries._entries[proxy.entry.entry_id] = proxy.entry
+    capped(proxy)
+    assert proxy.issue_window["observation_limit_reached"] == (t(27), None)
+    with pytest.raises(HomeAssistantError, match="administrator"):
+        await proxy.execute("acknowledge_proxy_issue", {"issue": "observation_limit_reached"})
+    with pytest.raises(HomeAssistantError, match="still holds 8 observations"):
+        await proxy.execute("acknowledge_proxy_issue", {"issue": "observation_limit_reached"}, "admin-user")
+    assert "observation_limit_reached" in proxy.issues
+    with pytest.raises(HomeAssistantError, match="read-only"):
+        await proxy.execute("acknowledge_proxy_issue_everything", {}, "admin-user")
+    with pytest.raises(HomeAssistantError, match="cannot be acknowledged"):
+        await proxy.execute("acknowledge_proxy_issue", {"issue": "state:unavailable"}, "admin-user")
+    # Three more sessions prune import below the cap.
+    grow(proxy, 5, 3)
+    data = await proxy.execute("acknowledge_proxy_issue", {"issue": "observation_limit_reached"}, "admin-user")
+    assert all(len(rows) < 8 for rows in proxy.observations.values())
+    assert "observation_limit_reached" not in data["issues"] and data["state"] != "degraded"
+    window = proxy.entry.data["recorder_issue_windows"][0]
+    assert window["issue"] == "observation_limit_reached" and window["since"] == t(27)
+    assert window["acknowledged_by"] == "admin-user"
+    assert data["acknowledged_issues"] == [{k: window[k] for k in ("issue", "since", "until", "acknowledged_at")}]
+    # The loss ran from the first refused row until the prune made room. Every
+    # session in it (here all, as fictional time is in the past) stays flagged.
+    assert window["until"] != window["acknowledged_at"]
+    overlapping = next(r for r in proxy.archive if r["opened_at"] == t(15))
+    assert "observation_limit_reached" in overlapping["quality_flags"]
+    assert all("observation_limit_reached" in r["quality_flags"]
+               for r in (data["latest_session"], data["previous_session"]))
+    later = dt_util.parse_datetime(window["until"]) + timedelta(minutes=1)
+    assert proxy._flag({"opened_at": later.isoformat(), "ended_at": None,
+                        "quality_flags": []})["quality_flags"] == []
+    assert proxy._flag({"opened_at": t(0), "ended_at": t(26),
+                        "quality_flags": []})["quality_flags"] == []
+    from custom_components.bsv_settlement.session_review import account_snapshot
+    with pytest.raises(Exception, match="observation_limit_reached"):
+        account_snapshot({**overlapping, "net_cost_aud_unrounded": "0", "unpriced_import_wh": "0",
+                          "unpriced_export_wh": "0"})
+    # Persisted: the store keeps no new keys, the entry keeps the window.
+    await proxy.persist()
+    saved = await proxy.store.async_load()
+    assert "observation_limit_reached" not in saved["persistent_issues"]
+    assert set(saved) == {"observations", "archive", "persistent_issues", "checkpoint_at", "tariff_provenance"}
+    assert "observation_limit_reached" in next(
+        r for r in saved["archive"] if r["opened_at"] == t(15))["quality_flags"]
+    restarted = ProxyCoordinator(hass, proxy.entry)
+    assert restarted.windows == proxy.windows
+    assert "observation_limit_reached" in restarted._flag(
+        {"opened_at": t(15), "ended_at": t(30), "quality_flags": []})["quality_flags"]
+    with pytest.raises(HomeAssistantError, match="not raised"):
+        await proxy.execute("acknowledge_proxy_issue", {"issue": "observation_limit_reached"}, "admin-user")
+
+
+@pytest.mark.asyncio
+async def test_restored_limit_without_window_flags_every_session_opened_before_acknowledgement(hass, monkeypatch):
+    proxy = recorder(hass, observations(3))
+    proxy.issues.add("observation_limit_reached")  # Restored from the store: start unknown.
+    data = await proxy.execute("acknowledge_proxy_issue", {"issue": "observation_limit_reached"}, "admin")
+    assert proxy.windows[0]["since"] is None
+    assert "observation_limit_reached" in data["latest_session"]["quality_flags"]
+    assert "observation_limit_reached" not in proxy._flag(
+        {"opened_at": "2999-01-01T00:00:00+00:00", "ended_at": None, "quality_flags": []})["quality_flags"]
+
+
+@pytest.mark.asyncio
+async def test_restart_gap_acknowledgement_flags_only_sessions_spanning_the_gap(hass, monkeypatch):
+    proxy = recorder(hass, observations(0))
+    gap_from, gap_to = BASE + timedelta(minutes=100), BASE + timedelta(minutes=200)
+    proxy.issues.add("restart_gap_exceeds_24_hour_backfill")
+    proxy.issue_window["restart_gap_exceeds_24_hour_backfill"] = (gap_from.isoformat(), gap_to.isoformat())
+    await proxy.execute("acknowledge_proxy_issue", {"issue": "restart_gap_exceeds_24_hour_backfill"}, "admin")
+    assert "restart_gap_exceeds_24_hour_backfill" not in proxy.issues
+
+    def flags(opened, ended):
+        return proxy._flag({"opened_at": t(opened), "ended_at": ended and t(ended),
+                            "quality_flags": []})["quality_flags"]
+    assert flags(90, 110) == flags(150, None) == flags(190, 260) == ["restart_gap_exceeds_24_hour_backfill"]
+    assert flags(10, 90) == flags(210, 230) == []
+
+
+@pytest.mark.asyncio
+async def test_restart_gap_window_recorded_on_load(hass, monkeypatch):
+    proxy = recorder(hass, observations(1))
+    await proxy.persist()
+    saved = await proxy.store.async_load()
+    checkpoint = (dt_util.utcnow() - timedelta(hours=30)).isoformat()
+    await proxy.store.async_save({**saved, "checkpoint_at": checkpoint})
+
+    async def history(*args, **kwargs):
+        return {}
+    monkeypatch.setattr("homeassistant.components.recorder.get_instance",
+                        lambda hass: SimpleNamespace(async_add_executor_job=history))
+    restored = ProxyCoordinator(hass, proxy.entry)
+    await restored.load()
+    try:
+        since, until = restored.issue_window["restart_gap_exceeds_24_hour_backfill"]
+        # Empty fictional history: the backfill fell short, so the gap runs to load time.
+        assert since == checkpoint and abs(dt_util.parse_datetime(until) - dt_util.utcnow()) < timedelta(minutes=1)
+    finally:
+        await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_pinned_limit_acknowledgement_and_admin_service_boundary(hass, monkeypatch):
+    from unittest.mock import AsyncMock
+    from homeassistant.core import Context
+    from homeassistant.exceptions import HomeAssistantError
+    from custom_components.bsv_settlement import async_setup
+    from custom_components.bsv_settlement.const import DOMAIN
+    proxy = recorder(hass, observations(3))
+    proxy.issues.add("pinned_session_limit_exceeded")
+    await async_setup(hass, {})
+    hass.data[DOMAIN][proxy.entry.entry_id] = proxy
+    call = {"config_entry_id": proxy.entry.entry_id, "issue": "pinned_session_limit_exceeded"}
+    hass.auth = SimpleNamespace(async_get_user=AsyncMock(return_value=SimpleNamespace(is_admin=False)))
+    for ctx in (Context(), Context(user_id="non-admin")):
+        with pytest.raises(HomeAssistantError, match="administrator"):
+            await hass.services.async_call(DOMAIN, "acknowledge_proxy_issue", call, context=ctx, blocking=True)
+    assert "pinned_session_limit_exceeded" in proxy.issues
+    hass.auth.async_get_user.return_value.is_admin = True
+    result = await hass.services.async_call(DOMAIN, "acknowledge_proxy_issue", call,
+                                            context=Context(user_id="admin"), blocking=True,
+                                            return_response=True)
+    assert "pinned_session_limit_exceeded" not in result["issues"] and proxy.windows == []
+    import voluptuous as vol
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(DOMAIN, "acknowledge_proxy_issue", {**call, "issue": "source_binding_changed"},
+                                       context=Context(user_id="admin"), blocking=True)
 
 
 @pytest.mark.asyncio

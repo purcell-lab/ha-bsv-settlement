@@ -7,7 +7,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.importlib import async_import_module
 
-from .const import DOMAIN, SERVICES, PURGE_REMOVED_BACKEND_STORES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES
+from .const import DOMAIN, SERVICES, PURGE_REMOVED_BACKEND_STORES, SESSION_REVIEW_SERVICES, BUDGET_SERVICES, COLLECTION_RECOVERY_SERVICES, CLOSURE_SERVICES, CREDIT_RECOVERY_SERVICES, PROXY_SERVICES
 from .coordinator import SettlementCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.TEXT]
@@ -115,6 +115,9 @@ async def async_setup(hass, config):
         PURGE_REMOVED_BACKEND_STORES: {
             vol.Required("entry_id"): vol.Match(r"^[0-9A-Za-z_-]{1,64}$"),
             vol.Required("confirm"): vol.In([True])},
+        "acknowledge_proxy_issue": {**common, vol.Required("issue"): vol.In([
+            "observation_limit_reached", "restart_gap_exceeds_24_hour_backfill",
+            "pinned_session_limit_exceeded"])},
     }
     review = {**common, vol.Required("review_id"): str}
     hashed = {**review, vol.Required("terms_hash"): str}
@@ -222,7 +225,7 @@ async def async_setup(hass, config):
                             "wallet_status", "wallet_self_test", "bind_session", "add_interval",
                             "prepare_session", PURGE_REMOVED_BACKEND_STORES,
                             *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES,
-                            *CREDIT_RECOVERY_SERVICES):
+                            *CREDIT_RECOVERY_SERVICES, *PROXY_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.
             user = (await hass.auth.async_get_user(call.context.user_id)
                     if call.context.user_id else None)
