@@ -23,6 +23,10 @@ an implemented control. The original no-budget mock documentation remains below.
 - **[Recorder readiness](recorder-readiness.md):** read-only per-direction
   readiness ladder and aligned-window reconciliation of OCPP shadow spans
   against the legacy recorder; no selector or switching.
+- **[OCPP lifecycle replay](ocpp-lifecycle-replay.md):** sanitised live and
+  synthetic lifecycle fixtures, deterministic shadow replay, the session
+  attribution contract (idTag is never identity) and a reproducible
+  [shadow report](qa/ocpp-shadow-report-2026-10-05.md); offline, shadow only.
 - **[Driver portal](driver-portal.md):** static wallet sign-in and owned session
   history; portal authentication is not spending authority.
 - **[Driver collection assurance](driver-collection-assurance.md):** restart
@@ -78,6 +82,8 @@ spans by bound spread, diagnostic only.
 [Recorder readiness](recorder-readiness.md) places both recorders on a readiness
 ladder that never reaches validated automatically, and reconciles closed OCPP
 spans against the legacy Sigenergy counters over aligned windows.
+[OCPP lifecycle replay](ocpp-lifecycle-replay.md) replays sanitised live
+sessions through that shadow code and fixes the attribution contract.
 It does not implement the native settlement recorder or source selector.
 
 Prioritise recovery, confirmation reassessment, real-wallet compatibility and
