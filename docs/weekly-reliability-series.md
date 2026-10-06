@@ -44,6 +44,10 @@ references can still link private financial activity.
 
 ## Release and next gates
 
+R3 consolidates operator display records without changing the ledger or driver
+portal ownership. Its [weekly acceptance matrix](weekly-acceptance-matrix.md)
+maps the retained regression owners to outstanding native/independent gates.
+
 R2 includes a fixture-tested `inspectOutgoingAction` adapter and a documented
 [native status-repair gate](outgoing-wallet-evidence.md). It is not wired into
 the production entry point. It can report wallet-local evidence but cannot fix

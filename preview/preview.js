@@ -11,7 +11,9 @@ const heldOption=document.createElement("option");heldOption.value="held";heldOp
 const warningOption=document.createElement("option");warningOption.value="metering-warning";warningOption.textContent="Metering warning: settlement allowed";$("#scenario").append(warningOption);
 const feeOption=document.createElement("option");feeOption.value="fee-aware";feeOption.textContent="Fee-aware operator credit";$("#scenario").append(feeOption);
 for(const [value,label] of [["closure","Completed account: data review"],["zero","Completed account: zero balance"],
-  ["waived","Waived charge: funds received separately"],["waived-held","Waived charge: held attempt closed"]]){
+  ["waived","Waived charge: funds received separately"],["waived-held","Waived charge: held attempt closed"],
+  ["evidence-paid","Paid credit with historical blocked route"],["evidence-conflict","Conflicting transaction records"],
+  ["evidence-lost","Confirmation evidence lost"]]){
  const option=document.createElement("option");option.value=value;option.textContent=label;$("#scenario").append(option);
 }
 const config={config_entry_id:"fictional-wallet",proxy_config_entry_id:"fictional-proxy",wallet_entity:"sensor.wallet",proxy_entity:"sensor.proxy",rate_entity:"sensor.rate",balance_entity:"sensor.balance",operator_name:"Demonstration operator",operator_contact:"operator@example.test"};
@@ -164,6 +166,19 @@ function card(name,extra={}){const el=document.createElement(name);el.setConfig(
 function panel(html){const p=document.createElement("section");p.className="panel";p.innerHTML=html;$("#content").append(p);}
 function render(){
  state();
+ if($("#scenario").value.startsWith("evidence-")){
+   const kind=$("#scenario").value;
+   const known={...payment,txid:"ab".repeat(32),amount_sats:213,fee_sats:23,
+     direction:"operator_to_driver",checked_at:"2026-10-06T00:00:00Z"};
+   Object.assign(hass.states["sensor.wallet"].attributes,{
+     ongoing_credit:{enabled:true,sessions:[{session_id:session.session_id,state:"credit_blocked",error:"Old superseded route"}]},
+     automatic_credit:{enabled:true,payments:[known]},
+     session_payments:kind==="evidence-paid"?
+       [{session_id:session.session_id,state:"cancelled",source:"manual",amount_sats:999}]:
+       kind==="evidence-conflict"?[{...known,txid:"cd".repeat(32),amount_sats:81}]:
+       [{...known,state:"broadcast_unknown",checked_at:"2026-10-06T01:00:00Z"}]
+   });
+ }
  if($("#scenario").value==="held"){
    hass.states["sensor.wallet"].attributes.automatic_credit.payments=[];
    hass.states["sensor.proxy"].attributes.latest_session={...session,import_kwh:3.8,export_kwh:0.2,net_cost_aud:0.89};

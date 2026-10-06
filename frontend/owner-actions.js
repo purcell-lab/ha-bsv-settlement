@@ -28,7 +28,11 @@ export function ownerActionRows(health,sessions,now=Date.now()){
     const complete=terminal.has(row.state)&&(!row.state.includes("confirmed")||!!row.txid);
     const actions=[],add=(id,label,primary=false)=>actions.push({id,label,primary});
     let title=stateLabel(row.state),note="";
-    if(complete){
+    if(row.evidence_conflict){
+      title="Conflicting settlement records";
+      note="Inspect every retained attempt. Do not collect, waive or create another invitation.";
+      add("check","Check provider status",true);
+    }else if(complete){
       note=row.state==="waived"?"Closed without payment. This is not a refund.":"No further collection is required.";
     }else if(row.source==="driver"&&!budgetId){
       title="Collection reference unavailable";

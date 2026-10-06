@@ -310,6 +310,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                 "state": p.get("state", r["state"]),
                 "direction": r["direction"], "amount_sats": r["amount_sats"],
                 "fee_sats": p.get("fee_sats"), "txid": p.get("txid"),
+                "checked_at": p.get("checked_at"),
+                "confirmations": p.get("confirmations"), "output_index": p.get("output_index"),
                 "error": p.get("verification_error"), "source": "manual",
             })
         for budget_id, item in list(self.saved.get("driver_collections", {}).items())[-20:]:
@@ -323,6 +325,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                         "transaction_id", row["terms"].get("transaction_id")),
                     "state": item["state"], "direction": "driver_to_operator",
                     "txid": item.get("txid"), "error": item.get("error"),
+                    "checked_at": item.get("checked_at"),
+                    "confirmations": item.get("confirmations"), "output_index": item.get("output_index"),
                     "source": "driver", "diagnostic": copy.deepcopy(item.get("diagnostic")),
                     "recovery": copy.deepcopy(item.get("recovery")),
                     **collection_display_terms(item, budget_id, session_id),

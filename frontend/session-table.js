@@ -1,6 +1,16 @@
-import {esc,num,stamp,short,energyMetrics,finite,chainRecordLink} from "./ui.js";
+import {esc,num,stamp,short,energyMetrics,finite,chainRecordLink,stateLabel} from "./ui.js";
 import {settlementRows,paymentStatus} from "./payment-status.js";
 import {warningMessage} from "./quality.js";
+
+export function evidenceDetails(row){
+  const records=row.audit_records||[];
+  if(records.length<2)return "";
+  return `<details><summary>Retained evidence (${records.length} records)</summary>
+    <p class="note">Historical projections, not additional amounts due.</p>
+    <ul>${records.map(r=>`<li>${esc(r.source||"Saved record")}: ${esc(stateLabel(r.state||"Unknown"))}
+      ${Number.isSafeInteger(r.amount_sats)?` · ${num(r.amount_sats)} sat`:""}
+      ${r.txid?chainRecordLink(r.txid):""}</li>`).join("")}</ul></details>`;
+}
 
 export function sessionTableRows(health,sessions,direction="all"){
   const rows=settlementRows(health);
@@ -13,7 +23,8 @@ export function sessionTableRows(health,sessions,direction="all"){
   return rows.map(row=>{
     const session=sessions.find(s=>s.session_id===row.session_id);
     return {row,session,energy:energyMetrics(session),status:paymentStatus(row,sessions)};
-  }).filter(r=>direction==="all"||r.status.direction===direction);
+  }).filter(r=>direction==="all"||r.status.direction===direction||
+    r.row.evidence_conflict&&!r.row.direction);
 }
 
 export function sessionTable(health,sessions,direction){
@@ -28,7 +39,7 @@ export function sessionTable(health,sessions,direction){
       <td>${num(e.toEV.kwh,2)}<br><span class="note">${num(e.toEV.average,4)}</span></td>
       <td>${num(e.fromEV.kwh,2)}<br><span class="note">${num(e.fromEV.average,4)}</span></td>
       <td>${num(s?.net_cost_aud??row.net_amount_aud,2)}</td>
-      <td>${num(row.amount_sats)} sat<br><span class="note">Fee ${num(row.fee_sats)} sat</span>${row.max_fee_sats!==undefined?`<br><span class="note">Fee cap ${num(row.max_fee_sats)} sat</span>`:""}</td>
-      <td><strong>${esc(p.title)}</strong><p class="note">${esc(p.detail)}</p>${warningMessage(s?.quality_flags||row.quality_flags)?`<p class="note">Metering warning (non-blocking): ${esc(warningMessage(s?.quality_flags||row.quality_flags))}</p>`:""}</td>
+      <td>${row.evidence_conflict?'Not combined<br><span class="note">See retained evidence</span>':`${num(row.amount_sats)} sat<br><span class="note">Fee ${num(row.fee_sats)} sat</span>${row.max_fee_sats!==undefined?`<br><span class="note">Fee cap ${num(row.max_fee_sats)} sat</span>`:""}`}</td>
+      <td><strong>${esc(p.title)}</strong><p class="note">${esc(p.detail)}</p>${evidenceDetails(row)}${warningMessage(s?.quality_flags||row.quality_flags)?`<p class="note">Metering warning (non-blocking): ${esc(warningMessage(s?.quality_flags||row.quality_flags))}</p>`:""}</td>
     </tr>`).join("")}</tbody></table></div></section>`;
 }
