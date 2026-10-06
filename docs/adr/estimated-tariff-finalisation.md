@@ -13,7 +13,7 @@ Two written rules disagree:
 | #11 acceptance criterion | "Provisional/missing prices block final settlement without obscuring estimates." |
 | #12 acceptance criterion | "Finalisation requires reconciled energy and acceptable final tariff data." |
 | [#68](https://github.com/purcell-lab/ha-bsv-settlement/pull/68) and [estimated-tariff-settlement-policy](../estimated-tariff-settlement-policy.md) | A closed, **fully priced** session may settle when some intervals are priced from estimates. `import:estimated_tariff` / `export:estimated_tariff` are disclosed warnings, not vetoes |
-| [metering-quality-policy](../metering-quality-policy.md), "What still blocks" | Still lists "estimated tariff intervals" as a hard stop. This is stale relative to #68 and the code |
+| [metering-quality-policy](../metering-quality-policy.md), "What still blocks" | Listed "estimated tariff intervals" as a hard stop, stale relative to #68 and the code. Corrected to describe current behaviour (#101); the decision below is still open |
 
 The code follows #68. `session_review.WARNING_FLAGS` includes both
 estimated-tariff flags. `account_snapshot` still requires zero unpriced energy
@@ -46,7 +46,7 @@ a paid account automatically. Any difference is a separate reviewed adjustment.
 - Amend #12 to read: "Finalisation requires reconciled energy and complete
   tariff coverage. Estimate-priced accounts are disclosed demonstration
   valuations."
-- Correct `metering-quality-policy.md` to match.
+- `metering-quality-policy.md` already describes this behaviour (#101).
 
 **B. Restore an estimate gate.** Remove the estimated-tariff flags from
 `WARNING_FLAGS`, so accounts wait until final prices arrive or need an explicit
