@@ -274,10 +274,20 @@ options flow or reconfigure flow for the proxy.
   the entity back restores observation. A new proxy entry on the new ID is a
   separate recorder: it has a new entry ID and store, and different session
   IDs, because the ID hashes the state entity_id. Existing wallet rows remain
-  bound to the old entry. The proxy pins no registry `unique_id`. If a
-  different sensor later takes the old `entity_id`, the proxy observes it
-  without an identity check. Only the unit checks in the session derivation
-  apply.
+  bound to the old entry. Since #107 each source's registry identity
+  (`platform`, `unique_id`, `config_entry_id`) is pinned in config entry data
+  as `source_identity`: at creation, or adopted once on the first load of an
+  older entry (`source_binding_adopted_at`, logged). If a different sensor
+  takes a pinned `entity_id` (another `unique_id`, platform or config entry, or
+  a registered entity on an `unregistered` pin, or a state on an ID whose
+  registered entity is gone), the recorder reports `source_binding_changed`,
+  is `degraded`, withholds the net cost, records and backfills nothing from
+  that source, and every wallet path that checks recorder issues refuses. The
+  issue is recomputed against the pin on every refresh and restart, so it lasts
+  while the mismatch does; the pin is never re-adopted. A source with no
+  registry entry is pinned as `unregistered`: it does not block, but the
+  status warns `<source>:source_unregistered`, since its identity cannot be
+  checked. To accept a genuinely replaced sensor, create a new proxy entry.
 - **OCPP shadow.** Each source is pinned by registry `unique_id`, config entry
   and device (`source_binding`). A rename, a moved device or a changed
   `unique_id` makes the running coordinator `incompatible`. It closes the open
@@ -285,7 +295,9 @@ options flow or reconfigure flow for the proxy.
   setup raises and leaves the store untouched. Metadata, export and reference
   bindings degrade to `metadata_binding_changed` or `export_binding_changed`,
   or are ignored. These cases are pinned by
-  `test_renamed_proxy_source_degrades_and_is_not_followed` and
+  `test_renamed_proxy_source_degrades_and_is_not_followed`,
+  `test_different_sensor_on_pinned_entity_id_degrades_and_is_not_recorded`,
+  `test_proxy_adopts_source_identity_once_and_keeps_it_across_restart` and
   `test_renamed_ocpp_shadow_source_is_incompatible_and_refuses_reload`.
 
 **Boundary-rule changes.** Changes to the open and close rules in

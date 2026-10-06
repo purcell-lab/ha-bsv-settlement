@@ -24,6 +24,17 @@ flag. The operator must check that the energy and state entities represent the
 same physical charger. The configuration flow validates entity existence,
 distinctness and units; it does not certify metering or prove device identity.
 
+Each source's entity-registry identity (`platform`, `unique_id`,
+`config_entry_id`) is pinned in the config entry as `source_identity`.
+Entries created before this pin adopt the current identities once on their
+first load and record `source_binding_adopted_at`. If a different sensor later
+appears under a pinned entity ID, the recorder reports
+`source_binding_changed`, is `degraded`, withholds the net cost and ignores
+that source until the original identity returns. A renamed or removed source
+reads as `<source>:unavailable`, as before. A source without a registry entry
+is pinned as `unregistered` and only warns. The status entity shows
+`source_identity` per source.
+
 No source entity names, wallet addresses or private installation identifiers
 are hardcoded into the published component. It requires HA recorder history
 for startup/restart gap recovery; ensure all five source sensors are recorded.

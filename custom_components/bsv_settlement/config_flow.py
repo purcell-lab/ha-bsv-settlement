@@ -95,9 +95,12 @@ class BSVSettlementConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id("sensor-proxy:" + user_input["state_entity"])
                 self._abort_if_unique_id_configured()
+                from .proxy import SOURCE_KEYS, pin_sources
+                # Registry identity pinned at creation (#107); checked on every observation.
+                identity = pin_sources(self.hass, {k: user_input[k + "_entity"] for k in SOURCE_KEYS})
                 return self.async_create_entry(
                     title=user_input.get("name", "Charging sessions"),
-                    data={**user_input, "backend": "sensor_proxy"})
+                    data={**user_input, "backend": "sensor_proxy", "source_identity": identity})
         schema = {vol.Optional("name", default="Charging sessions"): str}
         schema.update({
             vol.Required(field): selector.EntitySelector(

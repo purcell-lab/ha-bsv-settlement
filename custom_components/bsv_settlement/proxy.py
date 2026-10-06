@@ -7,6 +7,7 @@ import time
 
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -37,6 +38,19 @@ def normalize(state):
             ("start", "start_time"), ("end", "end_time"), ("estimate", "estimate"))
            if field in attrs},
     }
+
+
+def registry_identity(hass, entity_id):
+    """Entity-registry identity of one source; ``unregistered`` if it has none."""
+    row = er.async_get(hass).async_get(entity_id)
+    if row is None:
+        return {"entity_id": entity_id, "unregistered": True}
+    return {"entity_id": entity_id, "platform": row.platform, "unique_id": row.unique_id,
+            "config_entry_id": row.config_entry_id}
+
+
+def pin_sources(hass, sources):
+    return {key: registry_identity(hass, entity) for key, entity in sources.items()}
 
 
 def retain(summaries, pinned, limit=None, max_pinned=None):
@@ -75,6 +89,36 @@ class ProxyCoordinator(DataUpdateCoordinator):
         self.last_save = 0
         self.last_latest_id = None
         self.provenance = TariffProvenanceLedger()
+        # Pinned at creation, or adopted once on first load (#107).
+        self.pinned = entry.data.get("source_identity")
+
+    def _update_entry(self, **changes):
+        """Persist to config entry data; in-memory only for an unregistered entry."""
+        entries = getattr(self.hass, "config_entries", None)
+        if entries is not None and entries.async_get_entry(self.entry.entry_id) is self.entry:
+            entries.async_update_entry(self.entry, data={**self.entry.data, **changes})
+
+    def adopt_identity(self):
+        if self.pinned is not None:
+            return
+        self.pinned = pin_sources(self.hass, self.sources)
+        adopted_at = dt_util.utcnow().isoformat()
+        _LOGGER.warning("Proxy %s adopted its current source registry identities once",
+                        self.entry.entry_id)
+        self._update_entry(source_identity=self.pinned, source_binding_adopted_at=adopted_at)
+
+    def binding(self, key):
+        """pinned | unregistered | missing | changed | unpinned (never loaded)."""
+        if self.pinned is None:
+            return "unpinned"
+        entity = self.sources[key]
+        current = registry_identity(self.hass, entity)
+        pinned = self.pinned.get(key) if isinstance(self.pinned, dict) else None
+        if current.get("unregistered") and self.hass.states.get(entity) is None:
+            return "missing"  # Renamed or removed: the unavailable issue applies.
+        if pinned != current:
+            return "changed"
+        return "unregistered" if current.get("unregistered") else "pinned"
 
     async def load(self):
         saved = await self.store.async_load()
@@ -85,6 +129,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
             self.issues.update(saved.get("persistent_issues", []))
             # Older stores have no provenance: it stays "not recorded", never invented.
             self.provenance = TariffProvenanceLedger(saved.get("tariff_provenance"))
+        self.adopt_identity()
         end = dt_util.utcnow()
         start = end - timedelta(hours=24)
         if saved and saved.get("checkpoint_at"):
@@ -100,6 +145,8 @@ class ProxyCoordinator(DataUpdateCoordinator):
                 entity_ids=list(self.sources.values()), significant_changes_only=False,
                 minimal_response=False, no_attributes=False))
             for key, entity in self.sources.items():
+                if self.binding(key) == "changed":
+                    continue  # Never backfill another sensor's history.
                 rows = [normalize(state) for state in history.get(entity, [])]
                 if not rows:
                     self.issues.add(key + ":history_unavailable")
@@ -154,7 +201,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
         state = event.data.get("new_state")
         if state:
             for key, entity in self.sources.items():
-                if entity == state.entity_id:
+                if entity == state.entity_id and self.binding(key) != "changed":
                     self._append(key, normalize(state))
 
     @callback
@@ -175,7 +222,7 @@ class ProxyCoordinator(DataUpdateCoordinator):
     def snapshot_current(self):
         for key, entity in self.sources.items():
             state = self.hass.states.get(entity)
-            if state:
+            if state and self.binding(key) != "changed":
                 self._append(key, normalize(state))
 
     async def _async_update_data(self):
@@ -201,7 +248,10 @@ class ProxyCoordinator(DataUpdateCoordinator):
                 self.observations[key] = before[-1:] + after
         latest = records[-1] if records else None
         previous = records[-2] if len(records) > 1 else (self.archive[-1] if self.archive else None)
-        issues = sorted(self.issues | {key + ":unavailable" for key in unavailable})
+        bindings = {key: self.binding(key) for key in self.sources}
+        # Live, not stored: persists while the registry differs from the pin.
+        changed = {"source_binding_changed"} if "changed" in bindings.values() else set()
+        issues = sorted(self.issues | changed | {key + ":unavailable" for key in unavailable})
         retention = self._retention_warnings(records, pins, complete)
         if issues and latest:
             latest = {**latest, "net_cost_aud": None, "net_cost_aud_unrounded": None,
@@ -217,7 +267,10 @@ class ProxyCoordinator(DataUpdateCoordinator):
             "state": "degraded" if issues else "recording" if latest and not latest["ended_at"] else "waiting",
             "updated_at": as_of, "latest_session": latest, "previous_session": previous,
             "issues": issues, "source_entities": self.sources, "billing_eligible": False,
-            "warnings": retention["warnings"], "archive_retention": retention["retention"],
+            "warnings": retention["warnings"] + [
+                key + ":source_unregistered" for key, state in bindings.items() if state == "unregistered"],
+            "archive_retention": retention["retention"], "source_identity": bindings,
+            "source_binding_adopted_at": self.entry.data.get("source_binding_adopted_at"),
         }
 
     def _retention_warnings(self, records, pins, complete):

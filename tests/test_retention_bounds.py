@@ -30,7 +30,7 @@ from custom_components.bsv_settlement.summary_window import (
     route_unresolved, window)
 from custom_components.bsv_settlement.tariff_provenance import MAX_SESSIONS, TariffProvenanceLedger
 from test_ocpp_export_shadow import BINDING as EXPORT_BINDING, simulate, snap, stamp
-from test_proxy import config_entry
+from test_proxy import config_entry, load_registries
 
 BASE = datetime(2026, 10, 1, 8, 0, tzinfo=timezone(timedelta(hours=10)))
 WINDOW = 20  # Dashboard display window shared by the route summaries.
@@ -69,6 +69,7 @@ def recorder(hass, rows=None, archive=None):
 async def hass(tmp_path):
     dt_util.set_default_time_zone(dt_util.get_time_zone("Australia/Brisbane"))
     instance = HomeAssistant(str(tmp_path / "ha"))
+    await load_registries(instance)
     yield instance
     await instance.async_stop(force=True)
 
@@ -619,7 +620,7 @@ def test_export_shadow_journal_and_spans_trim_with_flags_and_reload():
 
 @pytest.mark.asyncio
 async def test_renamed_proxy_source_degrades_and_is_not_followed(hass):
-    """The proxy binds entity_id strings. A rename reads as unavailable."""
+    """A rename reads as unavailable; the proxy never follows the new entity_id."""
     proxy = recorder(hass, observations(3))
     assert not (await proxy._async_update_data())["issues"]
     old = proxy.sources["state"]
@@ -635,6 +636,149 @@ async def test_renamed_proxy_source_degrades_and_is_not_followed(hass):
     # a replacement entry on the new entity_id derives different IDs.
     assert {r["session_id"] for r in build_records(observations(3), "sensor.renamed_state", t(100))}.isdisjoint(
         r["session_id"] for r in build_records(observations(3), old, t(100)))
+
+
+async def registered_site(hass, monkeypatch, **extra):
+    """Registered entry and registry rows for four sources; export_price has none."""
+    from homeassistant.config_entries import ConfigEntries
+    from homeassistant.helpers import entity_registry as er
+    hass.config_entries = ConfigEntries(hass, {})
+    await hass.config_entries.async_initialize()
+    entry = config_entry(**extra)
+    hass.config_entries._entries[entry.entry_id] = entry
+    registry = er.async_get(hass)
+    for key in ("import", "export", "state", "import_price"):
+        registry.async_get_or_create("sensor", "fictional_inverter", "uid-" + key,
+                                     suggested_object_id="proxy_" + key)
+
+    async def history(*args, **kwargs):
+        return {}
+    monkeypatch.setattr("homeassistant.components.recorder.get_instance",
+                        lambda hass: SimpleNamespace(async_add_executor_job=history))
+    proxy = ProxyCoordinator(hass, entry)
+    recorder_states(hass, proxy)
+    return proxy
+
+
+def recorder_states(hass, proxy):
+    units = {"import": "MWh", "export": "MWh", "import_price": "$/kWh", "export_price": "$/kWh"}
+    for key, entity in proxy.sources.items():
+        hass.states.async_set(entity, "Idle" if key == "state" else "1",
+                              {"unit_of_measurement": units[key]} if key in units else {})
+
+
+@pytest.mark.asyncio
+async def test_proxy_adopts_source_identity_once_and_keeps_it_across_restart(hass, monkeypatch):
+    proxy = await registered_site(hass, monkeypatch)
+    entry = proxy.entry
+    assert "source_identity" not in entry.data
+    await proxy.load()
+    try:
+        pinned = entry.data["source_identity"]
+        adopted = entry.data["source_binding_adopted_at"]
+        assert pinned["import"] == {"entity_id": "sensor.proxy_import", "platform": "fictional_inverter",
+                                    "unique_id": "uid-import", "config_entry_id": None}
+        assert pinned["export_price"] == {"entity_id": "sensor.proxy_export_price", "unregistered": True}
+        proxy.issues.clear()  # Fictional empty history; unrelated to identity.
+        data = await proxy._async_update_data()
+        assert not data["issues"] and data["state"] != "degraded"
+        assert data["source_identity"] == {**{k: "pinned" for k in ("import", "export", "state", "import_price")},
+                                           "export_price": "unregistered"}
+        assert "export_price:source_unregistered" in data["warnings"]
+        assert data["source_binding_adopted_at"] == adopted
+    finally:
+        await proxy.close()
+    restarted = ProxyCoordinator(hass, entry)
+    await restarted.load()
+    try:
+        assert entry.data["source_binding_adopted_at"] == adopted  # Adopted once only.
+        assert restarted.pinned == pinned
+        assert all(restarted.binding(k) in ("pinned", "unregistered") for k in restarted.sources)
+    finally:
+        await restarted.close()
+
+
+@pytest.mark.asyncio
+async def test_different_sensor_on_pinned_entity_id_degrades_and_is_not_recorded(hass, monkeypatch):
+    from homeassistant.helpers import entity_registry as er
+    proxy = await registered_site(hass, monkeypatch)
+    await proxy.load()
+    try:
+        proxy.observations = observations(3)
+        proxy.issues.clear()
+        assert not (await proxy._async_update_data())["issues"]
+        registry = er.async_get(hass)
+        registry.async_remove("sensor.proxy_import")
+        hass.states.async_remove("sensor.proxy_import")  # Lets the new row take the ID.
+        registry.async_get_or_create("sensor", "fictional_inverter", "uid-other-meter",
+                                     suggested_object_id="proxy_import")
+        assert registry.async_get("sensor.proxy_import").unique_id == "uid-other-meter"
+        before = list(proxy.observations["import"])
+        hass.states.async_set("sensor.proxy_import", "7", {"unit_of_measurement": "MWh"})
+        await hass.async_block_till_done()
+        data = await proxy._async_update_data()
+        assert "source_binding_changed" in data["issues"] and data["state"] == "degraded"
+        assert data["source_identity"]["import"] == "changed"
+        assert data["latest_session"]["net_cost_aud"] is None
+        assert proxy.observations["import"] == before
+        # The pin is never re-adopted; a restart still degrades and skips backfill.
+        await proxy.close()
+        again = ProxyCoordinator(hass, proxy.entry)
+        await again.load()
+        assert "import:history_unavailable" not in again.issues
+        again.issues.clear()
+        assert "source_binding_changed" in (await again._async_update_data())["issues"]
+        await again.close()
+    finally:
+        await proxy.close()
+
+
+@pytest.mark.asyncio
+async def test_pinned_source_renamed_reads_as_unavailable_not_changed(hass, monkeypatch):
+    from homeassistant.helpers import entity_registry as er
+    proxy = await registered_site(hass, monkeypatch)
+    await proxy.load()
+    try:
+        proxy.observations = observations(3)
+        proxy.issues.clear()
+        er.async_get(hass).async_update_entity("sensor.proxy_state", new_entity_id="sensor.renamed_state")
+        hass.states.async_remove("sensor.proxy_state")
+        hass.states.async_set("sensor.renamed_state", "Charging")
+        await hass.async_block_till_done()
+        data = await proxy._async_update_data()
+        assert data["source_identity"]["state"] == "missing"
+        assert "state:unavailable" in data["issues"] and "source_binding_changed" not in data["issues"]
+    finally:
+        await proxy.close()
+
+
+@pytest.mark.asyncio
+async def test_unregistered_pin_taken_by_registered_sensor_is_changed(hass, monkeypatch):
+    from homeassistant.helpers import entity_registry as er
+    proxy = await registered_site(hass, monkeypatch)
+    await proxy.load()
+    try:
+        hass.states.async_remove("sensor.proxy_export_price")
+        er.async_get(hass).async_get_or_create("sensor", "other", "uid-x",
+                                               suggested_object_id="proxy_export_price")
+        hass.states.async_set("sensor.proxy_export_price", "1", {"unit_of_measurement": "$/kWh"})
+        assert proxy.binding("export_price") == "changed"
+    finally:
+        await proxy.close()
+
+
+@pytest.mark.asyncio
+async def test_proxy_config_flow_pins_registry_identity_at_creation(hass, monkeypatch):
+    from custom_components.bsv_settlement.config_flow import BSVSettlementConfigFlow
+    proxy = await registered_site(hass, monkeypatch)
+    flow = BSVSettlementConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    result = await flow.async_step_proxy(dict(proxy.entry.data) | {"name": "Fictional"})
+    assert result["type"] == "create_entry"
+    identity = result["data"]["source_identity"]
+    assert identity["state"]["unique_id"] == "uid-state" and identity["export_price"]["unregistered"]
+    assert "source_binding_adopted_at" not in result["data"]
 
 
 @pytest.mark.asyncio

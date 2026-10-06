@@ -96,6 +96,12 @@ protection uses that name.
 - [ ] `/bsv_settlement/operator-card.js`, `/bsv_settlement/session-review-card.js`,
       `/bsv_settlement/budget-card.js` and `/bsv_settlement/driver/` return
       200. Installed file hashes match the commit's source.
+- [ ] Each sensor-proxy entry has `source_identity` in its config entry data.
+      On the first load after #107 an older entry logs one "adopted its
+      current source registry identities" warning and stores
+      `source_binding_adopted_at`. The recorder status shows no
+      `source_binding_changed` issue and `source_identity` reads `pinned` (or
+      `unregistered`, which only warns) for every source.
 - [ ] Record the evidence (redacted) on the deployment PR or tracking issue.
       Include the SHA, HA version, backup identifier and checks performed.
 
@@ -133,6 +139,8 @@ added later:
 | Unresolved payments and reservations | Older code may not know newer states (e.g. automatic or ongoing credits) and could reuse a reserved input | Resolve or record every unresolved payment first. Recovery owner approval needed |
 | `provenance_archive` store and `tariff_provenance_ref` fields (#12) | Older releases do not read the archive and ignore the ledger references. Their new reviews and automatic records carry no frozen provenance. A pre-archive release shows a manual review's reference in its status output (digests and counts only). The archive file is left in place | Accept. Evidence only, with no payment effect. Records made while downgraded show `not_recorded` after upgrade |
 | Removed `mock` / `embedded_testnet` backends | Upgrading: their entries fail with `ConfigEntryError` ("backend was removed"); other entries load. Their `.storage` files (`bsv_settlement.<entry>`, `bsv_settlement.embedded.<entry>`, `bsv_settlement.operator_key.<entry>`) are left untouched. Downgrading after deleting the entry does not recreate it | Delete each legacy entry. Archive the left-over stores privately if needed (the testnet key file is key material); deleting the entry does not remove them, `purge_removed_backend_stores` does (administrator only, refuses mainnet and existing entries). Re-add only through an older release if ever needed |
+| Proxy config entry data `source_identity`, `source_binding_adopted_at` (#107) | Older releases ignore them and do not check source identity; a takeover of a source entity ID is observed silently while downgraded. Re-upgrading keeps the original pin; it does not re-adopt | Accept for a short rollback, or check the source entities while downgraded |
+| Proxy archive pinned beyond 50 (#106) | Older releases load the longer archive and cut it to the newest 50 on the next prune; referenced older summaries are then lost | Settle or cancel bound sessions before downgrading |
 | New top-level keys | Settlement and wallet ledgers are re-saved whole, so newer keys survive but are not enforced. The sensor-proxy store rewrites only the keys it knows | Treat newer-feature state as inactive while downgraded |
 
 ## Automated evidence and its limits

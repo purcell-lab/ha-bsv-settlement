@@ -160,10 +160,18 @@ def test_native_datetime_price_attributes_are_normalized():
     assert prices[0]["rate"] == Decimal(".1")
 
 
-def config_entry():
+async def load_registries(hass):
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    if hasattr(dr, "async_setup"):
+        dr.async_setup(hass)
+    await dr.async_load(hass)
+    await er.async_load(hass)
+
+
+def config_entry(**extra):
     return ConfigEntry(version=1, minor_version=1, domain="bsv_settlement",
                        title="Charging sessions", data={"backend": "sensor_proxy", **{
-                           k + "_entity": "sensor.proxy_" + k for k in SOURCE_KEYS}},
+                           k + "_entity": "sensor.proxy_" + k for k in SOURCE_KEYS}, **extra},
                        source="user", unique_id="proxy-test", options={},
                        discovery_keys=MappingProxyType({}), subentries_data=[])
 
@@ -171,6 +179,7 @@ def config_entry():
 @pytest.mark.asyncio
 async def test_real_ha_proxy_storage_restart_and_read_only(tmp_path, monkeypatch):
     hass = HomeAssistant(str(tmp_path / "ha"))
+    await load_registries(hass)
     dt_util.set_default_time_zone(dt_util.get_time_zone("Australia/Brisbane"))
     entry = config_entry()
     coords = []
