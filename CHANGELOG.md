@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased: packaging, clean install and release checklist
+
+- Run the Python/HA suite in CI on HA 2026.9.4 (the declared minimum, same check name) and on 2026.10.0b2.
+- Add an offline clean-install smoke test. It copies only the HACS payload into an empty config, sets it up through the config flows in safe modes, then checks entities, actions and frontend paths and unloads.
+- Add upgrade/rollback storage tests over fictional fixture stores from v0.1.2 and the earlier main layout. No private key is committed.
+- Add `docs/release-checklist.md`: owner roles, pre-flight, verification, rollback and downgrade hazards. Correct the HACS install steps for backend selection.
+- No change to integration code, payment or signing behaviour, and no version bump.
+
 ## Unreleased: Home Assistant OS deployment
 
 - Add a separately installable BSV Wallet Mock app/add-on with persistent storage and internal-only networking.

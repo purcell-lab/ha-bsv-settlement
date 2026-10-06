@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.operator_key.01FIXTUREEMBEDDEDTESTNET00",
+  "data": {
+    "secret_hex": "__FIXTURE_TESTNET_SECRET__",
+    "public_key": "__FIXTURE_TESTNET_PUBLIC_KEY__",
+    "address": "__FIXTURE_TESTNET_ADDRESS__",
+    "network": "testnet"
+  }
+}

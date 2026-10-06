@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.ledger_checkpoint.01FIXTUREEMBEDDEDMAINNET00",
+  "data": {
+    "version": 1,
+    "sequence": 6,
+    "identity": "__FIXTURE_MAINNET_PUBLIC_KEY__",
+    "digest": "9de6b0369f5be85757e521b669f7fb1fcfaf4088e35f7e37b745076840c2a0c1"
+  }
+}
