@@ -1,0 +1,371 @@
+"""Retention and expiry bounds of persisted stores (#6). Fictional data only.
+
+Each test pins one bound: what is dropped, and that nothing financially
+unresolved is dropped with it. Display windows are proved to be views only;
+the saved records stay in the ledger. See docs/record-versioning.md.
+"""
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+import pytest_asyncio
+
+pytest.importorskip("homeassistant")
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+
+from custom_components.bsv_settlement import proxy as proxy_module
+from custom_components.bsv_settlement.auto_credit import AutomaticCredits
+from custom_components.bsv_settlement.budget import SessionBudgets
+from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
+from custom_components.bsv_settlement.ocpp_export_shadow_ledger import (
+    MAX_EVENTS, MAX_SPANS, ExportShadowLedger, validate_section)
+from custom_components.bsv_settlement.ongoing_credit import OngoingCredits
+from custom_components.bsv_settlement.proxy import ProxyCoordinator, merge_rows, normalize
+from custom_components.bsv_settlement.proxy_ledger import build_records
+from custom_components.bsv_settlement.tariff_provenance import MAX_SESSIONS, TariffProvenanceLedger
+from test_ocpp_export_shadow import BINDING as EXPORT_BINDING, simulate, snap, stamp
+from test_proxy import config_entry
+
+BASE = datetime(2026, 10, 1, 8, 0, tzinfo=timezone(timedelta(hours=10)))
+WINDOW = 20  # Dashboard display window shared by the route summaries.
+
+
+def t(minutes):
+    return (BASE + timedelta(minutes=minutes)).isoformat()
+
+
+def sessions(first, count):
+    """Charging/Idle pairs ten minutes apart: one ended proxy session each."""
+    return [row for n in range(first, first + count)
+            for row in ({"t": t(10 * n), "value": "Charging"}, {"t": t(10 * n + 5), "value": "Idle"})]
+
+
+def observations(count):
+    meter = [{"t": t(-1), "value": "1", "unit": "MWh"}]
+    return {"state": sessions(0, count), "import": deepcopy(meter), "export": deepcopy(meter),
+            "import_price": [], "export_price": []}
+
+
+def recorder(hass, rows=None, archive=None):
+    """Real, unloaded ProxyCoordinator with every source present (no issues)."""
+    proxy = ProxyCoordinator(hass, config_entry())
+    units = {"import": "MWh", "export": "MWh", "import_price": "$/kWh", "export_price": "$/kWh"}
+    for key, entity in proxy.sources.items():
+        hass.states.async_set(entity, "Idle" if key == "state" else "1",
+                              {"unit_of_measurement": units[key]} if key in units else {})
+    if rows is not None:
+        proxy.observations = rows
+    proxy.archive = archive or []
+    return proxy
+
+
+@pytest_asyncio.fixture
+async def hass(tmp_path):
+    dt_util.set_default_time_zone(dt_util.get_time_zone("Australia/Brisbane"))
+    instance = HomeAssistant(str(tmp_path / "ha"))
+    yield instance
+    await instance.async_stop(force=True)
+
+
+# --- Proxy summary archive -------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_proxy_archive_keeps_exactly_newest_fifty_and_prunes_to_one_baseline(hass):
+    proxy = recorder(hass, observations(60))
+    data = await proxy._async_update_data()
+    opened = [r["opened_at"] for r in proxy.archive]
+    # 60 derived: latest and previous stay live, the 50 before them are archived.
+    assert opened == [t(10 * n) for n in range(8, 58)]
+    assert data["latest_session"]["opened_at"] == t(590)
+    assert data["previous_session"]["opened_at"] == t(580)
+    assert len({r["session_id"] for r in proxy.archive}) == 50
+    assert not data["issues"]
+    # Observations: one baseline per source before the cut, every row since.
+    state = proxy.observations["state"]
+    assert state[0] == {"t": t(575), "value": "Idle"}
+    assert [r["t"] for r in state[1:5]] == [t(580), t(585), t(590), t(595)]
+    for key in ("import", "export"):
+        assert proxy.observations[key][0] == {"t": t(-1), "value": "1", "unit": "MWh"}
+    # More sessions roll the window: oldest dropped first, no duplicates.
+    proxy.observations["state"] = merge_rows(proxy.observations["state"], sessions(60, 3))
+    data = await proxy._async_update_data()
+    assert [r["opened_at"] for r in proxy.archive] == [t(10 * n) for n in range(11, 61)]
+    assert data["latest_session"]["opened_at"] == t(620)
+    # The same retained rows re-derive the same identities (stable session_id).
+    again = build_records(observations(60), proxy.sources["state"], data["updated_at"])
+    assert [r["session_id"] for r in again[11:58]] == [r["session_id"] for r in proxy.archive[:47]]
+
+
+@pytest.mark.asyncio
+async def test_rederived_session_replaces_its_archived_summary_in_place(hass):
+    rows = observations(5)
+    derived = build_records(rows, "sensor.proxy_state", t(100))
+    stale = {**derived[1], "net_cost_aud_unrounded": "9.99", "quality_flags": ["stale"]}
+    older = {**derived[0], "session_id": "sigen-proxy-fictional-older", "opened_at": t(-200)}
+    proxy = recorder(hass, rows, archive=[older, stale])
+    await proxy._async_update_data()
+    ids = [r["session_id"] for r in proxy.archive]
+    # Deduped by session_id; the re-derived record keeps the stale record's slot.
+    assert ids == [older["session_id"], derived[1]["session_id"],
+                   derived[0]["session_id"], derived[2]["session_id"]]
+    assert proxy.archive[1]["quality_flags"] != ["stale"]
+    # A summary that can no longer be re-derived is retained as stored, never rewritten.
+    assert proxy.archive[0] == older
+
+
+@pytest.mark.asyncio
+async def test_previous_session_falls_back_to_the_archive(hass):
+    archived = build_records(observations(2), "sensor.proxy_state", t(100))
+    one = {**observations(0), "state": sessions(5, 1)}
+    proxy = recorder(hass, one, archive=deepcopy(archived))
+    data = await proxy._async_update_data()
+    assert data["latest_session"]["opened_at"] == t(50)
+    assert data["previous_session"] == archived[-1]
+    # Two or fewer derived sessions never touch the archive or prune rows.
+    assert proxy.archive == archived and proxy.observations["state"][0]["t"] == t(50)
+    proxy = recorder(hass, observations(0), archive=deepcopy(archived))
+    data = await proxy._async_update_data()
+    assert data["latest_session"] is None and data["previous_session"] == archived[-1]
+
+
+@pytest.mark.asyncio
+async def test_observation_cap_is_a_persistent_degrading_issue(hass, monkeypatch):
+    monkeypatch.setattr(proxy_module, "MAX_ROWS", 4)
+    proxy = recorder(hass, observations(1))
+    for n in range(5):
+        proxy._append("import", {"t": t(20 + n), "value": f"1.00{n}", "unit": "MWh"})
+    assert len(proxy.observations["import"]) == 4
+    assert "observation_limit_reached" in proxy.issues
+    data = await proxy._async_update_data()
+    assert data["state"] == "degraded" and "observation_limit_reached" in data["issues"]
+    assert data["latest_session"]["net_cost_aud"] is None
+    # Transient issues are not persisted; the two persistent ones are.
+    proxy.issues |= {"import:history_unavailable", "history_backfill_failed"}
+    await proxy.persist()
+    saved = await proxy.store.async_load()
+    assert saved["persistent_issues"] == ["observation_limit_reached"]
+    assert set(saved) == {"observations", "archive", "persistent_issues", "checkpoint_at",
+                          "tariff_provenance"}
+    # A checkpoint older than the 24 h backfill adds the restart-gap issue on load.
+    saved["checkpoint_at"] = (dt_util.utcnow() - timedelta(hours=30)).isoformat()
+    await proxy.store.async_save(saved)
+
+    async def history(*args, **kwargs):
+        return {}
+    monkeypatch.setattr("homeassistant.components.recorder.get_instance",
+                        lambda hass: SimpleNamespace(async_add_executor_job=history))
+    restored = ProxyCoordinator(hass, proxy.entry)
+    try:
+        await restored.load()
+        assert {"observation_limit_reached", "restart_gap_exceeds_24_hour_backfill"} <= restored.issues
+        assert restored.archive == saved["archive"]
+        await restored.persist()
+        assert (await restored.store.async_load())["persistent_issues"] == [
+            "observation_limit_reached", "restart_gap_exceeds_24_hour_backfill"]
+    finally:
+        await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_expired_session_fails_closed_for_review_and_collection(hass):
+    """Once a session leaves latest/previous/archive it cannot be re-sourced.
+
+    Review and collection sourcing refuse explicitly; the ledger row stays and
+    nothing is paid, re-priced or dropped.
+    """
+    from custom_components.bsv_settlement.api import WalletError
+    from custom_components.bsv_settlement.const import DOMAIN
+    from custom_components.bsv_settlement.session_review import SessionReviews
+    proxy = recorder(hass, observations(60))
+    proxy.async_set_updated_data(await proxy._async_update_data())
+    gone = build_records(observations(60), proxy.sources["state"], t(700))[0]["session_id"]
+    assert gone not in {r["session_id"] for r in proxy.archive}
+    hass.data.setdefault(DOMAIN, {})[proxy.entry.entry_id] = proxy
+
+    async def refresh():
+        proxy.async_set_updated_data(await proxy._async_update_data())
+    proxy.async_request_refresh = refresh
+    reviews = SessionReviews.__new__(SessionReviews)
+    reviews.hass = hass
+    with pytest.raises(WalletError, match="retained history"):
+        await reviews.source(proxy.entry.entry_id, gone)
+    kept = proxy.archive[0]["session_id"]
+    assert (await reviews.source(proxy.entry.entry_id, kept))["session_id"] == kept
+    from custom_components.bsv_settlement.collection import DriverCollections
+    collections = DriverCollections(SimpleNamespace(saved={}, hass=hass))
+    row = {"proxy_config_entry_id": proxy.entry.entry_id,
+           "terms": {"session_id": gone, "session_mode": "single_session"}}
+    collections.session_id = lambda row: row["terms"]["session_id"]
+    with pytest.raises(WalletError, match="not in retained history"):
+        await collections.source(row)
+    assert (await collections.source({**row, "terms": {"session_id": kept}}))["session_id"] == kept
+
+
+# --- Display windows on wallet route summaries -------------------------------
+# The windows select by insertion order, not by state: an old unresolved item
+# leaves the dashboard summary once 20 newer items exist. It stays in the
+# ledger and its per-ID status service. Known gap (docs/record-versioning.md);
+# a fix that keeps unresolved items visible should change these assertions.
+
+def unresolved_first(count, state="broadcast_unknown"):
+    """Oldest item is unresolved; newer ones are settled. Insertion order = age."""
+    return {f"b{n:02d}": {"state": state if n == 0 else "provider_confirmed",
+                          "budget_id": f"b{n:02d}", "session_id": f"s{n:02d}"}
+            for n in range(count)}
+
+
+def test_automatic_credit_summary_window_is_display_only():
+    api = SimpleNamespace(saved={})
+    credits = AutomaticCredits(api)
+    api.saved["automatic_credits"] = unresolved_first(WINDOW + 5)
+    before = deepcopy(api.saved)
+    shown = [p["budget_id"] for p in credits.summary()["payments"]]
+    assert shown == [f"b{n:02d}" for n in range(5, WINDOW + 5)]
+    assert api.saved == before and api.saved["automatic_credits"]["b00"]["state"] == "broadcast_unknown"
+    assert credits.get({"terms": {"budget_id": "b00"}})["state"] == "broadcast_unknown"
+
+
+def test_payment_summary_windows_reviews_and_collections_without_deleting():
+    reviews = {f"r{n:02d}": {"review_id": f"r{n:02d}", "state": "approved" if n == 0 else "paid"}
+               for n in range(WINDOW + 3)}
+    collections = unresolved_first(WINDOW + 3)
+    api = SimpleNamespace(
+        saved={"session_reviews": reviews, "driver_collections": collections,
+               "session_budgets": {k: {"terms": {"transaction_id": "tx-" + k}} for k in collections}},
+        reviews=SimpleNamespace(public=lambda r: {
+            "account": {"session_id": "s-" + r["review_id"], "ocpp_transaction_id": "tx"},
+            "state": r["state"], "direction": "operator_to_driver", "amount_sats": 1}),
+        collections=SimpleNamespace(session_id=lambda row: "s"))
+    before = deepcopy(api.saved)
+    rows = MainnetWalletAPI.payment_summary(api)
+    assert [r["review_id"] for r in rows if "review_id" in r] == [f"r{n:02d}" for n in range(3, WINDOW + 3)]
+    assert [r["budget_id"] for r in rows if "budget_id" in r] == [f"b{n:02d}" for n in range(3, WINDOW + 3)]
+    assert api.saved == before and "r00" in api.saved["session_reviews"] and "b00" in api.saved["driver_collections"]
+
+
+def test_budget_summary_windows_non_weekly_rows_without_deleting():
+    api = SimpleNamespace(saved={"session_budgets": {}},
+                          collections=SimpleNamespace(session_id=lambda row: None, get=lambda row: None))
+    budgets = SessionBudgets(api)
+    for n in range(WINDOW + 4):
+        api.saved["session_budgets"][f"b{n:02d}"] = {
+            "state": "awaiting_driver_consent", "terms": {
+                "budget_id": f"b{n:02d}", "version": 1, "expires_at": "2099-01-01T00:00:00+00:00",
+                "created_at": t(n), "max_total_sats": 10, "satoshis_per_aud": "100"}}
+    api.saved["session_budgets"]["weekly-child"] = {
+        "state": "awaiting_driver_consent", "weekly_parent_id": "b00", "terms": {}}
+    before = deepcopy(api.saved)
+    shown = [r["budget_id"] for r in budgets.summary()]
+    assert shown == [f"b{n:02d}" for n in range(4, WINDOW + 4)]
+    assert api.saved == before and len(api.saved["session_budgets"]) == WINDOW + 5
+
+
+def test_ongoing_route_windows_are_display_only():
+    api = SimpleNamespace(saved={"automatic_credits": {}})
+    ongoing = OngoingCredits(api)
+    api.auto_credits = SimpleNamespace(policy={"enabled": True})
+    for n in range(WINDOW + 2):
+        rid = f"ongoing:p|s{n:02d}"
+        ongoing.routes[rid] = {
+            "route_id": rid, "proxy_config_entry_id": "p", "session_id": f"s{n:02d}",
+            "transaction_id": "tx", "state": "credit_queued" if n == 0 else "credit_paid",
+            "satoshis_per_aud": "100", "assigned_at": t(n),
+            "recipient": {"address": "fictional", "driver_identity": "02" + "11" * 32, "budget_id": "rb"}}
+    before = deepcopy(api.saved)
+    assert [r["session_id"] for r in ongoing.summary()["sessions"]] == [
+        f"s{n:02d}" for n in range(2, WINDOW + 2)]
+    assert [r["session_id"] for r in ongoing.driver_rows({"terms": {"budget_id": "rb"}})] == [
+        f"s{n:02d}" for n in range(2, WINDOW + 2)]
+    assert api.saved == before and ongoing.routes["ongoing:p|s00"]["state"] == "credit_queued"
+
+
+# --- Other bounded evidence stores ------------------------------------------
+
+def test_tariff_provenance_evicts_oldest_captured_session_beyond_cap():
+    ledger = TariffProvenanceLedger()
+    for n in range(MAX_SESSIONS + 2):
+        assert ledger.observe(f"s{n:03d}", {"n": n}, f"{n:064x}", t(n))
+    sessions_kept = ledger.data["sessions"]
+    assert len(sessions_kept) == MAX_SESSIONS
+    assert "s000" not in sessions_kept and "s001" not in sessions_kept
+    assert ledger.lookup("s000", f"{0:064x}") is None  # Now reported as not recorded.
+    # The session being captured is never the one evicted, even if backdated.
+    assert ledger.observe("late", {"n": -1}, "f" * 64, t(-10))
+    assert "late" in ledger.data["sessions"]
+
+
+def test_export_shadow_journal_and_spans_trim_with_flags_and_reload():
+    ledger = ExportShadowLedger(binding=EXPORT_BINDING)
+    register = Decimal(10)
+    for n in range(MAX_SPANS * 4 + 10):
+        base = n * 1000
+        rows = simulate([(base + s, -7200) for s in range(0, 241, 60)], start=register)
+        register = rows[-1]["register"]
+        for row in rows:
+            ledger.observe(snap(row, tx=str(100 + n)), stamp(row["second"] + .1))
+        ledger.observe(snap(dict(rows[-1], second=base + 300, flow="idle"), tx=str(100 + n),
+                            status="Available"), stamp(base + 300.1))
+    summary = ledger.summary()
+    assert len(ledger.data["spans"]) == MAX_SPANS and summary["spans_trimmed"]
+    assert len(ledger.data["events"]) == MAX_EVENTS and summary["journal_trimmed"]
+    assert ledger.data["spans"][-1]["native_transaction_id"] == str(100 + MAX_SPANS * 4 + 9)
+    assert ledger.data["spans"][0]["native_transaction_id"] == str(100 + MAX_SPANS * 3 + 10)
+    assert validate_section(deepcopy(ledger.data)) == ledger.data
+    assert all(s["billing_eligible"] is False and s["settlement_owner"] is None
+               for s in ledger.data["spans"])
+
+
+# --- Source entity renames ---------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_renamed_proxy_source_degrades_and_is_not_followed(hass):
+    """The proxy binds entity_id strings. A rename reads as unavailable."""
+    proxy = recorder(hass, observations(3))
+    assert not (await proxy._async_update_data())["issues"]
+    old = proxy.sources["state"]
+    hass.states.async_remove(old)
+    hass.states.async_set("sensor.renamed_state", "Charging")
+    proxy.snapshot_current()
+    data = await proxy._async_update_data()
+    assert data["state"] == "degraded" and "state:unavailable" in data["issues"]
+    assert data["latest_session"]["net_cost_aud"] is None
+    assert proxy.sources["state"] == old == proxy.entry.data["state_entity"]
+    assert normalize(hass.states.get("sensor.renamed_state")) not in proxy.observations["state"]
+    # Session IDs hash the configured state entity_id with the opening time, so
+    # a replacement entry on the new entity_id derives different IDs.
+    assert {r["session_id"] for r in build_records(observations(3), "sensor.renamed_state", t(100))}.isdisjoint(
+        r["session_id"] for r in build_records(observations(3), old, t(100)))
+
+
+@pytest.mark.asyncio
+async def test_renamed_ocpp_shadow_source_is_incompatible_and_refuses_reload(tmp_path):
+    from homeassistant.helpers import entity_registry as er
+    from custom_components.bsv_settlement.ocpp_shadow import OCPPShadowCoordinator, source_binding
+    from test_ocpp_shadow import config_entry as shadow_entry, setup_sources
+    instance = HomeAssistant(str(tmp_path / "shadow"))
+    coord = None
+    try:
+        sources = await setup_sources(instance)
+        entry = shadow_entry("bsv_settlement", {
+            **{k + "_entity": v for k, v in sources.items()}, "backend": "ocpp_import_shadow",
+            "source_binding": source_binding(instance, sources)})
+        coord = OCPPShadowCoordinator(instance, entry)
+        await coord.load()
+        er.async_get(instance).async_update_entity(
+            sources["import"], new_entity_id="sensor.renamed_import")
+        await instance.async_block_till_done()
+        coord.observe()
+        summary = coord.summary()
+        assert summary["state"] == "incompatible"
+        assert "source_binding_changed" in summary["quality_flags"]
+        await coord.close()
+        coord = None
+        with pytest.raises(ValueError, match="enabled OCPP connector metrics"):
+            await OCPPShadowCoordinator(instance, entry).load()
+    finally:
+        if coord:
+            await coord.close()
+        await instance.async_stop(force=True)

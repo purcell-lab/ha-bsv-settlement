@@ -22,10 +22,17 @@ timing may differ from a certified meter or final bill.
 
 Missing meter baselines, counter resets/decreases, incomplete history, unknown
 running-state flags and unrecognised future flags remain hard stops. So do
-unpriced energy, estimated tariff intervals, unavailable/non-finite amounts,
+unpriced energy, missing or conflicting prices, unavailable/non-finite amounts,
 invalid energy quantities, open sessions, changed frozen accounts, invalid driver
 authority, disabled payment policies, insufficient funds, amount/fee caps and
 duplicate or uncertain transaction guards.
+
+Estimated tariff intervals are not a hard stop. Since #68, a closed, fully
+priced session whose intervals are partly priced from estimates may settle;
+`import:estimated_tariff` and `export:estimated_tariff` are disclosed warnings
+([estimated-tariff settlement policy](estimated-tariff-settlement-policy.md)).
+Whether final settlement should instead wait for final prices is an open owner
+decision in the [estimated-tariff finalisation ADR](adr/estimated-tariff-finalisation.md).
 
 The warning allowlist is deliberately explicit. An arbitrary new flag cannot
 silently loosen financial controls.
