@@ -1,0 +1,29 @@
+{
+  "purpose": "Fictional Home Assistant .storage files for upgrade/rollback regression tests. No real wallet, key, address, site or credential.",
+  "layouts": {
+    "v0.1.2": {
+      "generated_by": "Release tag v0.1.2 coordinator and wallet_service mock, run offline against Home Assistant 2026.9.4",
+      "stores": ["bsv_settlement.01FIXTUREMOCKV012000000000"],
+      "contents": "One completed mock settlement (mock_received) and one bound, unprepared session with an interval"
+    },
+    "main": {
+      "generated_by": "main at fdbcacc (manifest 0.1.2 + unreleased changes), run offline against Home Assistant 2026.9.4 with fictional chain data",
+      "stores": [
+        "core.config_entries",
+        "bsv_settlement.01FIXTUREEMBEDDEDTESTNET00",
+        "bsv_settlement.embedded.01FIXTUREEMBEDDEDTESTNET00",
+        "bsv_settlement.operator_key.01FIXTUREEMBEDDEDTESTNET00",
+        "bsv_settlement.embedded.01FIXTUREEMBEDDEDMAINNET00",
+        "bsv_settlement.ledger_checkpoint.01FIXTUREEMBEDDEDMAINNET00",
+        "bsv_settlement.operator_key.01FIXTUREEMBEDDEDMAINNET00",
+        "bsv_settlement.proxy.01FIXTURESENSORPROXY000000"
+      ],
+      "contents": "Testnet wallet with offline self-test and a blocked settlement draft; mainnet wallet with one broadcast_unknown payment that reserves its funding input; sensor proxy observations"
+    }
+  },
+  "placeholders": {
+    "__FIXTURE_<NET>_SECRET__ / __FIXTURE_<NET>_PUBLIC_KEY__ / __FIXTURE_<NET>_ADDRESS__": "Replaced at test time with a freshly generated, never-funded identity; no private key is committed",
+    "ledger_checkpoint digest": "Recomputed at test time after placeholder substitution"
+  },
+  "boundary": "The signed_raw and source_hex bytes are fictional and never broadcast. Passing these tests is not a protected restore drill (#4) or production upgrade evidence."
+}

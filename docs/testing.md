@@ -1,9 +1,12 @@
 # Validation and test-suite ownership
 
 One full release gate, smaller feedback loops, no live money in automated tests.
-Use Python 3.14, Home Assistant 2026.9.4 and Node 22, as pinned in CI. Install
-`requirements-dev.txt`, the pinned HA package and `pytest-asyncio`; run `npm ci`
-in both `frontend` and `frontend/driver`.
+Use Python 3.14 and Node 22, as pinned in CI. CI runs the Python suite on each
+supported Home Assistant version: 2026.9.4 (the declared minimum) and
+2026.10.0b2 (the next release). See the
+[release checklist](release-checklist.md#supported-versions). Install
+`requirements-dev.txt`, one of those HA packages and `pytest-asyncio`. Run
+`npm ci` in both `frontend` and `frontend/driver`.
 
 ## Commands
 
@@ -17,6 +20,14 @@ From the repository root, using the prepared Python environment:
 | `python scripts/validate.py operator` | Every operator test and reproducible cards | Operator portion |
 | `python scripts/validate.py all` | Union of the three release portions | Local full gate |
 | `python scripts/validate.py all --list` | Review the exact commands without executing | No |
+
+`python scripts/clean_install_smoke.py` installs only the HACS payload into an
+empty temporary configuration. An isolated interpreter then sets it up through
+the config flows, checks entities, actions and frontend paths, and unloads it,
+with no network. The Python suite runs it too (`tests/test_clean_install.py`).
+CI also runs it in a separate job with only HA and the manifest requirements
+installed. `tests/test_upgrade_rollback.py` loads fixture stores written by
+earlier releases.
 
 The GitHub gate also includes HACS validation. Queued, cancelled or runner
 infrastructure failures are not passing evidence. Do not bypass this gate.

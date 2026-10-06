@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.embedded.01FIXTUREEMBEDDEDMAINNET00",
+  "data": {
+    "records": {},
+    "last_self_test": null,
+    "wallet_checkpoint_version": 1,
+    "driver": {
+      "driver_public_identity": "03659f09c4d93eda0c382567a3b25666136a3a413cfca5be6ffeae8a310543a8d8",
+      "driver_receive_address": "13asLSXXykhi1jR7ZuHXe9ogD3qqCensy5"
+    },
+    "payments": {
+      "02d3517d-daa6-4947-b96f-d69b0109b1af": {
+        "draft_id": "02d3517d-daa6-4947-b96f-d69b0109b1af",
+        "reference": "credit-fixture-0001",
+        "state": "broadcast_unknown",
+        "recipient_address": "13asLSXXykhi1jR7ZuHXe9ogD3qqCensy5",
+        "driver_fingerprint": "0c85abfc4a8b353f2a1ad8f1a7069b6ae81139d7261c3bedd998be89b97acfb3",
+        "amount_sats": 1000,
+        "fee_sats": 100,
+        "source_txid": "752eb62ad1e13517a7d52773f485d1264d1275a290a75016ed027691d6ff030d",
+        "source_index": 0,
+        "source_value": 50000,
+        "source_hex": "010000000111111111111111111111111111111111111111111111111111111111111111110000000000ffffffff0150c30000000000001976a9141cf8c38f2c20175adf85940557d7e9a81c50e54988ac00000000",
+        "change_sats": 48900,
+        "expires_at": "2026-10-06T08:01:27.867124+00:00",
+        "txid": "8645a0f044dc2661fc657124db44298ee4c92ad1d293ac08ea4de4f49c029eb5",
+        "signed_raw": "01000000010d03ffd6917602ed1650a790a275124d26d185f47327d5a71735e1d12ab62e75000000006b483045022100d636b03c5e4b40abb9ca594c2b3ea28644f5a1db8b1b99e8b668d80f8a4e9745022005aa34816e8fe12db976a7bb915c917c8c9986454780c895e53ebbad44526d1c4121__FIXTURE_MAINNET_PUBLIC_KEY__ffffffff02e8030000000000001976a9141c57fef978c5187d3d8fd25e14c44835ab97015688ac04bf0000000000001976a9141cf8c38f2c20175adf85940557d7e9a81c50e54988ac00000000",
+        "session_review_id": null,
+        "fee_quote": {
+          "source": "https://api.whatsonchain.com/v1/bsv/main/feerecommendation",
+          "unit": "sat/KB",
+          "mode": "provider_quote_per_transaction",
+          "recommended_sat_per_kb": "40",
+          "mempool_min_sat_per_kb": "40",
+          "rate_sat_per_kb": "40",
+          "estimated_signed_bytes": 227,
+          "fee_sats": 10,
+          "observed_at": "2026-10-06T07:51:27.871351+00:00",
+          "max_age_seconds": 60
+        },
+        "approved_at": "2026-10-06T07:51:27.873029+00:00",
+        "approving_user_id": "fixture-admin-user"
+      }
+    },
+    "active_payment": "02d3517d-daa6-4947-b96f-d69b0109b1af",
+    "chain": {
+      "balance_sats": 0,
+      "checked_at": "2026-10-06T07:51:27.878483+00:00",
+      "attempted_at": "2026-10-06T07:51:27.878436+00:00",
+      "error": null
+    },
+    "session_reviews": {},
+    "session_review_index": {},
+    "latest_session_review": null,
+    "received_outpoints": {},
+    "session_budgets": {},
+    "driver_collections": {},
+    "driver_collection_index": {},
+    "automatic_credit_policy": {
+      "enabled": false
+    },
+    "automatic_credits": {},
+    "automatic_credit_index": {},
+    "ongoing_credit_policy": {
+      "enabled": false
+    },
+    "ongoing_credit_routes": {},
+    "closed_sessions": {},
+    "driver_confirmation_schedule": {
+      "cursor": "",
+      "last_run": null
+    }
+  }
+}

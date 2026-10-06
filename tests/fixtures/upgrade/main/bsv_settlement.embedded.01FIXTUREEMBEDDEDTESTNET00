@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.embedded.01FIXTUREEMBEDDEDTESTNET00",
+  "data": {
+    "records": {
+      "c7cad3a9-1038-4a17-af07-8f05eb566adf": {
+        "payload": {
+          "session_id": "test:86bd6119-d91a-44ad-9c03-7b27a20f0fc1",
+          "ledger_revision": 1,
+          "ledger_sha256": "086565e6a980bb108b9942110bc25add9a5618b809f364e043895339de3e57db",
+          "driver_binding_id": "driver-external",
+          "operator_binding_id": "embedded-operator-testnet",
+          "currency": "AUD",
+          "net_amount_minor": 60,
+          "import_wh": 2000,
+          "export_wh": 0,
+          "pricing_summary": {
+            "import_amount_aud": "0.60",
+            "export_credit_aud": "0.00",
+            "rounding_adjustment_aud": "0.00",
+            "prices_final": true
+          },
+          "ended_at": "2026-10-02T02:30:00Z"
+        },
+        "record": {
+          "mode": "embedded_testnet",
+          "network": "testnet",
+          "settlement_id": "c7cad3a9-1038-4a17-af07-8f05eb566adf",
+          "session_id": "test:86bd6119-d91a-44ad-9c03-7b27a20f0fc1",
+          "net_amount_minor": 60,
+          "state": "blocked_live_settlement",
+          "direction": "driver_to_operator",
+          "amount_sats": null,
+          "quote": null,
+          "receipt_id": null,
+          "txid": null,
+          "broadcast_enabled": false
+        }
+      }
+    },
+    "last_self_test": {
+      "identity_signature_verified": true,
+      "synthetic_transaction_signed": true,
+      "synthetic_script_verified": true,
+      "signed_bytes_sha256": "9c99539ed0c94d10d021254b139bff9aabac1eff466709e3ea1b0e503d3346ce",
+      "source": "fictional_unbroadcast_transaction",
+      "network_checked": false,
+      "broadcast": false,
+      "txid": null
+    }
+  }
+}
