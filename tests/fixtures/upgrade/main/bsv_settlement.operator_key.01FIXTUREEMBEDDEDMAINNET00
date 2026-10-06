@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "bsv_settlement.operator_key.01FIXTUREEMBEDDEDMAINNET00",
+  "data": {
+    "secret_hex": "__FIXTURE_MAINNET_SECRET__",
+    "public_key": "__FIXTURE_MAINNET_PUBLIC_KEY__",
+    "address": "__FIXTURE_MAINNET_ADDRESS__",
+    "network": "mainnet"
+  }
+}

@@ -117,19 +117,25 @@ Follow the [app setup guide](bsv_wallet_mock/DOCS.md). It uses persistent `/data
 
 This repository supports the **HACS custom repository** installation path. It is not included in the default HACS catalogue, and neither HACS nor Home Assistant has certified the payment functionality.
 
-The declared minimum is Home Assistant **2026.9.4**, the version used for the runtime component tests. HACS installs only `custom_components/bsv_settlement`; it does not deploy the separate mock wallet service, install Docker, configure a real wallet or connect your charger.
+The declared minimum is Home Assistant **2026.9.4**. CI also tests the next release (currently 2026.10.0b2); see [supported versions](docs/release-checklist.md#supported-versions). HACS installs only `custom_components/bsv_settlement`; it does not deploy the separate mock wallet service, install Docker, configure a real wallet or connect your charger.
 
-1. Start the mock wallet service using the local Python or Docker instructions above.
+1. Take a Home Assistant backup.
 2. In HACS, open the three-dot menu and choose **Custom repositories**.
 3. Add `https://github.com/purcell-lab/ha-bsv-settlement` and select type **Integration**.
-4. Find **BSV Settlement (Mock PoC)** in HACS and download it.
+4. Find **BSV Settlement (Mock PoC)** in HACS and download it. For anything beyond a test install, choose the exact release or commit you have reviewed.
 5. Restart Home Assistant.
 6. Open Settings, Devices & services, Add integration and choose **BSV Settlement (Mock PoC)**.
-7. Enter the service URL and API token, then run the sample script below.
+7. Choose a backend. For the safe demonstration, choose one of these:
+   - **mock**: start the mock wallet service first (local Python, Docker or the app above). Then enter its URL and API token and run the sample script below.
+   - **embedded_testnet**: needs no service. You get an unfunded testnet operator wallet with broadcast disabled. You must acknowledge key custody, because the key is stored in HA `.storage` and is only recoverable from a backup.
+
+   `sensor_proxy` and `ocpp_import_shadow` record meter observations and are read-only. `embedded_mainnet` controls real funds. It requires three explicit acknowledgements and is outside the safe demonstration.
+
+The [clean-install smoke test](docs/testing.md) automates steps 4–7 offline on each supported HA version. Upgrades, rollback, owner roles and downgrade hazards are covered in the [release checklist](docs/release-checklist.md).
 
 These menu steps follow the documented [HACS custom-repository process](https://www.hacs.xyz/docs/faq/custom_repositories/). The repository uses the single-integration folder structure and root metadata described by [HACS integration requirements](https://www.hacs.xyz/docs/publish/integration/) and [general requirements](https://www.hacs.xyz/docs/publish/start/).
 
-When a new release is available, update through HACS and restart HA. The service remains a separate deployment; review release notes for API compatibility before updating either side. Back up both the HA storage and service database.
+When a new release is available, follow the [release checklist](docs/release-checklist.md): back up, record the installed commit and the unresolved payments, update through HACS to the exact version, restart HA, then verify. The service remains a separate deployment; review release notes for API compatibility before updating either side. Back up both the HA storage and service database.
 
 ### Manual installation alternative
 
@@ -267,11 +273,12 @@ python -m pytest -q tests/test_poc.py
 python -m compileall -q wallet_service custom_components scripts
 ```
 
-Optional HA runtime tests require a Python version supported by the installed Home Assistant release:
+Optional HA runtime tests require a Python version supported by the installed Home Assistant release (CI uses Python 3.14 with HA 2026.9.4 and 2026.10.0b2):
 
 ```sh
 python -m pip install "homeassistant==2026.9.4" pytest-asyncio
 python -m pytest -q tests
+python scripts/clean_install_smoke.py   # shipped folder only, empty config, no network
 ```
 
 The HA tests use real Home Assistant classes for action registration, storage, configuration form and sensors, with an in-process HTTP transport to the mock service. They do not connect to your HA instance.
