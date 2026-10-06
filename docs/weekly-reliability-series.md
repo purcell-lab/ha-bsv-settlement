@@ -44,6 +44,11 @@ references can still link private financial activity.
 
 ## Release and next gates
 
+R2 includes a fixture-tested `inspectOutgoingAction` adapter and a documented
+[native status-repair gate](outgoing-wallet-evidence.md). It is not wired into
+the production entry point. It can report wallet-local evidence but cannot fix
+a `nosend` record. That work remains blocked on a verified native method.
+
 Use the full Python, driver and operator suites, reproducible build checks and
 HACS validation. Keep native-device, independent-accounting, protected isolated
 restore, security/commercial review and physical charger-control acceptance
