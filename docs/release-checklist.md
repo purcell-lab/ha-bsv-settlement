@@ -148,7 +148,7 @@ added later:
 
 | Evidence | What it shows |
 |---|---|
-| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 43 actions (42 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
+| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 44 actions (43 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
 | `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by the earlier main layout load in full HA. Mainnet identity, proxy observations and an uncertain-broadcast reservation are kept. Legacy mock (v0.1.2) and testnet entries fail closed and can be deleted, with their stores left byte-identical. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
 | Python/HA CI matrix | The full regression suite on each supported HA version |
 

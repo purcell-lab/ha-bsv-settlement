@@ -504,10 +504,11 @@ async def test_pinned_limit_acknowledgement_and_admin_service_boundary(hass, mon
                                             context=Context(user_id="admin"), blocking=True,
                                             return_response=True)
     assert "pinned_session_limit_exceeded" not in result["issues"] and proxy.windows == []
-    import voluptuous as vol
-    with pytest.raises(vol.Invalid):
+    # Match by class name: a voluptuous shim in sys.modules can make `vol.Invalid` a different object.
+    with pytest.raises(Exception) as refused:
         await hass.services.async_call(DOMAIN, "acknowledge_proxy_issue", {**call, "issue": "source_binding_changed"},
                                        context=Context(user_id="admin"), blocking=True)
+    assert "Invalid" in {c.__name__ for c in type(refused.value).__mro__}
 
 
 @pytest.mark.asyncio
