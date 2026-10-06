@@ -138,13 +138,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
                 if action in wallet_actions:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")
+                    if not approving_user_id:
+                        raise WalletError("An explicit administrator context is required")
                     if action == "wallet_self_test":
                         result = await self.api.self_test()
                     elif action == "wallet_status":
                         result = self.api.status()
                     else:
-                        if not approving_user_id:
-                            raise WalletError("An explicit administrator context is required")
                         if action == "wallet_refresh_chain":
                             result = await self.api.refresh_chain()
                         elif action == "prepare_operator_payment":

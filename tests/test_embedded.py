@@ -4,13 +4,14 @@ All keys are ephemeral test fixtures; chain access is a stub and no socket may c
 """
 import json
 import socket
-from types import MappingProxyType
-from unittest.mock import patch
+from pathlib import Path
+from types import MappingProxyType, SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 pytest.importorskip("homeassistant")
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.config_entries import ConfigEntry, ConfigEntries
 from homeassistant.exceptions import HomeAssistantError
 from custom_components.bsv_settlement import async_setup
@@ -183,9 +184,10 @@ async def test_session_drafts_never_pay_on_mainnet(tmp_path, import_wh, export_w
             changed = {**payload, "net_amount_minor": 2}
             with pytest.raises(WalletError, match="cannot be changed"):
                 await api.call("PUT", f"/v1/settlements/{record['settlement_id']}", changed)
+            hass.auth = SimpleNamespace(async_get_user=AsyncMock(return_value=SimpleNamespace(is_admin=True)))
             response = await hass.services.async_call(
                 "bsv_settlement", "wallet_self_test", {"config_entry_id": entry.entry_id},
-                blocking=True, return_response=True)
+                blocking=True, return_response=True, context=Context(user_id="admin"))
             assert response["broadcast"] is False and response["txid"] is None
             coord.async_set_updated_data(await coord._async_update_data())
             sensor = SettlementSensor(coord, entry, "operator_wallet_status", "Wallet", None)
@@ -198,5 +200,57 @@ async def test_session_drafts_never_pay_on_mainnet(tmp_path, import_wh, export_w
             assert api.saved["payments"] == {} and api.chain.posts == []
             restored = await load_wallet(hass, entry)
             assert record == await restored.call("GET", f"/v1/settlements/{record['settlement_id']}")
+    finally:
+        await hass.async_stop(force=True)
+
+
+@pytest.mark.asyncio
+async def test_ledger_writing_actions_are_admin_only(tmp_path):
+    """#113: refused without an administrator, with nothing written; an admin succeeds."""
+    entry = make_entry()
+    hass = await make_hass(tmp_path, entry)
+    try:
+        with patch.object(socket.socket, "connect", side_effect=AssertionError("Network forbidden")):
+            api = await load_wallet(hass, entry)
+            coord = SettlementCoordinator(hass, entry, api)
+            await coord.load()
+            await async_setup(hass, {})
+            hass.data["bsv_settlement"][entry.entry_id] = coord
+            data = session()
+            base = {"config_entry_id": entry.entry_id}
+            per = {**base, "session_id": data["session_id"]}
+            interval = data["intervals"][0]
+            calls = [
+                ("wallet_status", base), ("wallet_self_test", base),
+                ("bind_session", {**per, "started_at": data["started_at"]}),
+                ("add_interval", {**per, "interval": interval}),
+                ("prepare_session", {**per, "ended_at": interval["end"],
+                                     "final_import_wh": interval["import_wh"],
+                                     "final_export_wh": interval["export_wh"]}),
+            ]
+            storage = Path(tmp_path) / ".storage"
+
+            def snapshot():
+                return ({p.name: p.read_bytes() for p in storage.iterdir()},
+                        json.dumps(api.saved, sort_keys=True), json.dumps(coord.saved, sort_keys=True))
+            hass.auth = SimpleNamespace(async_get_user=AsyncMock(return_value=SimpleNamespace(is_admin=False)))
+            for name, args in calls:
+                before = snapshot()
+                for context in (None, Context(user_id="nonadmin")):
+                    with pytest.raises(HomeAssistantError, match="administrator"):
+                        await hass.services.async_call("bsv_settlement", name, args, blocking=True,
+                                                       return_response=True, context=context)
+                assert snapshot() == before, name
+                hass.auth.async_get_user.return_value.is_admin = True
+                result = await hass.services.async_call(
+                    "bsv_settlement", name, args, blocking=True, return_response=True,
+                    context=Context(user_id="admin"))
+                hass.auth.async_get_user.return_value.is_admin = False
+                assert result is not None, name
+            assert api.saved["last_self_test"]["broadcast"] is False
+            assert coord.saved["sessions"][data["session_id"]]["payload"]
+            assert api.saved["payments"] == {} and api.chain.posts == []
+            with pytest.raises(HomeAssistantError, match="administrator"):  # Coordinator backstop.
+                await coord.execute("wallet_self_test", base)
     finally:
         await hass.async_stop(force=True)

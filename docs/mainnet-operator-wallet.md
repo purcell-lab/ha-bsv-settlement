@@ -75,7 +75,7 @@ signature verification, session-linked payment and BRC-29/BEEF credit receipts,
 but native wallet compatibility and real mainnet operation still require
 supervised validation. These gaps are not hidden behind a “paid” status.
 
-The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path.
+The offline self-test remains a fictional-source transaction and never uses real funds. It is separate from the mainnet payment path. It signs with the operator key, keeps the signed bytes local and saves only their SHA-256 in the wallet ledger. `wallet_self_test` and `wallet_status` require an authenticated HA administrator, as do the draft actions `bind_session`, `add_interval` and `prepare_session`.
 
 ## Validation boundary
 

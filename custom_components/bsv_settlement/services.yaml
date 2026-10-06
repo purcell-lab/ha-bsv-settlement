@@ -304,6 +304,8 @@ session_review_status:
       selector:
         boolean:
 bind_session:
+  name: Bind session
+  description: Administrator only. Start a frozen, draft-only session against the external driver wallet. Never pays.
   fields:
     config_entry_id:
       required: true
@@ -325,6 +327,8 @@ bind_session:
       selector:
         text:
 add_interval:
+  name: Add metered interval
+  description: Administrator only. Persist one validated interval with final directional prices.
   fields:
     config_entry_id:
       required: true
@@ -340,6 +344,8 @@ add_interval:
       selector:
         object:
 prepare_session:
+  name: Prepare session
+  description: Administrator only. Reconcile energy, freeze the ledger and record a blocked settlement draft; never pays.
   fields:
     config_entry_id:
       required: true
@@ -379,7 +385,7 @@ refresh:
           integration: bsv_settlement
 wallet_status:
   name: Operator wallet status
-  description: Read the mainnet operator wallet status without network access or key export.
+  description: Administrator only. Read the mainnet operator wallet status without network access or key export.
   fields:
     config_entry_id:
       required: true
@@ -387,7 +393,7 @@ wallet_status:
         text:
 wallet_self_test:
   name: Offline operator wallet self-test
-  description: Verify a real SDK signature and sign a fictional-source transaction. No broadcast or funds.
+  description: Administrator only. Verify a real SDK signature and sign a fictional-source transaction with the operator key; only a digest is saved. No broadcast or funds.
   fields:
     config_entry_id:
       required: true

@@ -214,6 +214,9 @@ async def async_setup(hass, config):
         if call.service in ("get_credit_receipt_link", "prepare_operator_payment", "broadcast_operator_payment",
                             "configure_automatic_credit", "configure_ongoing_credit",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
+                            # #113: these persist to (or expose) the mainnet ledger and coordinator store.
+                            "wallet_status", "wallet_self_test", "bind_session", "add_interval",
+                            "prepare_session",
                             *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES, *CLOSURE_SERVICES,
                             *CREDIT_RECOVERY_SERVICES):
             # Unlike the generic admin wrapper, refuse context-free automation.

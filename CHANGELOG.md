@@ -3,6 +3,7 @@
 ## Unreleased: mainnet wallet fixes (#102, #113, #114)
 
 - #102: a provider with no evidence for the active payment's txid (e.g. signed, never posted) no longer blanks the operator balance or fails the refresh. The balance is kept, the payment state is unchanged, and `payment_check_error` (`payment_evidence_unavailable` / `payment_evidence_invalid`) appears on wallet status and the balance/status sensors until evidence appears.
+- #113: `wallet_status`, `wallet_self_test`, `bind_session`, `add_interval` and `prepare_session` now require an authenticated HA administrator (no-user automation calls are refused), as they write to or expose the mainnet ledger. Self-test signing is unchanged.
 
 ## Unreleased: drop mock and testnet backends from the integration
 

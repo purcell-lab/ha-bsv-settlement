@@ -147,7 +147,7 @@ HA supports custom components under the configuration directory, action descript
 
 ## HA interface
 
-These draft-only session actions require the `config_entry_id` of the mainnet operator-wallet entry. Except for `refresh`, they also require `session_id`. They record a frozen, never-paying settlement draft (`no_payment_due` or `blocked_live_settlement`); payments use the separate guarded workflows.
+These draft-only session actions require the `config_entry_id` of the mainnet operator-wallet entry. Except for `refresh`, they also require `session_id`. They record a frozen, never-paying settlement draft (`no_payment_due` or `blocked_live_settlement`); payments use the separate guarded workflows. `bind_session`, `add_interval` and `prepare_session` (like `wallet_status` and `wallet_self_test`) require an authenticated HA administrator; calls with no user context are refused.
 
 | Action | Additional input |
 |---|---|
