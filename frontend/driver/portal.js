@@ -14,6 +14,7 @@ import {walletStatus,verifyReceivingWallet} from "./portal-wallet.js";
 import {MonthlySetup,cancelMonthly} from "./monthly-wallet.js";
 import {sessionAccount,formatRate,formatKwh} from "./account-projection.js";
 import {readinessView,setupAction,allowanceRows,termsList,signedTermsRows,authorityText,grantText} from "./monthly-ui.js";
+import {stationFlow} from "./station-flow.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -26,7 +27,7 @@ const rateHelp=`<details class="rate-help"><summary>How the rates affect your wa
 <p>Each session combines into one final net charge or credit when it ends. Current rates are not a fixed quote.</p></details>`;
 document.querySelector("main").innerHTML=`
 <div class="intro"><p class="eyebrow">EV CHARGING STATION</p><h1 id="portal-title">Charge. Export. Settle.</h1>
-<p id="portal-intro">Check this station's rates, authorise monthly charging once, then follow your sessions.</p></div>
+<p id="portal-intro">Check this station's rates, review your charging budget, then follow your sessions.</p></div>
 <div class="station-nav">
 <div class="station-tabs" role="tablist" aria-label="Driver sections">
 <button role="tab" id="tab-station" aria-controls="panel-station" aria-selected="true">Station</button>
@@ -46,8 +47,8 @@ document.querySelector("main").innerHTML=`
 <button id="portal-reconnect" class="wide">Reconnect wallet</button>
 </div>
 <h3>Permissions</h3>
-<dl class="terms-list"><dt>Monthly charging</dt><dd id="perm-authority">Not checked</dd>
-<dt>Wallet monthly permission</dt><dd id="perm-grant">Not checked</dd>
+<dl class="terms-list"><dt id="perm-authority-label">Spending approval</dt><dd id="perm-authority">Not checked</dd>
+<dt id="perm-grant-label">Wallet payment permissions</dt><dd id="perm-grant">Not checked</dd>
 <dt>Receiving credits</dt><dd id="perm-receiving">Not checked</dd></dl>
 <div id="allowance" hidden><h3>This month's allowance</h3><dl id="allowance-rows" class="terms-list"></dl>
 <p class="small">Spent and Reserved include network fees you pay. Credits you receive never add to the allowance.</p></div>
@@ -74,10 +75,10 @@ ${priceCards("signin")}
 ${rateHelp}
 </section>
 <section id="monthly-offer" aria-labelledby="monthly-offer-title">
-<h2 id="monthly-offer-title">Monthly charging</h2>
+<h2 id="monthly-offer-title">Charging approval</h2>
 <dl id="monthly-terms" class="terms-list"></dl>
-<button id="monthly-authorise" class="wide" disabled>Authorise monthly charging</button>
-<p id="monthly-offer-note" class="small" role="status">Checking whether monthly charging is available…</p>
+<button id="monthly-authorise" class="wide" disabled hidden>Authorise monthly charging</button>
+<p id="monthly-offer-note" class="small" role="status">Checking the station's approval options. No spending approval is implied.</p>
 <div id="monthly-confirm" class="confirm-panel" role="group" aria-labelledby="monthly-confirm-title" hidden>
 <h3 id="monthly-confirm-title" tabindex="-1">Confirm the terms your wallet will sign</h3>
 <dl id="monthly-confirm-terms" class="terms-list"></dl>
@@ -143,6 +144,7 @@ const expandedSessions=new Set();
 let syncGeneration=null;
 let connectionState="unverified",connectionCheckedAt=null;
 let station={monthly_enabled:false,station_ids:[]},monthly=null,tab="station",tabChosen=false;
+let stationLoaded=false,stationUnavailable=false;
 function connection(state){
   connectionState=state;
   connectionCheckedAt=state==="connected"?Date.now():null;
@@ -250,7 +252,7 @@ function controls(){
   paintReadiness();
   $("portal-title").textContent=identity?"Your charging":"Charge. Export. Settle.";
   $("portal-intro").textContent=identity?"Your station, current session and history in one place.":
-    "Check this station's rates, authorise monthly charging once, then follow your sessions.";
+    stationFlow({station,loaded:stationLoaded,unavailable:stationUnavailable}).intro;
   $("portal-copy").disabled=!$("portal-uri").value;
 }
 async function registration(){
@@ -440,7 +442,7 @@ async function signIn(candidate){
   message("Signed in. Confirmed credits will be received automatically. No new spending approved.");
 }
 function monthlyActionEnabled(){
-  return !busy&&!framed&&station.monthly_enabled&&
+  return !busy&&!framed&&stationLoaded&&!stationUnavailable&&station.monthly_enabled===true&&
     setupAction(monthly,{connected:monthlyConnected()}).enabled;
 }
 function monthlyConnected(){
@@ -492,13 +494,17 @@ function list(holder,rows){
   for(const [label,value] of rows)holder.append(node("dt",label),node("dd",value));
 }
 async function loadStation(){
-  try{station=await api("station");}catch{station={monthly_enabled:false,station_ids:[]};}
+  try{
+    const result=await api("station");
+    stationUnavailable=typeof result?.monthly_enabled!=="boolean";
+    station=stationUnavailable?{monthly_enabled:false,station_ids:[]}:result;
+  }catch{station={monthly_enabled:false,station_ids:[]};stationUnavailable=true;}
+  stationLoaded=true;
   paintStation();
 }
 function paintStation(){
   const ids=station.station_ids||[];
   $("station-name").textContent=ids.length?`Station ${ids.join(", ")}`:"This charging station";
-  list($("monthly-terms"),termsList({stationIds:ids,operatorIdentity:station.operator_identity}));
   paintMonthly();
   const url=location.origin+"/bsv_settlement/driver/index.html",holder=$("station-qr");
   if(!holder.querySelector("svg")){
@@ -517,20 +523,29 @@ async function loadMonthly(){
   paintMonthly();
 }
 function paintMonthly(){
-  const enabled=station.monthly_enabled,status=monthly;
-  $("monthly-offer-note").textContent=!enabled?"Monthly charging is not enabled at this station yet. You can still sign in to see your sessions.":
+  const flow=stationFlow({station,loaded:stationLoaded,unavailable:stationUnavailable});
+  const enabled=flow.mode==="monthly",status=monthly;
+  $("monthly-offer-title").textContent=flow.title;
+  $("monthly-authorise").hidden=!enabled;
+  if(!enabled)$("monthly-confirm").hidden=true;
+  list($("monthly-terms"),enabled?termsList({stationIds:station.station_ids||[],operatorIdentity:station.operator_identity}):flow.rows);
+  $("monthly-offer-note").textContent=!enabled?flow.note:
     !identity?"One action connects your wallet, signs you in and shows the exact terms. Any missing wallet setup is reported separately.":
     status?.authority?.state==="active"?"Monthly charging is authorised for this wallet. Manage it in Wallet.":
     status?.authority?.state==="cancelled"?"Monthly charging was cancelled for this wallet.":
     "Review the terms above, then authorise. Your wallet may ask its own questions.";
   paintReadiness();
-  $("perm-authority").textContent=identity?authorityText(status):"Not signed in";
+  $("perm-authority-label").textContent=enabled?"Monthly charging":"Spending approval";
+  $("perm-grant-label").textContent=enabled?"Wallet monthly permission":"Wallet payment permissions";
+  $("perm-authority").textContent=!identity?"Not signed in":enabled?authorityText(status):
+    flow.mode==="weekly"?"Check your signed invitation for the approved limit and expiry.":"Approval status unavailable";
   $("perm-grant").textContent=identity&&enabled?grantText(status):"Not applicable";
+  if(identity&&!enabled)$("perm-grant").textContent="Not verified here. Your wallet may ask for each payment.";
   $("perm-receiving").textContent=!identity||!status?.enabled?"Not checked":
     status.receiving?.registered?"Registered":"Not registered";
-  $("allowance").hidden=!status?.allowance;
+  $("allowance").hidden=!enabled||!status?.allowance;
   list($("allowance-rows"),allowanceRows(status?.allowance));
-  $("monthly-cancel-area").hidden=status?.authority?.state!=="active";
+  $("monthly-cancel-area").hidden=!enabled||status?.authority?.state!=="active";
   if($("monthly-cancel-area").hidden)$("monthly-cancel-confirm").hidden=true;
   controls();
 }
