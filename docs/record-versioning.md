@@ -155,9 +155,9 @@ Replays that must not repeat are refused (collection claim/permit, stale
 monthly revision); the rest return the stored record. Cancellation inside
 collection and automatic-credit calls stays in their interruption matrices.
 Limits: monthly attempt states and unused challenges are not in the audit
-projection, so the monthly audit comparison covers authorities and bindings
-only. A manual credit signed but never posted stays `broadcast_unknown` and
-the balance refresh reports `chain_check_failed` until reconciled.
+projection (#103), so the monthly audit comparison covers authorities and
+bindings only. A manual credit signed but never posted stays `broadcast_unknown` and
+the balance refresh reports `chain_check_failed` until reconciled (#102).
 
 ## Retention and expiry
 
