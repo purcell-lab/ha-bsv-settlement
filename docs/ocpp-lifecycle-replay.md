@@ -259,7 +259,9 @@ nothing here can pay, collect, budget, credit or control the charger.
     `recorded_since`, and the trim flags.
 
   Every output carries `billing_eligible: false`, `settlement_owner:
-  legacy_sigen` and `selector_implemented: false`.
+  legacy_sigen` and `selector_implemented: false`. The import and export
+  shadow, recorder readiness and replay outputs use the same
+  `settlement_owner: legacy_sigen`.
 - **Parity.** `tests/test_ocpp_lifecycle_live.py` drives all 12 fixtures
   through a real HA state machine and the live coordinator. HA restarts unload
   the observer and rebuild it from its stores. The test asserts the same
@@ -267,6 +269,33 @@ nothing here can pay, collect, budget, credit or control the charger.
   references, observed import/export totals, span counts and bounds, late
   final readings and quality flags as `ocpp_replay`. Only reference-comparison
   flags and the replay's `open_at_window_end` are excluded.
+
+## Privacy: raw idTags in Home Assistant history
+
+This integration never stores or emits a raw idTag. The tracker keeps only the
+one-way `id_tag_ref`, and the stores, attributes and logs of this integration
+contain no raw tag.
+
+The OCPP fork's own `id_tag` sensor is outside this integration. Its state is
+the raw tag, so Home Assistant core keeps it:
+
+- The HA recorder stores that sensor's state history in the HA database, like
+  any other entity.
+- HA DEBUG logging, when enabled, can include state changes and so the raw tag.
+
+If you treat idTags as sensitive, exclude that sensor from the HA recorder.
+Find its entity ID under **Settings > Devices & services > Entities**. The
+recorder exclude is set in YAML only, for example in `configuration.yaml`:
+
+```yaml
+recorder:
+  exclude:
+    entities:
+      - sensor.<charger>_id_tag
+```
+
+Excluding it does not affect lifecycle tracking, which reads the live state.
+History already in the database is kept until the recorder purges it.
 
 ## Remaining work
 

@@ -13,7 +13,9 @@ from decimal import Decimal, DecimalException
 import hashlib
 import json
 
-from .ocpp_shadow_ledger import ACTIVE, energy, instant, transaction
+from .ocpp_shadow_ledger import (
+    ACTIVE, SETTLEMENT_OWNER, emitted_span, energy, instant, stored_owner_ok, transaction,
+)
 
 MAX_EVENTS = 1000
 MAX_SPANS = 50
@@ -148,7 +150,7 @@ def validate_section(saved):
                 or span.get("source_label") not in LABELS
                 or type(span.get("sample_count")) is not int or span["sample_count"] < 1
                 or span.get("billing_eligible") is not False
-                or span.get("settlement_owner") is not None
+                or not stored_owner_ok(span.get("settlement_owner"))
                 or not isinstance(span.get("flow_direction_counts"), dict)
                 or set(span["flow_direction_counts"]) != set(FLOWS)
                 or any(type(v) is not int or v < 0 for v in span["flow_direction_counts"].values())
@@ -464,13 +466,13 @@ class ExportShadowLedger:
             "state": ("not_bound" if self.binding is None else
                       "observing" if current and not self.flags else "waiting"),
             "flags": sorted(self.flags),
-            "current_span": deepcopy(current), "last_span": deepcopy(last),
+            "current_span": emitted_span(current), "last_span": emitted_span(last),
             "latest_grade": last["grade"] if last else None,
             "grade_counts": counts, "grading": dict(self.rules),
             "retained_span_count": len(self.data["spans"]),
             "journal_trimmed": self.data["journal_trimmed"],
             "spans_trimmed": self.data["spans_trimmed"],
-            "billing_eligible": False, "settlement_owner": None,
+            "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
             "payment_control": False, "charger_control": False,
             "export_credit_aud": None, "net_cost_aud": None,
         }

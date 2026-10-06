@@ -4,6 +4,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
+# Fixed on every OCPP shadow output; settlement stays with the legacy recorder (#117).
+SETTLEMENT_OWNER = "legacy_sigen"
+
 SENSORS = [
     ("session_import_energy", "Session import energy", "kWh"),
     ("session_export_energy", "Session export energy", "kWh"),
@@ -74,11 +77,11 @@ class OCPPShadowSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
-        return {k: data.get(k) for k in (
+        return {**{k: data.get(k) for k in (
             "mode", "quality_flags", "provenance", "current_span", "previous_span",
             "retained_span_count", "journal_trimmed", "spans_trimmed",
-            "billing_eligible", "settlement_owner", "payment_control",
-            "charger_control", "export_kwh", "net_cost_aud")}
+            "billing_eligible", "payment_control",
+            "charger_control", "export_kwh", "net_cost_aud")}, "settlement_owner": SETTLEMENT_OWNER}
 
 
 class OCPPExportShadowSensor(OCPPShadowSensor):
@@ -104,7 +107,7 @@ class OCPPExportShadowSensor(OCPPShadowSensor):
         export = self.export
         common = {"mode": (self.coordinator.data or {}).get("mode"), "state": export.get("state"),
                   "flags": export.get("flags"), "grading": export.get("grading"),
-                  "billing_eligible": False, "settlement_owner": None,
+                  "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                   "payment_control": False, "charger_control": False}
         if self.key == "export_quality":
             return {**common, "grade_counts": export.get("grade_counts"),
@@ -149,7 +152,7 @@ class RecorderReadinessSensor(OCPPShadowSensor):
     @property
     def extra_state_attributes(self):
         recorder = self.recorder
-        common = {"billing_eligible": False, "settlement_owner": recorder.get("settlement_owner"),
+        common = {"billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                   "selector_implemented": False, "payment_control": False,
                   "charger_control": False}
         if self.key == "session_recorder":
@@ -208,7 +211,7 @@ class OCPPLifecycleSensor(OCPPShadowSensor):
     @property
     def extra_state_attributes(self):
         # Fixed on every output regardless of the summary contents.
-        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": "legacy_sigen",
+        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": SETTLEMENT_OWNER,
                 "selector_implemented": False, "payment_control": False,
                 "charger_control": False}
 

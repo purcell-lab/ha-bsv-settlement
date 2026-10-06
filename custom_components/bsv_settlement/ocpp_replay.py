@@ -26,7 +26,7 @@ from pathlib import Path
 
 from .ocpp_export_shadow_ledger import ExportShadowLedger
 from .ocpp_lifecycle import LifecycleTracker, as_datetime_rows, assemble, overlapping
-from .ocpp_shadow_ledger import ImportShadowLedger, instant, provenance_flags
+from .ocpp_shadow_ledger import ImportShadowLedger, emitted_span, instant, provenance_flags
 from .recorder_reconciliation import SETTLE_SECONDS, reconcile_span, tolerance_rules
 
 FIXTURE_SCHEMA = 1
@@ -245,8 +245,8 @@ class Replay:
             "description": self.fixture.get("description"),
             "window": self.fixture.get("window"), "ha_restarts": self.restarts,
             "observations": self.observations, "sessions": assembled,
-            "import_spans": list(self.import_spans.values()),
-            "export_spans": list(self.export_spans.values()),
+            "import_spans": [emitted_span(s) for s in self.import_spans.values()],
+            "export_spans": [emitted_span(s) for s in self.export_spans.values()],
             "reconciliations": results, "overlapping_sessions": overlapping(sessions),
             "tolerances": self.tolerances,
             "billing_eligible": False, "settlement_owner": "legacy_sigen",

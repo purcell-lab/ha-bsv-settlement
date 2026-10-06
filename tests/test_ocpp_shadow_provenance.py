@@ -24,7 +24,8 @@ from custom_components.bsv_settlement.sensor import OCPPShadowSensor
 BINDING = {"connector": "synthetic-single-connector"}
 START = datetime(2026, 10, 4, 0, 0, tzinfo=timezone.utc)
 SERIAL = "SYNTHETIC-SERIAL-0042"
-FINANCIAL = ("billing_eligible", "settlement_owner", "payment_control", "charger_control")
+FINANCIAL = ("billing_eligible", "payment_control", "charger_control")
+OWNER = "legacy_sigen"  # Every emitted OCPP shadow output (#117).
 VERSION_ATTRS = {"subprotocol": "ocpp1.6", "offered_subprotocols": ["ocpp1.6"], "transport": "ws"}
 KEYS_ATTRS = {
     "AuthorizeRemoteTxRequests": "0", "HeartbeatInterval": "3600",
@@ -106,7 +107,8 @@ def test_provenance_snapshot_with_fork_metadata():
     assert set(span["provenance_flags"]) == {
         "context_defaulted_by_integration", "transport_unencrypted", "meter_identity_unavailable"}
     assert SERIAL not in json.dumps(ledger.data)
-    assert not any(span[k] for k in ("billing_eligible", "settlement_owner"))
+    assert span["billing_eligible"] is False and span["settlement_owner"] == OWNER
+    assert ledger.data["current"]["settlement_owner"] is False  # Stored encoding unchanged.
 
 
 def test_provenance_degrades_when_metadata_absent_or_unavailable():
@@ -397,6 +399,7 @@ async def test_coordinator_provenance_serial_and_financial_flags(tmp_path):
                 "context_defaulted_by_integration"} <= set(attrs["quality_flags"])
         assert "metadata_not_bound" not in attrs["quality_flags"]
         assert not any(attrs[k] for k in FINANCIAL)
+        assert attrs["settlement_owner"] == attrs["current_span"]["settlement_owner"] == OWNER
         assert attrs["current_span"]["billing_eligible"] is False
         assert SERIAL not in json.dumps(attrs, default=str)
         assert SERIAL not in json.dumps(coord.ledger.data)
@@ -438,7 +441,7 @@ async def test_upstream_build_without_metadata_stays_unverified(tmp_path):
         assert summary["current_span"]["protocol_version"] == "unverified"
         assert {"metadata_not_bound", "context_source_unknown",
                 "protocol_version_unverified"} <= set(summary["quality_flags"])
-        assert not any(summary[k] for k in FINANCIAL)
+        assert not any(summary[k] for k in FINANCIAL) and summary["settlement_owner"] == OWNER
         with pytest.raises(HomeAssistantError, match="read-only"):
             await coord.execute("prepare_operator_payment", {})
     finally:
