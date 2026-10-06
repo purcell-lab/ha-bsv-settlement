@@ -1,0 +1,196 @@
+{
+  "id": "g02_brisbane_v2g_export_credit",
+  "fictional": true,
+  "description": "Evening vehicle-to-grid discharge at ~5 kW into a feed-in price spike.",
+  "timezone": "Australia/Brisbane (UTC+10:00, no DST)",
+  "covers": [
+    "credit",
+    "v2g_export",
+    "final_prices"
+  ],
+  "state_entity": "sensor.fictional_charger_running_state",
+  "as_of": "2026-10-07T19:00:00+10:00",
+  "sat_per_aud": "2500",
+  "observations": {
+    "state": [
+      {
+        "t": "2026-10-07T17:40:00+10:00",
+        "value": "Idle"
+      },
+      {
+        "t": "2026-10-07T17:45:00+10:00",
+        "value": "Preparing Comm"
+      },
+      {
+        "t": "2026-10-07T17:46:00+10:00",
+        "value": "Discharging"
+      },
+      {
+        "t": "2026-10-07T18:41:00+10:00",
+        "value": "Ended"
+      }
+    ],
+    "import": [
+      {
+        "t": "2026-10-07T17:30:00+10:00",
+        "value": "12.360000",
+        "unit": "MWh"
+      }
+    ],
+    "export": [
+      {
+        "t": "2026-10-07T17:45:00+10:00",
+        "value": "3.210000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T17:49:00+10:00",
+        "value": "3.210080",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T17:53:00+10:00",
+        "value": "3.210413",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T17:57:00+10:00",
+        "value": "3.210746",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:01:00+10:00",
+        "value": "3.211079",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:05:00+10:00",
+        "value": "3.211412",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:09:00+10:00",
+        "value": "3.211745",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:13:00+10:00",
+        "value": "3.212078",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:17:00+10:00",
+        "value": "3.212411",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:21:00+10:00",
+        "value": "3.212744",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:25:00+10:00",
+        "value": "3.213077",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:29:00+10:00",
+        "value": "3.213410",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:33:00+10:00",
+        "value": "3.213743",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:37:00+10:00",
+        "value": "3.214076",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:41:00+10:00",
+        "value": "3.214409",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-07T18:45:00+10:00",
+        "value": "3.214509",
+        "unit": "MWh"
+      }
+    ],
+    "import_price": [
+      {
+        "t": "2026-10-07T17:29:00+10:00",
+        "value": "0.3510",
+        "unit": "$/kWh",
+        "start": "2026-10-07T17:30:00+10:00",
+        "end": "2026-10-07T18:00:00+10:00",
+        "estimate": false
+      },
+      {
+        "t": "2026-10-07T17:59:00+10:00",
+        "value": "0.5520",
+        "unit": "$/kWh",
+        "start": "2026-10-07T18:00:00+10:00",
+        "end": "2026-10-07T18:30:00+10:00",
+        "estimate": false
+      },
+      {
+        "t": "2026-10-07T18:29:00+10:00",
+        "value": "0.4870",
+        "unit": "$/kWh",
+        "start": "2026-10-07T18:30:00+10:00",
+        "end": "2026-10-07T19:00:00+10:00",
+        "estimate": false
+      }
+    ],
+    "export_price": [
+      {
+        "t": "2026-10-07T17:29:00+10:00",
+        "value": "0.1820",
+        "unit": "$/kWh",
+        "start": "2026-10-07T17:30:00+10:00",
+        "end": "2026-10-07T18:00:00+10:00",
+        "estimate": false
+      },
+      {
+        "t": "2026-10-07T17:59:00+10:00",
+        "value": "0.9512",
+        "unit": "$/kWh",
+        "start": "2026-10-07T18:00:00+10:00",
+        "end": "2026-10-07T18:30:00+10:00",
+        "estimate": false
+      },
+      {
+        "t": "2026-10-07T18:29:00+10:00",
+        "value": "0.6034",
+        "unit": "$/kWh",
+        "start": "2026-10-07T18:30:00+10:00",
+        "end": "2026-10-07T19:00:00+10:00",
+        "estimate": false
+      }
+    ]
+  },
+  "expected": {
+    "opened_at": "2026-10-07T17:45:00+10:00",
+    "ended_at": "2026-10-07T18:41:00+10:00",
+    "duration_seconds": 3360,
+    "import_wh": "0/1",
+    "export_wh": "4409/1",
+    "import_cost_aud_exact": "0/1",
+    "export_credit_aud_exact": "62188241/20000000",
+    "import_cost_aud": "0.000000000000",
+    "export_credit_aud": "3.109412050000",
+    "unpriced_import_wh": "0/1",
+    "unpriced_export_wh": "0/1",
+    "estimated_rate_import_wh": "0/1",
+    "estimated_rate_export_wh": "0/1",
+    "pricing_complete": true,
+    "net_aud_exact": "-62188241/20000000",
+    "net_aud_unrounded": "-3.109412050000",
+    "net_aud": "-3.11",
+    "direction": "operator_to_driver",
+    "amount_sats": 7775
+  }
+}
