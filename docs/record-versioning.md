@@ -133,6 +133,32 @@ refuses to load. This catches a ledger-plus-witness rollback when the audit log
 was retained, and legacy re-adoption beneath a newer head. Detection is
 precise to the last revision that changed an audited record.
 
+## Restart transition matrices (#7)
+
+A restart reloads the wallet ledger from its HA store into a fresh
+`MainnetWalletAPI`. Each cell restarts before and after one transition (or all,
+`-all`), replays the same request, and requires one record per session, no
+second broadcast or signed transaction, unchanged projection on replay and an
+audit history equal to an uninterrupted run (refs compared by first use) whose
+chain verifies. Providers are fictional and fail on any extra broadcast.
+
+| Path | Test | Transitions | Cells |
+|---|---|---|---|
+| Automatic credit | `test_record_versioning.py::test_restart_at_every_credit_transition_retains_one_account_and_its_history` | queue/sign, broadcast, confirm | 1 (restart before each) |
+| Manual driver payment | `test_restart_transition_matrix.py::test_manual_review_restart_at_every_transition[driver_payment-*]` | prepare, approve, payment reported, confirmed | 5 |
+| Manual operator credit | `…[credit-*]`, `…[credit_unknown-*]` | prepare, approve, credit prepared, broadcast or unknown, confirmed | 12 |
+| Manual credit inside broadcast | `test_manual_credit_restart_inside_broadcast_never_resends` | signed not posted, posted not acknowledged | 2 |
+| Driver collection | `test_driver_collection_restart_at_every_transition[collection-*]`, `[collection_unknown-*]` | invitation, consent, collection created, claimed, permit, signed reported or unknown, confirmed | 16 |
+| Monthly authority (runtime disabled) | `test_monthly_authority_restart_at_every_reachable_transition` | issue, accept, bind, reserve, wallet pending, uncertain, commit, cancel | 9 |
+
+Replays that must not repeat are refused (collection claim/permit, stale
+monthly revision); the rest return the stored record. Cancellation inside
+collection and automatic-credit calls stays in their interruption matrices.
+Limits: monthly attempt states and unused challenges are not in the audit
+projection, so the monthly audit comparison covers authorities and bindings
+only. A manual credit signed but never posted stays `broadcast_unknown` and
+the balance refresh reports `chain_check_failed` until reconciled.
+
 ## What this does not prove
 
 - **Coherent full-backup rollback still passes.** If the ledger, checkpoint,

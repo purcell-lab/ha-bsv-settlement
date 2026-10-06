@@ -100,9 +100,14 @@
         {"path": "tests/test_credit_interruption_matrix.py", "test": "test_interrupted_credit_reloads_without_duplicate_external_effect"},
         {"path": "tests/test_collection.py", "test": "test_save_failure_before_network_never_broadcasts"},
         {"path": "tests/test_auto_credit.py", "test": "test_unknown_submission_and_restart_never_rebroadcast"},
-        {"path": "tests/test_ongoing_credit.py", "test": "test_changed_frozen_account_and_storage_failure_block_broadcast"}
+        {"path": "tests/test_ongoing_credit.py", "test": "test_changed_frozen_account_and_storage_failure_block_broadcast"},
+        {"path": "tests/test_record_versioning.py", "test": "test_restart_at_every_credit_transition_retains_one_account_and_its_history"},
+        {"path": "tests/test_restart_transition_matrix.py", "test": "test_manual_review_restart_at_every_transition"},
+        {"path": "tests/test_restart_transition_matrix.py", "test": "test_manual_credit_restart_inside_broadcast_never_resends"},
+        {"path": "tests/test_restart_transition_matrix.py", "test": "test_driver_collection_restart_at_every_transition"},
+        {"path": "tests/test_restart_transition_matrix.py", "test": "test_monthly_authority_restart_at_every_reachable_transition"}
       ],
-      "remaining": ["Extend interruption coverage to manual payments, protected restore and coherent stale-backup mismatch", "Add real-device suspension/refusal evidence and bounded driver confirmation scheduling"]
+      "remaining": ["Extend interruption coverage to protected restore and coherent stale-backup mismatch", "Add real-device suspension/refusal evidence and bounded driver confirmation scheduling"]
     },
     {
       "id": "D09",
