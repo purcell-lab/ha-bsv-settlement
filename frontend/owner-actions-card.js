@@ -1,5 +1,6 @@
 import "./completed-session-card.js";
 import {ownerActionRows} from "./owner-actions.js";
+import {evidenceDetails} from "./session-table.js";
 import {styles,esc,num,short,stamp,chainRecordLink,energyMetrics} from "./ui.js";
 import {approvalUrl,drawApprovalQR} from "./approval-qr.js";
 
@@ -52,6 +53,7 @@ class OwnerActionsCard extends HTMLElement{
         <p class="note">${Number.isSafeInteger(v.row.amount_sats)?`${num(v.row.amount_sats)} sat to owner`:"Amount not yet quoted"} · ${v.session?.ended_at?esc(stamp(v.session.ended_at)):"Historical time unavailable"}
         ${v.row.fee_sats!=null?` · ${num(v.row.fee_sats)} sat fee`:""}</p>
         <p class="note">${esc(v.note)}</p>
+        ${evidenceDetails(v.row)}
         ${v.row.error||v.row.diagnostic?.message?`<p class="notice">${esc(v.row.error||v.row.diagnostic.message)}</p>`:""}
         <div class="actions">${v.actions.map(a=>`<button class="${a.primary?"primary":""}" data-row="${this.rows.indexOf(v)}" data-action="${a.id}" ${disabled?"disabled":""}>${esc(a.label)}</button>`).join("")}
         ${v.row.txid?chainRecordLink(v.row.txid):""}</div>

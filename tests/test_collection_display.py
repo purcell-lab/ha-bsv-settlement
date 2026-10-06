@@ -57,6 +57,22 @@ def test_payment_summary_exposes_amount_for_the_matching_driver_collection():
     assert "quote" not in rows[0] and "signature" not in rows[0]
 
 
+def test_payment_summary_carries_existing_evidence_timestamp_without_mutation():
+    data = item() | {"state": "broadcast_unknown", "checked_at": "2026-10-06T00:00:00Z",
+                     "confirmations": None, "output_index": 0, "signed_raw": "private"}
+    api = SimpleNamespace(
+        saved={"driver_collections": {"b": data},
+               "session_budgets": {"b": {"terms": {"transaction_id": "tx"}}}},
+        collections=SimpleNamespace(session_id=lambda row: "s"),
+    )
+    before = json.dumps(api.saved)
+    row = MainnetWalletAPI.payment_summary(api)[0]
+    assert row["checked_at"] == data["checked_at"]
+    assert row["confirmations"] is None and row["output_index"] == 0
+    assert "signed_raw" not in row
+    assert json.dumps(api.saved) == before
+
+
 @pytest.mark.parametrize("weekly_child", [False, True])
 @pytest.mark.parametrize("quote_kind", ["valid", "missing", "mismatched"])
 def test_summary_id_comes_from_saved_collection_not_quote(weekly_child, quote_kind):

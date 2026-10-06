@@ -1,4 +1,5 @@
 import {finite,num,stateLabel} from "./ui.js";
+import {consolidateSessionEvidence} from "./settlement-evidence.js";
 
 const validAmount=v=>Number.isSafeInteger(v)&&v>=0;
 const confirmed=new Set(["provider_confirmed","driver_payment_provider_confirmed","credit_provider_confirmed"]);
@@ -7,18 +8,16 @@ const uncertain=new Set(["broadcast_unknown","expired_awaiting_reconciliation","
 
 export function settlementRows(health){
   const rows=new Map();
-  for(const r of health.ongoing_credit?.sessions||[])rows.set(r.session_id,r);
-  for(const r of health.automatic_credit?.payments||[])rows.set(r.session_id,{...r,direction:"operator_to_driver"});
-  for(const p of health.session_payments||[]){
-    const old=rows.get(p.session_id);
-    // A signed/submitted attempt must not disappear behind a newer unsigned row.
-    if(old?.txid&&!p.txid)continue;
-    rows.set(p.session_id,{...old,...p});
-  }
-  for(const r of health.closed_sessions||[]){
-    if(!rows.get(r.session_id)?.txid)rows.set(r.session_id,{...r,direction:"driver_to_operator"});
-  }
-  return [...rows.values()].reverse();
+  const add=r=>{
+    if(!r||typeof r.session_id!=="string"||!r.session_id)return;
+    if(!rows.has(r.session_id))rows.set(r.session_id,[]);
+    rows.get(r.session_id).push(r);
+  };
+  for(const r of health.ongoing_credit?.sessions||[])add(r);
+  for(const r of health.automatic_credit?.payments||[])add({...r,direction:"operator_to_driver"});
+  for(const r of health.session_payments||[])add(r);
+  for(const r of health.closed_sessions||[])add({...r,direction:"driver_to_operator"});
+  return [...rows.values()].map(consolidateSessionEvidence).reverse();
 }
 
 export function paymentStatus(row,sessions=[],now=Date.now()){
@@ -31,6 +30,8 @@ export function paymentStatus(row,sessions=[],now=Date.now()){
   const suffix=amount===null?"":`: ${num(amount)} sat`;
   const result=(title,detail,tone="info")=>({title,detail,tone,direction,
     reference:row.transaction_id||s?.ocpp_transaction_id||row.session_id});
+  if(row.evidence_conflict)return result("Conflicting settlement records",
+    "Inspect the retained transaction evidence. No combined amount or new payment is authorised.","warn");
   if(row.state==="waived")return result("Waived"+suffix,row.received_funds?
     `Charge waived. ${num(row.received_funds.amount_sats)} sat already received, recorded as unallocated funds for separate accounting. No refund authorised. ${row.reason||""}`:
     "Charge waived; no further collection. "+(row.reason||""),"quiet");

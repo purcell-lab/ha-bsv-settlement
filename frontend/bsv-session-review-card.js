@@ -78,7 +78,8 @@ class BsvSessionReviewCard extends HTMLElement {
         (creditMode?Number(s.net_cost_aud)<0:Number(s.net_cost_aud)>=0)));
     const observedSessions=[proxy?.attributes?.latest_session,proxy?.attributes?.previous_session].filter(Boolean);
     const health=wallet?.attributes||{},paymentRows=settlementRows(health)
-      .filter(row=>mode==="all" || paymentStatus(row,observedSessions).direction===mode);
+      .filter(row=>mode==="all" || paymentStatus(row,observedSessions).direction===mode ||
+        row.evidence_conflict&&!row.direction);
     const presentations=paymentRows.map(row=>paymentStatus(row,observedSessions));
     const signature = JSON.stringify([mode,r, ready, admin, sessions.map(s => [s.session_id, s.net_cost_aud]),
       this._busy, this._message, automatic, ongoing,health.session_payments,health.driver_approvals,health.closed_sessions,observedSessions,presentations,collectionIssues]);
@@ -150,9 +151,11 @@ class BsvSessionReviewCard extends HTMLElement {
         <button id="stop-ongoing" class="danger" ${disabled?"disabled":""}>Stop ongoing driver credits</button>
         <p class="note">This stops the ongoing policy, not separately approved session credits. Submitted transactions continue to be reconciled.</p></div>`:""}
         ${mode==="driver_to_operator"?`<details><summary>All session data</summary>${sessionTable(health,observedSessions,mode)}</details>`:sessionTable(health,observedSessions,mode)}
-        ${(creditMode?automatic?.payments || []:[]).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
+        ${creditMode&&(automatic?.payments||[]).length?'<details><summary>Automatic-credit audit records</summary><p class="note">Historical projections, not additional amounts due. Use the session outcome above for current status.</p>':""}
+        ${(creditMode?automatic?.payments || []:[]).slice().reverse().map(p=>`<article class="payment"><div class="row"><h3>${esc(p.amount_sats)} sat to driver</h3><span class="badge">Recorded: ${esc(stateLabel(p.state))}</span></div><p class="note">Session ${esc(short(p.transaction_id))} · ${esc(p.fee_sats)} sat fee · Automatic credit</p>
         <details><summary>Payment details</summary><dl><dt>Driver receives</dt><dd>${esc(p.amount_sats)} sat</dd><dt>Operator fee</dt><dd>${esc(p.fee_sats)} sat</dd></dl>${p.fee_quote?`<p class="note">Quoted rate: ${esc(p.fee_quote.rate_sat_per_kb)} sat/KB · signed-size allowance: ${esc(p.fee_quote.estimated_signed_bytes)} bytes. Quote checked ${esc(stamp(p.fee_quote.observed_at))}.</p>`:""}<p class="note">Session</p><code>${esc(p.transaction_id)}</code><p class="note">Recipient</p><code>${esc(p.recipient_address)}</code><p class="note">BSV transaction</p>${chainRecordLink(p.txid)}</details>
         ${p.error ? `<p class="notice">${esc(p.error)}</p>` : ""}</article>`).join("")}
+        ${creditMode&&(automatic?.payments||[]).length?"</details>":""}
         ${creditMode?`<details><summary>Automatic-credit policy</summary><p class="note">Eligible credits use a registered receiving key. Maximum operator spend: 1,000 sat per session including the quoted network fee. The higher of the recommended and mempool-minimum rates is applied to a conservative signed-size estimate, rounded up. Quotes are checked again before signing. Registration and a fee quote do not guarantee payment or confirmation.</p>
         ${automatic?.enabled ? `<button id="stop-credits" class="danger" ${disabled ? "disabled" : ""}>Stop new automatic credits</button>` : ""}</details>`:""}
         ${!admin ? '<p class="notice">Administrator access is required for these actions.</p>' : ""}
