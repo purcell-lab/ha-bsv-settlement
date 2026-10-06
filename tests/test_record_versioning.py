@@ -19,7 +19,6 @@ from custom_components.bsv_settlement.api import WalletError
 from custom_components.bsv_settlement.audit import (
     GENESIS, MARKER as AUDIT_MARKER, digest, project, ref, transitions, verify)
 from custom_components.bsv_settlement.coordinator import SettlementCoordinator
-from custom_components.bsv_settlement.embedded import EmbeddedWalletAPI
 from custom_components.bsv_settlement.mainnet import MainnetWalletAPI
 from custom_components.bsv_settlement.records import (
     LEDGER_NAMESPACES, STORES, RecordVersionError, VersionedStore, check_keys,
@@ -99,6 +98,10 @@ def test_registry_versions_match_owner_constants_and_keys_resolve():
     from custom_components.bsv_settlement.recorder_reconciliation import SCHEMA
     assert STORES["ocpp_shadow"].version == ocpp_shadow.STORE_VERSION == 3
     assert STORES["recorder_reconciliation"].version == SCHEMA == 1
+    from custom_components.bsv_settlement import provenance_archive
+    assert STORES["provenance_archive"].version == provenance_archive.STORE_VERSION == 1
+    assert STORES["ocpp_lifecycle"].version == ocpp_shadow.LIFECYCLE_SCHEMA == 1
+    assert STORES["ocpp_lifecycle"].keys == frozenset(ocpp_shadow.LIFECYCLE_KEYS)
     assert ledger_checkpoint.VERSION == 1 and audit_module.VERSION == 1
     keys = set()
     for name, spec in STORES.items():
@@ -175,7 +178,8 @@ async def test_unknown_ledger_namespace_from_a_newer_release_is_refused(tmp_path
 
 @pytest.mark.parametrize("name,entry_id", [
     ("coordinator", "e1"), ("proxy", "e1"), ("grouped_wallet_test", None),
-    ("recorder_reconciliation", "e1"), ("operator_key", "e1"), ("wallet_audit", "e1")])
+    ("recorder_reconciliation", "e1"), ("operator_key", "e1"), ("wallet_audit", "e1"),
+    ("ocpp_lifecycle", "e1")])
 async def test_each_registered_store_refuses_newer_minor_corrupt_and_unknown(tmp_path, name, entry_id):
     hass = HomeAssistant(str(tmp_path))
     try:
@@ -208,9 +212,9 @@ async def test_coordinator_refuses_unknown_keys_instead_of_resetting(tmp_path):
     entry = make_entry()
     hass = await make_hass(tmp_path, entry)
     try:
-        coordinator = SettlementCoordinator(hass, entry, EmbeddedWalletAPI(hass, entry))
+        coordinator = SettlementCoordinator(hass, entry, MainnetWalletAPI(hass, entry))
         await coordinator.store.async_save({"sessions": {"s": {}}, "latest": "s", "extra": 1})
-        fresh = SettlementCoordinator(hass, entry, EmbeddedWalletAPI(hass, entry))
+        fresh = SettlementCoordinator(hass, entry, MainnetWalletAPI(hass, entry))
         with pytest.raises(RecordVersionError):
             await fresh.load()
         await coordinator.store.async_save({"sessions": {"s": {}}, "latest": "s"})

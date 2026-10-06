@@ -126,7 +126,7 @@
       "status": "blocked",
       "issues": [4, 5, 7, 21, 24],
       "test_refs": [
-        {"path": "tests/test_embedded.py", "test": "test_embedded_identity_restart_permissions_selftest_and_no_network"}
+        {"path": "tests/test_embedded.py", "test": "test_identity_restart_permissions_selftest_and_no_network"}
       ],
       "remaining": ["Execute an isolated protected backup/restore drill, not only a normal restart", "Complete privacy/security review and release recovery ownership"]
     }

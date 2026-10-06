@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_hacs_metadata_and_single_integration():
     hacs = json.loads((ROOT / "hacs.json").read_text())
-    assert hacs["name"] == "BSV Settlement (Mock PoC)"
+    assert hacs["name"] == "BSV Settlement"
     assert hacs["content_in_root"] is False
     assert hacs["homeassistant"] == "2026.9.4"
     domains = [p.name for p in (ROOT / "custom_components").iterdir()

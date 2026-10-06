@@ -115,7 +115,8 @@ class SessionReviews:
         result = copy.deepcopy(review)
         # Private HA/user identifiers and raw signing material are never returned.
         for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash",
-                    "driver_payment_raw", "one_click_authorised_by", "tariff_provenance"):
+                    "driver_payment_raw", "one_click_authorised_by", "tariff_provenance",
+                    "tariff_provenance_ref"):
             result.pop(key, None)
         if review.get("account_kind") != "manual_energy_adjustment":
             result["tariff_provenance"] = self.provenance(review)
@@ -152,29 +153,10 @@ class SessionReviews:
             raise WalletError("Session is not in the recorder's retained history")
         return account_snapshot(record)
 
-    def frozen_provenance(self, proxy_entry, session_id, account_digest):
-        """Copy the provenance version captured for exactly this account, if any."""
-        proxy = self.hass.data.get(DOMAIN, {}).get(proxy_entry)
-        lookup = getattr(proxy, "tariff_provenance", None)
-        if lookup is None:
-            return None
-        try:
-            return lookup(session_id, account_digest, detail=True)
-        except Exception:  # noqa: BLE001 - evidence must never block an account review
-            return None
-
     def provenance(self, review, detail=False):
         """Read-only operator view; missing provenance is reported, never invented."""
-        from .tariff_provenance import summary, verify
-        version = review.get("tariff_provenance")
-        if not detail:
-            result = summary(version)
-            if version:
-                result["digest_verified"] = verify(version)
-            return result
-        if not version:
-            return summary(None)
-        return copy.deepcopy(version) | {"status": "recorded", "digest_verified": verify(version)}
+        from .provenance_archive import view
+        return view(self.api, review, detail)
 
     async def unchanged_source(self, review):
         if review.get("account_kind") == "manual_energy_adjustment":
@@ -231,6 +213,8 @@ class SessionReviews:
         if direction == "operator_to_driver" and recipient == self.api.identity["address"]:
             raise WalletError("Driver credit recipient cannot be the operator")
         review_id = str(uuid4())
+        from .provenance_archive import archive, freeze
+        ref, frozen = freeze(self.api, data["proxy_config_entry_id"], account["session_id"], digest(account))
         terms = {
             "review_id": review_id, "network": "BSV mainnet", "account": account,
             "direction": direction, "recipient_address": recipient, "amount_sats": sats,
@@ -243,9 +227,9 @@ class SessionReviews:
         review = terms | {
             "frozen_terms": copy.deepcopy(terms),
             "terms_hash": digest(terms), "source_hash": digest(account),
-            # Evidence only, outside the signed terms and their hash. Frozen here.
-            "tariff_provenance": self.frozen_provenance(
-                data["proxy_config_entry_id"], account["session_id"], digest(account)),
+            # Evidence only, outside the signed terms and their hash. The full
+            # version goes to the archive; releases before it read only this null.
+            "tariff_provenance": None, "tariff_provenance_ref": ref,
             "proxy_config_entry_id": data["proxy_config_entry_id"],
             "created_by": user_id, "state": "awaiting_account_approval",
             "payment_request": None, "credit_draft_id": None, "receipt": None,
@@ -253,6 +237,7 @@ class SessionReviews:
         self.api.saved["session_reviews"][review_id] = review
         self.api.saved["session_review_index"][session_key] = review_id
         self.api.saved["latest_session_review"] = review_id
+        await archive(self.api, frozen)  # Before the referencing ledger save; never raises.
         await self.save()
         return self.public(review)
 

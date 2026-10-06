@@ -34,8 +34,9 @@ def redesign(config):
                     (kind and not any(c.get("type") == kind for c in cards(views[0])))):
                 raise ValueError("Partially redesigned dashboard; review its backup before migration")
         # Keep native controls, user cards, private config, metadata and extra
-        # views intact, except managed settlement labels, sizing and wallet link.
-        return split_settlement_views(old)
+        # views intact, except managed settlement labels, sizing, wallet link
+        # and the removed testnet/mock diagnostics cards.
+        return split_settlement_views(drop_removed_backend_cards(old))
     qr = next(c for c in flat if c.get("type") == "custom:bsv-receive-qr-card")
     balance = next(c["entity"] for c in flat if str(c.get("entity", "")).endswith("_confirmed_wallet_balance"))
     operator = {"type": "custom:bsv-operator-card", "wallet_entity": review["wallet_entity"],
@@ -69,14 +70,6 @@ def redesign(config):
             "show_header_toggle": False, "entities": [
                 {"entity": "input_number.bsv_conversion_rate_setting", "name": "Set sat per AUD"},
                 {"entity": review["rate_entity"], "name": "Current conversion"}]}
-    offline_button = next(c for c in flat if c.get("type") == "button" and
-                          c.get("tap_action", {}).get("perform_action") == "bsv_settlement.wallet_self_test")
-    offline_tile = next(c for c in flat if c.get("type") == "tile" and
-                        "testnet_operator_wallet_status" in c.get("entity", ""))
-    offline_result = next(c for c in flat if c.get("type") == "markdown" and
-                          "Last saved offline self-test" in c.get("content", ""))
-    mock_entities = list(dict.fromkeys(c["entity"] for c in flat
-                                     if str(c.get("entity", "")).startswith("sensor.bsv_settlement_mock")))
     return split_settlement_views({"views": [
         view("Overview", "overview", "mdi:ev-station", "## Charging & settlement\nThe latest session, its next action and the operator's funds.",
              [section(operator), section(operator | {"mode": "wallet"})]),
@@ -97,12 +90,37 @@ def redesign(config):
              [section(operator | {"mode": "wallet"}), section(qr, operator_key)]),
         view("Diagnostics", "testing", "mdi:tune", "## Settings & diagnostics\nKeep fictional tests separate from real mainnet settlements.",
              [section(rate, {"type": "markdown", "content":
-                "The conversion is a demonstration rate, not market FX. Existing approvals and reviews keep their frozen rate."}),
-              section(offline_tile, offline_button, offline_result),
-              section({"type": "entities", "title": "Fictional mock results", "entities": mock_entities,
-                       "show_header_toggle": False},
-                      {"type": "markdown", "content": "Mock and offline tests do not move money. Their results are not proof of live payment readiness."})]),
+                "The conversion is a demonstration rate, not market FX. Existing approvals and reviews keep their frozen rate."})]),
     ]})
+
+
+def removed_backend_card(card):
+    """Diagnostics cards for the removed testnet wallet and mock backends."""
+    entity = str(card.get("entity", ""))
+    content = card.get("content") if isinstance(card.get("content"), str) else ""
+    return ("_testnet_operator_wallet_status" in entity or entity.startswith("sensor.bsv_settlement_mock")
+            or card.get("tap_action", {}).get("perform_action") == "bsv_settlement.wallet_self_test"
+            or "_testnet_operator_wallet_status" in content or "Last saved offline self-test" in content
+            or "Mock and offline tests do not move money" in content
+            or (card.get("type") == "entities" and card.get("title") == "Fictional mock results"))
+
+
+def drop_removed_backend_cards(config):
+    """Remove those cards, and sections they leave empty, from the Diagnostics view only."""
+    result = deepcopy(config)
+    for view in result.get("views", []):
+        if view.get("path") != "testing" or not isinstance(view.get("sections"), list):
+            continue
+        kept = []
+        for section in view["sections"]:
+            items = section.get("cards") if isinstance(section, dict) else None
+            if isinstance(items, list) and any(isinstance(c, dict) and removed_backend_card(c) for c in items):
+                section["cards"] = [c for c in items if not (isinstance(c, dict) and removed_backend_card(c))]
+                if not section["cards"]:
+                    continue
+            kept.append(section)
+        view["sections"] = kept
+    return result
 
 
 def split_settlement_views(config):

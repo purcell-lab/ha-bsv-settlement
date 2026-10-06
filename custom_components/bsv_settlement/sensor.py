@@ -29,6 +29,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                ("session_recorder", "Session recorder"),
                                ("recorder_readiness", "OCPP recorder readiness"),
                                ("last_reconciliation", "Last OCPP reconciliation")))
+        async_add_entities([OCPPLifecycleSensor(
+            coordinator, entry, "session_lifecycle", "OCPP session lifecycle", None)])
         return
     if coordinator.mode == "sensor_proxy":
         async_add_entities(ProxySensor(coordinator, entry, key, name, unit) for key, name, unit in (
@@ -39,11 +41,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("net_cost_aud", "Provisional session cost", "AUD"),
         ))
         return
-    specs = SENSORS
-    if coordinator.mode.startswith("embedded_"):
-        specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None)]
-    if coordinator.mode == "embedded_mainnet":
-        specs = [*specs, ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
+    specs = [*SENSORS, ("operator_wallet_status", "Operator wallet status", None),
+             ("confirmed_wallet_balance", "Confirmed wallet balance", "sat")]
     async_add_entities(SettlementSensor(coordinator, entry, *spec) for spec in specs)
 
 
@@ -189,6 +188,31 @@ class RecorderReadinessSensor(OCPPShadowSensor):
                     "retained_count", "results_trimmed", "pending_count", "lifetime_totals")}}
 
 
+class OCPPLifecycleSensor(OCPPShadowSensor):
+    """Diagnostic native session lifecycle; shadow evidence, never a settlement input."""
+    _attr_icon = "mdi:timeline-clock-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def lifecycle(self):
+        return (self.coordinator.data or {}).get("lifecycle") or {}
+
+    @property
+    def native_value(self):
+        lifecycle = self.lifecycle
+        if lifecycle.get("state") != "recording":
+            return lifecycle.get("state")
+        session = lifecycle.get("current_session") or lifecycle.get("last_session")
+        return session["lifecycle_state"] if session else "no_session"
+
+    @property
+    def extra_state_attributes(self):
+        # Fixed on every output regardless of the summary contents.
+        return {**self.lifecycle, "billing_eligible": False, "settlement_owner": "legacy_sigen",
+                "selector_implemented": False, "payment_control": False,
+                "charger_control": False}
+
+
 # Wallet health fields small enough to record on every update.
 WALLET_SUMMARY_KEYS = (
     "mode", "network", "backend", "broadcast_enabled", "balance_verified",
@@ -242,14 +266,9 @@ class SettlementSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_device_info = {"identifiers": {(DOMAIN, entry.entry_id)},
-                                  "name": (f"BSV Operator Wallet ({coordinator.api.network.title()})"
-                                           if coordinator.mode.startswith("embedded_")
-                                           else "BSV Settlement (Mock)"),
+                                  "name": f"BSV Operator Wallet ({coordinator.api.network.title()})",
                                   "manufacturer": "Proof of concept",
-                                  "model": ("Embedded SDK, guarded mainnet" if coordinator.mode == "embedded_mainnet"
-                                            else "Embedded SDK, broadcast disabled"
-                                            if coordinator.mode == "embedded_testnet"
-                                            else "Simulated settlement only")}
+                                  "model": "Embedded SDK, guarded mainnet"}
 
     @property
     def session(self):

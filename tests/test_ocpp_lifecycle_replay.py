@@ -334,23 +334,50 @@ def test_id_tag_never_splits_or_merges_sessions():
     assert '"A"' not in text and '"B"' not in text
 
 
-def test_only_lifecycle_and_replay_modules_touch_id_tags():
+def test_only_lifecycle_replay_and_shadow_observer_touch_id_tags():
     pattern = re.compile(r"id_?tag", re.IGNORECASE)
-    allowed = {"ocpp_lifecycle.py", "ocpp_replay.py"}
+    # The live shadow observer subscribes to the connector idTag sensor and hands
+    # the value straight to the tracker; every other mention is a one-way reference.
+    allowed = {"ocpp_lifecycle.py", "ocpp_replay.py", "ocpp_shadow.py"}
     offenders = [p.name for p in COMPONENT.glob("*.py")
                  if p.name not in allowed and pattern.search(p.read_text())]
     assert offenders == []
+    raw = [line.strip() for line in (COMPONENT / "ocpp_shadow.py").read_text().splitlines()
+           if pattern.search(line) and not re.search(r"id_tag_(ref|changes)", line)
+           and not line.strip().startswith("#")]
+    assert raw == ['LIFECYCLE_INPUTS = {"id_tag": "id_tag", "soc": "soc"}'], raw
     # Within the lifecycle module idTag only reaches untrusted metadata.
     source = (COMPONENT / "ocpp_lifecycle.py").read_text()
     assert "id_tag" not in source.split("class SessionIdentity")[1].split("def key")[0]
 
 
-def test_financial_modules_do_not_consume_lifecycle_or_replay():
-    pattern = re.compile(r"ocpp_lifecycle|ocpp_replay")
+FINANCIAL = ("api.py", "audit.py", "auto_credit.py", "budget.py", "collection.py",
+             "collection_recovery.py", "confirmation.py", "confirmation_scheduler.py",
+             "coordinator.py", "credit_receipt_link.py", "credit_recovery.py", "embedded.py",
+             "energy_adjustment.py", "enrolment.py", "fees.py", "ledger.py",
+             "ledger_checkpoint.py", "linked_credit.py", "mainnet.py", "monthly_allowance.py",
+             "monthly_authority.py", "monthly_consent.py", "monthly_ownership.py",
+             "monthly_portal.py", "monthly_projection.py", "monthly_recorder.py",
+             "ongoing_credit.py", "owned_waiver.py", "portal.py", "proxy.py", "proxy_ledger.py",
+             "receipt_ack.py", "session_closure.py", "session_review.py", "weekly.py",
+             "driver_http.py", "driver_live.py", "recorder.py", "recorder_reconciliation.py")
+
+
+def test_only_the_shadow_observer_imports_lifecycle_and_nothing_financial_consumes_it():
+    imports = re.compile(r"(from|import)\s+(\.|custom_components\.bsv_settlement\.)?"
+                         r"(ocpp_lifecycle|ocpp_replay)\b")
     users = sorted(p.name for p in COMPONENT.glob("*.py")
                    if p.name not in ("ocpp_lifecycle.py", "ocpp_replay.py")
-                   and pattern.search(p.read_text()))
-    assert users == []
+                   and imports.search(p.read_text()))
+    assert users == ["ocpp_shadow.py"]
+    assert not re.search(r"ocpp_replay", (COMPONENT / "ocpp_shadow.py").read_text())
+    # No settlement, payment, budget, collection or recorder module reads lifecycle output.
+    mention = re.compile(r"ocpp_lifecycle|ocpp_replay|LifecycleTracker|ownership_key|"
+                         r"lifecycle_(sessions|summary|view|store)|session_lifecycle|"
+                         r"[\[(]\s*[\"']lifecycle[\"']")
+    present = {p.name for p in COMPONENT.glob("*.py")}
+    assert set(FINANCIAL) <= present, sorted(set(FINANCIAL) - present)
+    assert [name for name in FINANCIAL if mention.search((COMPONENT / name).read_text())] == []
     assert ocpp_lifecycle.SETTLEMENT_OWNER == "legacy_sigen"
 
 

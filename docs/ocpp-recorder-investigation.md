@@ -30,7 +30,7 @@ Updated with Tranche C. Nothing below selects or switches a source.
 | Shadow comparison against the legacy recorder | Implemented: aligned-window register reconciliation per closed span, persisted, with explanation codes | [Recorder readiness](recorder-readiness.md#aligned-window-reconciliation) |
 | **Session recorder** display | Implemented as a read-only diagnostic sensor (`legacy_sigen`) | [Recorder readiness](recorder-readiness.md#sensors) |
 | Operator validation record | Not implemented (future) | — |
-| Native session lifecycle (identity, restarts, late/duplicate stop, faults) and attribution contract | Implemented offline with replay fixtures and a reproducible report; not wired to the live coordinator | [OCPP lifecycle replay](ocpp-lifecycle-replay.md) |
+| Native session lifecycle (identity, restarts, late/duplicate stop, faults) and attribution contract | Implemented offline with replay fixtures and a reproducible report, and live-wired into the OCPP shadow observer (T7) with its own store and the diagnostic **OCPP session lifecycle** sensor. Shadow only: never a settlement input, no selector | [OCPP lifecycle replay](ocpp-lifecycle-replay.md#live-shadow-wiring) |
 | Timestamp-preserving event capture, native transaction finalisation, `RecordedSession` | Not implemented | — |
 | Selector, guarded switching, selection generation | Not implemented | — |
 | Financial integration of any OCPP source | Not implemented; financial modules still accept only `sensor_proxy` | — |

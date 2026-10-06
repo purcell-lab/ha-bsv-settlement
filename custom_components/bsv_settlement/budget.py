@@ -173,9 +173,36 @@ class SessionBudgets:
                        message.encode(), hashlib.sha256).digest()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
-    def admin_status(self, row):
+    def frozen_provenance(self, row, detail=False):
+        """Admin-only, read-only tariff evidence frozen into this row's settlements."""
+        from .provenance_archive import view
+        api, result = self.api, {}
+        if hasattr(api, "collections") and (item := api.collections.get(row)):
+            result["collection"] = view(api, item, detail)
+        if hasattr(api, "auto_credits") and (item := api.auto_credits.get(row)):
+            result["automatic_credit"] = view(api, item, detail)
+        if hasattr(api, "collections") and row["terms"].get("version") == 3:
+            from .weekly import children
+            rows = [(r, api.collections.get(r)) for r in children(api, row)]
+            result["multi_session_collections"] = [
+                {"budget_id": r["terms"]["budget_id"], "session_id": r["terms"]["session_id"],
+                 "tariff_provenance": view(api, item, detail)}
+                for r, item in rows if item][-20:]
+        if hasattr(api, "ongoing_credits"):
+            worker = api.ongoing_credits
+            routes = [(r, worker.get(worker.wrapper(r))) for r in worker.routes.values()
+                      if r["recipient"]["budget_id"] == row["terms"]["budget_id"]]
+            result["ongoing_credits"] = [
+                {"credit_id": r["route_id"], "session_id": r["session_id"],
+                 "tariff_provenance": view(api, item, detail)}
+                for r, item in routes if item][-20:]
+        return {k: v for k, v in result.items() if v}
+
+    def admin_status(self, row, include_tariff_provenance=False):
         """Only the administrator service may redisplay a pending capability."""
         result = self.public(row)
+        if provenance := self.frozen_provenance(row, include_tariff_provenance is True):
+            result["tariff_provenance"] = provenance
         if row["terms"].get("version") == 3 and not row.get("receipt"):
             from .enrolment import admin_status
             result["public_registration"] = admin_status(self.api, row)
@@ -281,7 +308,7 @@ class SessionBudgets:
         if not row:
             raise WalletError("Budget invitation not found")
         if action == "session_budget_status":
-            return self.admin_status(row)
+            return self.admin_status(row, data.get("include_tariff_provenance") is True)
         if action in ("open_public_registration", "close_public_registration"):
             from .enrolment import manage
             return await manage(self.api, row, action, data, user_id)

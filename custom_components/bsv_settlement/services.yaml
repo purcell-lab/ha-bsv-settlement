@@ -321,7 +321,7 @@ bind_session:
         text:
     driver_binding_id:
       required: true
-      default: driver-demo-01
+      default: driver-external
       selector:
         text:
 add_interval:
@@ -370,17 +370,6 @@ prepare_session:
           max: 10000000
           mode: box
           unit_of_measurement: Wh
-request_payment:
-  fields:
-    config_entry_id:
-      required: true
-      selector:
-        config_entry:
-          integration: bsv_settlement
-    session_id:
-      required: true
-      selector:
-        text:
 refresh:
   fields:
     config_entry_id:
@@ -390,7 +379,7 @@ refresh:
           integration: bsv_settlement
 wallet_status:
   name: Operator wallet status
-  description: Read the embedded testnet wallet status without network access or key export.
+  description: Read the mainnet operator wallet status without network access or key export.
   fields:
     config_entry_id:
       required: true
@@ -736,6 +725,13 @@ session_budget_status:
       required: false
       selector:
         text:
+    include_tariff_provenance:
+      name: Include tariff provenance
+      description: Return the full tariff provenance frozen into this approval's automatic collection or credit records instead of the compact summary. Read-only.
+      required: false
+      default: false
+      selector:
+        boolean:
 bind_session_budget:
   name: Bind advance consent to a session
   description: Confirm the driver and bind advance approval to their session. A version 2 mandate enables session-end collection through the open driver page. No charger control.

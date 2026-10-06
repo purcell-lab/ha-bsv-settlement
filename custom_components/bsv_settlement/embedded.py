@@ -1,7 +1,8 @@
-"""Embedded SDK wallet, deliberately restricted to offline testnet validation.
+"""Shared operator-wallet base for MainnetWalletAPI; not a backend on its own.
 
-No broadcaster, wallet HTTP client, UTXO importer, transaction export or payment
-approval endpoint exists in this backend. Never use the self-test as a receipt.
+Key custody, the offline self-test and the frozen settlement-draft emulation.
+No broadcaster or payment endpoint exists here; mainnet.py adds the guarded
+payment paths. Never use the self-test as a receipt.
 """
 import copy
 import hashlib
@@ -14,10 +15,8 @@ from bsv.script.spend import Spend
 from .api import WalletError
 from .records import VersionedStore, check_keys
 
-MODE = "embedded_testnet"
 
-
-def _identity(secret=None, network="testnet"):
+def _identity(secret, network):
     key = PrivateKey(bytes.fromhex(secret) if secret else None,
                      network=Network.MAINNET if network == "mainnet" else Network.TESTNET)
     if not key._is_valid_secret(key.serialize()):
@@ -31,7 +30,11 @@ def _identity(secret=None, network="testnet"):
 
 
 def _self_test(secret):
-    """Real SDK signatures against a nonce and an explicitly fictional source."""
+    """Real SDK signatures against a nonce and an explicitly fictional source.
+
+    The testnet key encoding is historical and only affects the fictional,
+    never-broadcast transaction below; it must not change mainnet behaviour.
+    """
     key = PrivateKey(bytes.fromhex(secret), network=Network.TESTNET)
     challenge = b"ha-bsv-settlement:offline-self-test:" + secrets.token_bytes(32)
     signature = key.sign(challenge)
@@ -67,10 +70,13 @@ def _self_test(secret):
 
 
 class EmbeddedWalletAPI:
-    """Local implementation of only the safe subset of the settlement API."""
+    """Local implementation of only the safe subset of the settlement API.
 
-    mode = MODE
-    network = "testnet"
+    Subclasses set mode and network; the base refuses to load without them.
+    """
+
+    mode = None
+    network = None
 
     def __init__(self, hass, entry):
         self.hass = hass
@@ -81,9 +87,9 @@ class EmbeddedWalletAPI:
         self.saved = {"records": {}, "last_self_test": None}
 
     async def load(self):
-        if (self.entry.data.get("network") != self.network
+        if (self.network is None or self.entry.data.get("network") != self.network
                 or self.entry.data.get("acknowledge_key_custody") is not True):
-            raise WalletError("Embedded backend requires testnet and key-custody acknowledgement")
+            raise WalletError("Operator wallet requires its network and key-custody acknowledgement")
         try:
             stored = await self.key_store.async_load()
             expected = self.entry.data.get("operator_public_key")

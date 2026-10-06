@@ -187,6 +187,9 @@ These are diagnostic sensors on the OCPP shadow device:
   pending counts, lifetime totals.
 
 All three carry `billing_eligible: false` and `settlement_owner: legacy_sigen`.
+The same device also has the diagnostic **OCPP session lifecycle** sensor,
+which carries the same two attributes. It is described in
+[live shadow wiring](ocpp-lifecycle-replay.md#live-shadow-wiring).
 
 ## Storage
 

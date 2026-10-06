@@ -162,6 +162,7 @@ async def execute(collections, action, data, user_id):
     item.clear()
     item.update(state="recovery_ready", source_hash=previous["source_hash"],
                 quote=new_quote, created_at=previous["created_at"],
+                **{k: previous[k] for k in ("tariff_provenance_ref",) if k in previous},
                 recovery={"generation": quote["recovery_generation"],
                           "reviewed_at": audit["reviewed_at"],
                           "requires_driver_confirmation": True})

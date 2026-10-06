@@ -68,7 +68,9 @@ LEDGER_NAMESPACES = {
 STORES = {
     "coordinator": StoreSpec(
         f"{DOMAIN}.{{entry_id}}", 1, 1, "coordinator", keys=frozenset({"sessions", "latest"}),
-        note="Mock/external backend session bindings and frozen payloads."),
+        note="Mainnet session bindings and frozen draft payloads. Removed mock/testnet entries "
+             "left files of the same key families (with operator_key, wallet_ledger); kept registered "
+             "so they stay recognised, and never rewritten."),
     "operator_key": StoreSpec(
         f"{DOMAIN}.operator_key.{{entry_id}}", 1, 1, "embedded", private=True, atomic=True,
         secret=True, note="Operator key; identity re-derived and compared on load."),
@@ -90,9 +92,19 @@ STORES = {
         keys=frozenset({"observations", "archive", "persistent_issues", "checkpoint_at",
                         "tariff_provenance"}),
         note="Sensor observations, proxy session archive and append-only tariff provenance."),
+    "provenance_archive": StoreSpec(
+        f"{DOMAIN}.provenance_archive.{{entry_id}}", 1, 1, "provenance_archive",
+        keys=frozenset({"schema", "versions"}), inner="schema bsv_settlement.provenance_archive.v1",
+        private=True, atomic=True,
+        note="Full frozen tariff provenance versions referenced by wallet-ledger records."),
     "ocpp_shadow": StoreSpec(
         f"{DOMAIN}.ocpp_shadow.{{entry_id}}", 3, 1, "ocpp_shadow", migrations=(1, 2),
         inner="schema 3", note="Shadow-only OCPP import/export ledger; 1 and 2 convert."),
+    "ocpp_lifecycle": StoreSpec(
+        f"{DOMAIN}.ocpp_lifecycle.{{entry_id}}", 1, 1, "ocpp_shadow",
+        keys=frozenset({"schema", "recorded_since", "saved_at", "tracker", "spans",
+                        "spans_trimmed", "late_final"}),
+        inner="schema 1", note="Shadow-only OCPP native session lifecycle; one-way token references only."),
     "recorder_reconciliation": StoreSpec(
         f"{DOMAIN}.recorder_reconciliation.{{entry_id}}", 1, 1, "recorder", inner="schema 1",
         note="Read-only legacy recorder reconciliation results."),

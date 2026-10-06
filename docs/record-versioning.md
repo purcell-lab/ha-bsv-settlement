@@ -20,16 +20,21 @@ name is missing.
 | `ledger_checkpoint` | `bsv_settlement.ledger_checkpoint.<entry>` | 1.1 | `ledger_checkpoint` | Inner `version: 1` |
 | `wallet_audit` | `bsv_settlement.audit.<entry>` | 1.1 | `audit` | Inner `schema: wallet-audit-v1` |
 | `proxy` | `bsv_settlement.proxy.<entry>` | 1.1 | `proxy` | Exact five keys |
+| `provenance_archive` | `bsv_settlement.provenance_archive.<entry>` | 1.1 | `provenance_archive` | Private, atomic; exact keys `schema`, `versions`; inner `schema: bsv_settlement.provenance_archive.v1`. Refused files are left unchanged and not written, without blocking the wallet |
 | `ocpp_shadow` | `bsv_settlement.ocpp_shadow.<entry>` | 3.1 | `ocpp_shadow` | Converters from 1 and 2 |
+| `ocpp_lifecycle` | `bsv_settlement.ocpp_lifecycle.<entry>` | 1.1 | `ocpp_shadow` | Exact keys; inner `schema: 1`; no idTag, only references |
 | `recorder_reconciliation` | `bsv_settlement.recorder_reconciliation.<entry>` | 1.1 | `recorder` | Inner `schema: 1` |
 | `grouped_wallet_test` | `bsv_settlement_grouped_wallet_test` | 1.1 | `grouped_wallet_test` | Exact keys; optional diagnostic |
 
-The mainnet/testnet wallet ledger has 27 registered top-level namespaces
+The mainnet wallet ledger has 27 registered top-level namespaces
 (`LEDGER_NAMESPACES`), each with a primary owner module. `monthly_authorities`
 also carries `schema: monthly-authorities-v1`; the ledger carries the
 `wallet_checkpoint_version` marker on mainnet. A source scan test requires every
 `api.saved["..."]` namespace to be registered. The separate development
-`wallet_service` SQLite mock is outside this registry.
+`wallet_service` SQLite mock is outside this registry. Entries of the removed
+`mock` and `embedded_testnet` backends left files under the same `coordinator`,
+`operator_key` and `wallet_ledger` keys; the registry still recognises them,
+and setup refuses those entries without reading or rewriting the files.
 
 Existing files were not rewritten. The HA envelope already records
 `version`/`minor_version` for every store; that envelope is the explicit

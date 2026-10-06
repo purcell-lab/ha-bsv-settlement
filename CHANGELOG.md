@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: drop mock and testnet backends from the integration
+
+- Remove the `mock` (HTTP mock wallet service) and `embedded_testnet` backends from the config flow and setup. The backend form defaults to the read-only `sensor_proxy`; the mainnet step keeps all three acknowledgements.
+- Existing `mock` / `embedded_testnet` entries now fail with `ConfigEntryError` ("backend was removed … delete this entry"). Their stores are not read, rewritten or deleted; other entries are unaffected; deleting the entry works.
+- Remove the mock-only `request_payment` action and the `driver-demo-01` binding. `bind_session`, `add_interval` and `prepare_session` remain for never-paying drafts on the mainnet entry; `wallet_self_test` remains offline on mainnet.
+- `embedded.py` is now only the shared base of the mainnet wallet. Mainnet keys, stores, payments and records are unchanged.
+- Dashboard migration drops the testnet self-test and mock-results cards from the Diagnostics view, repeat-safely. Remove the mock-only example script.
+- Rename the integration and HACS entry to "BSV Settlement". The standalone `wallet_service`, `bsv_wallet_mock` add-on and `scripts/mock_cli.py` are unchanged.
+
 ## Unreleased: packaging, clean install and release checklist
 
 - Run the Python/HA suite in CI on HA 2026.9.4 (the declared minimum, same check name) and on 2026.10.0b2.

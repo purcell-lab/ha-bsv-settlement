@@ -1,6 +1,6 @@
 # Mainnet operator wallet: guarded proof of concept
 
-This development milestone adds a **separate mainnet wallet**, native driver-input dialogs and guarded operator payments. It does not change the offline testnet wallet, implement the charging budget gate or authorise automatic debits from driver wallets.
+This development milestone adds a **separate mainnet wallet**, native driver-input dialogs and guarded operator payments. The former offline testnet wallet backend has since been removed. It does not implement the charging budget gate or authorise automatic debits from driver wallets.
 
 This page describes the original manual-payment path. Current development also
 implements [automatic operator credits](automatic-operator-credits.md) under a
