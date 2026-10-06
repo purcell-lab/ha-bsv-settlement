@@ -135,9 +135,15 @@ def capture(observations, records, sources):
     return result
 
 
+def recorded(version):
+    """True for a captured version; False for None, legacy or a not_recorded marker."""
+    return (isinstance(version, dict) and isinstance(version.get("provenance"), dict)
+            and isinstance(version.get("provenance_digest"), str))
+
+
 def summary(version):
     """Compact operator view: never the full source rows."""
-    if not version:
+    if not recorded(version):
         return copy.deepcopy(NOT_RECORDED)
     body = version["provenance"]
     return {
@@ -210,4 +216,4 @@ class TariffProvenanceLedger:
 
 def verify(version):
     """True when a stored version's digest still matches its body."""
-    return bool(version) and digest(version["provenance"]) == version["provenance_digest"]
+    return recorded(version) and digest(version["provenance"]) == version["provenance_digest"]

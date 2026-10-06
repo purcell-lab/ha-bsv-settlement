@@ -140,7 +140,8 @@ async def async_setup(hass, config):
         "accept_session_budget": {
             **common, vol.Required("budget_id"): str, vol.Required("receipt"): dict},
         "revoke_session_budget": {**common, vol.Required("budget_id"): str},
-        "session_budget_status": {**common, vol.Optional("budget_id"): str},
+        "session_budget_status": {**common, vol.Optional("budget_id"): str,
+                                  vol.Optional("include_tariff_provenance"): bool},
         "open_public_registration": {
             **common, vol.Required("budget_id"): str,
             vol.Required("expected_invitation_hash"): str,

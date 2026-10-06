@@ -179,9 +179,11 @@ async def test_review_freezes_provenance_outside_terms_and_legacy_reviews_show_n
             "proxy_config_entry_id": "proxy-entry", "session_id": record["session_id"],
             "conversion_rate_entity": "sensor.demo_rate"}, "admin")
         compact = review["tariff_provenance"]
-        assert compact["status"] == "recorded" and compact["digest_verified"] is True
+        assert compact["status"] == "recorded" and compact["estimated"] is True
         assert compact["directions"]["import"]["estimate_interval_count"] == 2
         assert "intervals" not in json.dumps(compact)
+        stored = api.saved["session_reviews"][review["review_id"]]
+        assert stored["tariff_provenance"] is None  # Earlier releases read only this null.
         assert "tariff_provenance" not in review["frozen_terms"]
         assert digest(review["frozen_terms"]) == review["terms_hash"]
         # Later evidence changes cannot alter what was frozen into the review.
@@ -191,9 +193,17 @@ async def test_review_freezes_provenance_outside_terms_and_legacy_reviews_show_n
         assert full["tariff_provenance"]["provenance"] == body
         assert full["tariff_provenance"]["digest_verified"] is True
         assert api.identity["secret_hex"] not in json.dumps(full)
+        # A review frozen before the archive kept the full version inline; still shown.
+        stored["tariff_provenance"] = copy.deepcopy(full["tariff_provenance"])
+        for key in ("status", "digest_verified", "reference"):
+            stored["tariff_provenance"].pop(key)
+        inline = await api.reviews.execute("session_review_status", {
+            "review_id": review["review_id"], "include_tariff_provenance": True}, "admin")
+        assert inline["tariff_provenance"]["provenance"] == body
+        assert api.reviews.latest()["tariff_provenance"]["digest_verified"] is True
         # A review stored before provenance existed shows "not recorded".
-        stored = api.saved["session_reviews"][review["review_id"]]
         stored.pop("tariff_provenance")
+        stored.pop("tariff_provenance_ref")
         legacy = await api.reviews.execute("session_review_status", {
             "review_id": review["review_id"], "include_tariff_provenance": True}, "admin")
         assert legacy["tariff_provenance"] == NOT_RECORDED

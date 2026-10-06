@@ -99,6 +99,8 @@ def test_registry_versions_match_owner_constants_and_keys_resolve():
     from custom_components.bsv_settlement.recorder_reconciliation import SCHEMA
     assert STORES["ocpp_shadow"].version == ocpp_shadow.STORE_VERSION == 3
     assert STORES["recorder_reconciliation"].version == SCHEMA == 1
+    from custom_components.bsv_settlement import provenance_archive
+    assert STORES["provenance_archive"].version == provenance_archive.STORE_VERSION == 1
     assert ledger_checkpoint.VERSION == 1 and audit_module.VERSION == 1
     keys = set()
     for name, spec in STORES.items():

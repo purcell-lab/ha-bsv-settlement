@@ -17,6 +17,7 @@ fixtures").
 | `tests/golden/reference_calculator.py` | Independent reference calculator: standard library only |
 | `tests/test_golden_accounts.py` | Production vs reference, plus a review-level sats/direction check |
 | `tests/test_tariff_provenance.py` | Provenance capture over the same fixtures (DST, overlaps, negatives) |
+| `tests/test_frozen_provenance.py` | Settlement records freeze a fixed-size reference to that provenance and archive the full version; amounts and signed terms unchanged |
 
 | Fixture | Covers | Net AUD | Direction | Sats |
 |---|---|---:|---|---:|
@@ -87,7 +88,7 @@ Each fixture prints `matches_expected: true/false` with the recomputed account.
 The exit status is 1 on any mismatch. To check production as well:
 
 ```sh
-python -m pytest -q tests/test_golden_accounts.py tests/test_tariff_provenance.py
+python -m pytest -q tests/test_golden_accounts.py tests/test_tariff_provenance.py tests/test_frozen_provenance.py
 ```
 
 A third party can also check a fixture by hand. For g08: 500 Wh × $0.25/kWh =

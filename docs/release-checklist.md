@@ -124,6 +124,7 @@ added later:
 | `ledger_checkpoint` witness (mainnet) | A release without the checkpoint can write the ledger without the witness. The next upgrade then fails closed | Reconcile after any write made by the older code. Do not assume a blind downgrade/upgrade cycle works |
 | `ocpp_shadow` store (version 3) | Older releases that know only versions 1 or 2 refuse the file, so the shadow entry does not load. The data is kept. Observation only, with no payment effect | Accept, or restore the matching backup |
 | Unresolved payments and reservations | Older code may not know newer states (e.g. automatic or ongoing credits) and could reuse a reserved input | Resolve or record every unresolved payment first. Recovery owner approval needed |
+| `provenance_archive` store and `tariff_provenance_ref` fields (#12) | Older releases do not read the archive and ignore the ledger references. Their new reviews and automatic records carry no frozen provenance. A pre-archive release shows a manual review's reference in its status output (digests and counts only). The archive file is left in place | Accept. Evidence only, with no payment effect. Records made while downgraded show `not_recorded` after upgrade |
 | New top-level keys | Settlement and wallet ledgers are re-saved whole, so newer keys survive but are not enforced. The sensor-proxy store rewrites only the keys it knows | Treat newer-feature state as inactive while downgraded |
 
 ## Automated evidence and its limits

@@ -736,6 +736,13 @@ session_budget_status:
       required: false
       selector:
         text:
+    include_tariff_provenance:
+      name: Include tariff provenance
+      description: Return the full tariff provenance frozen into this approval's automatic collection or credit records instead of the compact summary. Read-only.
+      required: false
+      default: false
+      selector:
+        boolean:
 bind_session_budget:
   name: Bind advance consent to a session
   description: Confirm the driver and bind advance approval to their session. A version 2 mandate enables session-end collection through the open driver page. No charger control.

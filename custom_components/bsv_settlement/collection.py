@@ -15,6 +15,7 @@ from bsv import P2PKH, PrivateKey, PublicKey, Transaction
 from .api import WalletError
 from .budget import canonical, sha, message_hash, SPENDING_STATE, approval_payload
 from .session_review import account_snapshot, decimal, digest, now
+from .provenance_archive import archive, freeze
 from .const import DOMAIN
 from .confirmation import read_transaction, confirmation_count
 
@@ -162,9 +163,12 @@ class DriverCollections:
             }
             payload = canonical(q)
             operator = PrivateKey(bytes.fromhex(self.api.identity["secret_hex"]))
+            # Evidence only, outside the signed quote. Frozen with source_hash.
+            ref, frozen = freeze(self.api, row["proxy_config_entry_id"], account["session_id"], digest(account))
             item = {"state": "ready", "created_at": q["created_at"], "source_hash": digest(account),
                     "quote": {"payload": payload, "hash": sha(payload),
-                              "signature": operator.sign(payload.encode(), hasher=message_hash).hex()}}
+                              "signature": operator.sign(payload.encode(), hasher=message_hash).hex()},
+                    "tariff_provenance_ref": ref}
             if row.get("weekly_parent_id"):
                 from .weekly import remaining
                 parent=self.api.saved["session_budgets"][row["weekly_parent_id"]]
@@ -172,6 +176,7 @@ class DriverCollections:
                     raise WalletError("Aggregate allowance changed; no collection reservation was created")
             self.api.saved["driver_collections"][terms["budget_id"]] = item
             self.api.saved["driver_collection_index"][self.key(row)] = terms["budget_id"]
+            await archive(self.api, frozen)  # Before the referencing ledger save; never raises.
             await self.save()
             return self.public(item)
         except WalletError as exc:

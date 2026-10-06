@@ -244,6 +244,9 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                 or self.entry.data.get("enable_broadcast") is not True):
             raise WalletError("Mainnet custody and guarded broadcast must be explicitly enabled")
         await super().load()
+        from .provenance_archive import ProvenanceArchive
+        self.provenance_archive = ProvenanceArchive(self.hass, self.entry.entry_id)
+        await self.provenance_archive.load()  # Evidence only; never blocks the wallet.
         self.saved.setdefault("driver", {"driver_public_identity": "", "driver_receive_address": ""})
         self.saved.setdefault("payments", {})
         self.saved.setdefault("active_payment", None)

@@ -90,6 +90,11 @@ STORES = {
         keys=frozenset({"observations", "archive", "persistent_issues", "checkpoint_at",
                         "tariff_provenance"}),
         note="Sensor observations, proxy session archive and append-only tariff provenance."),
+    "provenance_archive": StoreSpec(
+        f"{DOMAIN}.provenance_archive.{{entry_id}}", 1, 1, "provenance_archive",
+        keys=frozenset({"schema", "versions"}), inner="schema bsv_settlement.provenance_archive.v1",
+        private=True, atomic=True,
+        note="Full frozen tariff provenance versions referenced by wallet-ledger records."),
     "ocpp_shadow": StoreSpec(
         f"{DOMAIN}.ocpp_shadow.{{entry_id}}", 3, 1, "ocpp_shadow", migrations=(1, 2),
         inner="schema 3", note="Shadow-only OCPP import/export ledger; 1 and 2 convert."),

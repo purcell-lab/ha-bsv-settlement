@@ -153,7 +153,10 @@ async def test_production_review_direction_and_sats_equal_reference(tmp_path):
             assert review["direction"] == expected["direction"], path.stem
             assert review["account"]["net_amount_aud"] == expected["net_aud"]
             provenance = review["tariff_provenance"]
-            assert provenance["status"] == "recorded" and provenance["digest_verified"]
+            assert provenance["status"] == "recorded"
             assert provenance["account_digest"] == digest(review["account"])
+            full = await api.reviews.execute("session_review_status", {
+                "review_id": review["review_id"], "include_tariff_provenance": True}, "admin")
+            assert full["tariff_provenance"]["digest_verified"] is True
     finally:
         await hass.async_stop(force=True)

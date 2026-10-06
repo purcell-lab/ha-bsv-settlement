@@ -8,6 +8,7 @@ from bsv import PrivateKey, PublicKey, Transaction
 from .api import WalletError
 from .budget import canonical, sha, message_hash
 from .session_review import account_snapshot, decimal, digest, now
+from .provenance_archive import archive, freeze
 from .mainnet import build_transaction, MIN_CHANGE_SATS, TXID
 from .fees import quote, validate, MODE
 
@@ -200,7 +201,11 @@ class AutomaticCredits:
             raise WalletError("Frozen credit account changed; reconcile, do not replace it")
         quotation = await self.quote_fee(row, amount)
         fee = quotation["fee_sats"]
+        frozen = None
         if item is None:
+            # Evidence only; never part of the amount, recipient or signed bytes.
+            ref, frozen = freeze(self.api, row["proxy_config_entry_id"],
+                                 account["session_id"], digest(account))
             item = {
                 "state": "credit_queued", "budget_id": row["terms"]["budget_id"],
                 "session_id": account["session_id"], "transaction_id": account["ocpp_transaction_id"],
@@ -209,12 +214,14 @@ class AutomaticCredits:
                 "account": copy.deepcopy(account),
                 "source_hash": digest(account), "created_at": now().isoformat(),
                 "policy_enabled_at": self.policy["enabled_at"],
+                "tariff_provenance_ref": ref,
             }
             self.api.saved["automatic_credits"][row["terms"]["budget_id"]] = item
             self.api.saved["automatic_credit_index"][self.api.collections.key(row)] = row["terms"]["budget_id"]
         # Only unsigned automatic work is repriced. Reviewed recovery overrides
         # quote_fee and keeps its exact fee; signed outcomes returned above.
         item.update(fee_sats=fee, fee_quote=quotation)
+        await archive(self.api, frozen)  # Before the referencing ledger save; never raises.
         await self.save()
         manual = self.api.saved["payments"]
         if self.blocking_pending(row) or any(p["state"] in ("prepared", *PENDING) for p in manual.values()):

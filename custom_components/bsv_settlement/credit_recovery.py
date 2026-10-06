@@ -12,6 +12,7 @@ from .auto_credit import AutomaticCredits, MAX_TOTAL, PENDING
 from .fees import quote, validate
 from .mainnet import build_transaction
 from .session_review import account_snapshot, decimal, digest, now
+from .provenance_archive import archive, freeze
 
 
 class OperatorCreditRecovery:
@@ -146,7 +147,11 @@ class OperatorCreditRecovery:
         previous_item = copy.deepcopy(item)
         key = self.api.collections.key(wrapper)
         previous_owner = self.api.saved["automatic_credit_index"].get(key)
+        frozen = None
         if item is None:
+            # Evidence only, outside review_hash terms.
+            ref, frozen = freeze(self.api, route["proxy_config_entry_id"],
+                                 account["session_id"], digest(account))
             item = {
                 "budget_id": route["route_id"], "session_id": route["session_id"],
                 "transaction_id": route["transaction_id"],
@@ -154,6 +159,7 @@ class OperatorCreditRecovery:
                 "fee_sats": fee, "net_amount_aud": account["net_amount_aud"],
                 "account": copy.deepcopy(account), "source_hash": digest(account),
                 "created_at": terms["created_at"],
+                "tariff_provenance_ref": ref,
                 "policy_enabled_at": worker.policy.get("enabled_at"),
             }
         item.update(state="credit_review_required", error=None, fee_sats=fee, fee_quote=quotation)
@@ -163,6 +169,7 @@ class OperatorCreditRecovery:
         route.pop("error", None)
         self.api.saved["automatic_credits"][route["route_id"]] = item
         self.api.saved["automatic_credit_index"][key] = route["route_id"]
+        await archive(self.api, frozen)  # Before the referencing ledger save; never raises.
         try:
             await worker.save()
         except Exception:
