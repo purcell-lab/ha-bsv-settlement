@@ -87,8 +87,9 @@ STORES = {
         note="Hash-chained transition log for the mainnet ledger."),
     "proxy": StoreSpec(
         f"{DOMAIN}.proxy.{{entry_id}}", 1, 1, "proxy",
-        keys=frozenset({"observations", "archive", "persistent_issues", "checkpoint_at"}),
-        note="Sensor observations and opening-derived proxy session archive."),
+        keys=frozenset({"observations", "archive", "persistent_issues", "checkpoint_at",
+                        "tariff_provenance"}),
+        note="Sensor observations, proxy session archive and append-only tariff provenance."),
     "ocpp_shadow": StoreSpec(
         f"{DOMAIN}.ocpp_shadow.{{entry_id}}", 3, 1, "ocpp_shadow", migrations=(1, 2),
         inner="schema 3", note="Shadow-only OCPP import/export ledger; 1 and 2 convert."),

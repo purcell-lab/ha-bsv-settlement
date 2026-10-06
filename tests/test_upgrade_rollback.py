@@ -279,9 +279,12 @@ async def test_upgrade_from_v012_release_store_keeps_history_and_open_session(tm
 def test_store_versions_are_pinned_for_rollback_review():
     """A store version bump makes older releases refuse the file: review the checklist."""
     from custom_components.bsv_settlement import ocpp_shadow, recorder_reconciliation
-    sources = "\n".join(p.read_text() for p in COMPONENT.glob("*.py"))
-    versions = re.findall(r"(?<!\w)Store\(\s*hass,\s*(\w+),", sources)
-    assert versions and set(versions) == {"1"}, versions
+    from custom_components.bsv_settlement.records import STORES
+    # Every store is built through the record registry; no direct Store() remains.
+    sources = "\n".join(p.read_text() for p in COMPONENT.glob("*.py") if p.name != "records.py")
+    assert not re.findall(r"(?<!\w)Store\(\s*hass,", sources)
+    versions = {name: (spec.version, spec.minor_version) for name, spec in STORES.items()}
+    assert versions == {name: ((3, 1) if name == "ocpp_shadow" else (1, 1)) for name in STORES}, versions
     assert ocpp_shadow.STORE_VERSION == 3
     assert recorder_reconciliation.SCHEMA == 1
     checklist = (ROOT / "docs" / "release-checklist.md").read_text()
