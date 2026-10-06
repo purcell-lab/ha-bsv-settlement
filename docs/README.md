@@ -43,6 +43,10 @@ an implemented control. The original no-budget mock documentation remains below.
 - **[Record versioning and audit log](record-versioning.md):** registry of every
   persisted store, fail-closed version/migration policy and the hash-chained
   transition log. Does not detect a coherent full-backup rollback.
+- **[Release, upgrade and rollback checklist](release-checklist.md):** owner
+  roles, supported HA versions, backup and HACS exact-commit pre-flight,
+  verification, rollback and downgrade hazards. Automated evidence is separate
+  from the protected restore drill.
 - **[Security review](security-review-checklist.md):** current trust boundaries
   and the independent-review work still required.
 - **[Ongoing driver credits](ongoing-driver-credits.md):** separately authorised

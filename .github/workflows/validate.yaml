@@ -14,9 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Supported Home Assistant matrix (docs/release-checklist.md). The pinned
+  # minimum keeps the original check name so branch protection is unchanged;
+  # every other version gets a suffixed name. Update both jobs together.
   tests:
-    name: Python and Home Assistant tests
+    name: ${{ matrix.check }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - homeassistant: "2026.9.4"
+            check: Python and Home Assistant tests
+          - homeassistant: "2026.10.0b2"
+            check: Python and Home Assistant tests (HA 2026.10.0b2)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,7 +35,7 @@ jobs:
           python-version: "3.14"
           cache: pip
       - name: Install test dependencies
-        run: python -m pip install -r requirements-dev.txt "homeassistant==2026.9.4" pytest-asyncio
+        run: python -m pip install -r requirements-dev.txt "homeassistant==${{ matrix.homeassistant }}" pytest-asyncio
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -32,6 +43,27 @@ jobs:
         working-directory: frontend/driver
       - name: Run tests
         run: python scripts/validate.py python
+
+  clean-install:
+    name: Clean install smoke test (HA ${{ matrix.homeassistant }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        homeassistant: ["2026.9.4", "2026.10.0b2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      # Only Home Assistant and the manifest's own requirements, as a user install has.
+      - name: Install Home Assistant and manifest requirements
+        run: |
+          python -m pip install "homeassistant==${{ matrix.homeassistant }}" \
+            $(python -c "import json; print(' '.join(json.load(open('custom_components/bsv_settlement/manifest.json'))['requirements']))")
+      - name: Install shipped integration into an empty config and set it up
+        run: python scripts/clean_install_smoke.py
 
   hacs:
     name: HACS repository validation
