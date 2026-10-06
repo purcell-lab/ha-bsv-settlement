@@ -296,6 +296,13 @@ session_review_status:
       required: false
       selector:
         text:
+    include_tariff_provenance:
+      name: Include tariff provenance
+      description: Return the full frozen tariff provenance (source observations and digests) instead of the compact summary. Read-only.
+      required: false
+      default: false
+      selector:
+        boolean:
 bind_session:
   fields:
     config_entry_id:

@@ -1,0 +1,157 @@
+{
+  "id": "g07_brisbane_zero_balance",
+  "fictional": true,
+  "description": "Charge 2 kWh and discharge 2 kWh at the same 25c price: a zero account, no payment.",
+  "timezone": "Australia/Brisbane (UTC+10:00, no DST)",
+  "covers": [
+    "zero_account"
+  ],
+  "state_entity": "sensor.fictional_charger_running_state",
+  "as_of": "2026-10-10T10:00:00+10:00",
+  "sat_per_aud": "2500",
+  "observations": {
+    "state": [
+      {
+        "t": "2026-10-10T08:55:00+10:00",
+        "value": "Idle"
+      },
+      {
+        "t": "2026-10-10T09:00:00+10:00",
+        "value": "Charging"
+      },
+      {
+        "t": "2026-10-10T09:15:00+10:00",
+        "value": "Discharging"
+      },
+      {
+        "t": "2026-10-10T09:30:00+10:00",
+        "value": "Ended"
+      }
+    ],
+    "import": [
+      {
+        "t": "2026-10-10T08:55:00+10:00",
+        "value": "13.100000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:00:00+10:00",
+        "value": "13.100000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:05:00+10:00",
+        "value": "13.100700",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:10:00+10:00",
+        "value": "13.101400",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:15:00+10:00",
+        "value": "13.102000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:20:00+10:00",
+        "value": "13.102000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:25:00+10:00",
+        "value": "13.102000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:30:00+10:00",
+        "value": "13.102000",
+        "unit": "MWh"
+      }
+    ],
+    "export": [
+      {
+        "t": "2026-10-10T08:55:00+10:00",
+        "value": "3.400000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:00:00+10:00",
+        "value": "3.400000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:05:00+10:00",
+        "value": "3.400000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:10:00+10:00",
+        "value": "3.400000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:15:00+10:00",
+        "value": "3.400000",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:20:00+10:00",
+        "value": "3.400700",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:25:00+10:00",
+        "value": "3.401400",
+        "unit": "MWh"
+      },
+      {
+        "t": "2026-10-10T09:30:00+10:00",
+        "value": "3.402000",
+        "unit": "MWh"
+      }
+    ],
+    "import_price": [
+      {
+        "t": "2026-10-10T08:59:00+10:00",
+        "value": "0.2500",
+        "unit": "$/kWh",
+        "start": "2026-10-10T09:00:00+10:00",
+        "end": "2026-10-10T09:30:00+10:00",
+        "estimate": false
+      }
+    ],
+    "export_price": [
+      {
+        "t": "2026-10-10T08:59:00+10:00",
+        "value": "0.2500",
+        "unit": "$/kWh",
+        "start": "2026-10-10T09:00:00+10:00",
+        "end": "2026-10-10T09:30:00+10:00",
+        "estimate": false
+      }
+    ]
+  },
+  "expected": {
+    "opened_at": "2026-10-10T09:00:00+10:00",
+    "ended_at": "2026-10-10T09:30:00+10:00",
+    "duration_seconds": 1800,
+    "import_wh": "2000/1",
+    "export_wh": "2000/1",
+    "import_cost_aud_exact": "1/2",
+    "export_credit_aud_exact": "1/2",
+    "import_cost_aud": "0.500000000000",
+    "export_credit_aud": "0.500000000000",
+    "unpriced_import_wh": "0/1",
+    "unpriced_export_wh": "0/1",
+    "estimated_rate_import_wh": "0/1",
+    "estimated_rate_export_wh": "0/1",
+    "pricing_complete": true,
+    "net_aud_exact": "0/1",
+    "net_aud_unrounded": "0.000000000000",
+    "net_aud": "0.00",
+    "direction": "none",
+    "amount_sats": 0
+  }
+}

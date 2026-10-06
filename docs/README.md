@@ -59,6 +59,15 @@ an implemented control. The original no-budget mock documentation remains below.
   metering, interval pricing and proxy transaction IDs.
 - **[Manual exception review](session-payment-review.md):** separate reviewed
   requests and credits, mutually exclusive with automatic session settlement.
+- **[Tariff provenance](tariff-provenance.md):** append-only, digest-linked
+  record of the published price behind every priced interval of a frozen
+  account; evidence only, no pricing change.
+- **[Golden accounts](golden-accounts.md):** fictional DST, negative-price,
+  V2G and rounding sessions checked against an independent reference
+  calculator, and what remains unverified.
+- **[ADR: estimated-tariff finalisation](adr/estimated-tariff-finalisation.md):**
+  *Proposed, needs owner approval under #2.* Reconciles #68 with the #11/#12
+  wording.
 
 ## Original mock baseline
 

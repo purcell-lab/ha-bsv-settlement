@@ -179,7 +179,8 @@ async def async_setup(hass, config):
             vol.Required("output_index"): vol.All(int, vol.Range(min=0)),
             vol.Required("confirm_driver_payment_reference"): vol.In([True])},
         "cancel_session_review": review,
-        "session_review_status": {**common, vol.Optional("review_id"): str},
+        "session_review_status": {**common, vol.Optional("review_id"): str,
+                                  vol.Optional("include_tariff_provenance"): bool},
     })
 
     closure_base = {**common, vol.Required("session_id"): str,
