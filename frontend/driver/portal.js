@@ -180,6 +180,7 @@ $("charging-signed-out").textContent="Sign in to see your current session.";
 $("history-signed-out").textContent="Sign in to see your history.";
 const framed=window.top!==window;
 const requestedJoin=new URLSearchParams(location.hash.slice(1));
+window.addEventListener("hashchange",()=>location.reload());
 let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
 let prices=null,pricesBusy=false;
 let registrationUrl=null;
@@ -336,9 +337,12 @@ function controls(){
   $("portal-intro").textContent=identity?"Your station, current session and history in one place.":
     "Sign in. Approve your budget. Charge or export.";
   $("portal-copy").disabled=!$("portal-uri").value;
-  $("unified-signin").disabled=busy||framed||setupHeld;
-  $("unified-signin").textContent=busy?"Connecting…":identity?"Continue with wallet":"Sign in";
   const reuseWeekly=authorisations.some(a=>a.spending_active&&a.scope==="weekly");
+  const signedInAndRunning=collections.enabled&&!!identity&&connectionState==="connected"&&
+    !receiptSync.paused&&authorisations.some(a=>a.spending_active);
+  $("unified-signin").disabled=busy||framed||setupHeld||signedInAndRunning;
+  $("unified-signin").textContent=busy?"Working…":signedInAndRunning?"Signed in":
+    identity?registrationTerms&&!reuseWeekly?"Approve budget":"Reconnect wallet":"Sign in";
   $("unified-budget").hidden=!registrationTerms||reuseWeekly;
   $("unified-signin-note").textContent=setupHeld?
     "Setup needs checking. Do not repeat a signature. Use your charging link or ask the operator to check the saved approval.":
