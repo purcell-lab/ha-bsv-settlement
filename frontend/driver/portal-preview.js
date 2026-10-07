@@ -7,17 +7,25 @@ window.CWI=wallet;
 window.previewNavigate=()=>{window.location.href=new URL("./session/index.html?scenario=active",window.location.href).href;};
 window.portalPreviewCalls=[];
 window.portalPreviewWallet={imports:0,acks:0};
-let signedIn=params.has("restored");
+let signedIn=params.has("restored")||params.has("cookie");
 let publicApproved=false;
 if(params.has("restored")){
-  // A history cookie is present; the injected wallet arrives only after the
-  // explicit reconnect gesture. It must not be treated as already connected.
+  // A history cookie is present but the injected wallet is absent. It must
+  // not be treated as already connected or used to restore private history.
   window.CWI=undefined;
   document.addEventListener("click",event=>{
     if(event.target.id==="portal-reconnect")window.CWI=wallet;
   },true);
 }
 const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
+const sign=wallet.createSignature.bind(wallet);
+window.portalPreviewWallet.signatures=0;
+wallet.createSignature=async args=>{
+  window.portalPreviewWallet.signatures++;
+  if(params.has("deny"))throw Error("Wallet permission declined");
+  if(params.has("slow"))await new Promise(resolve=>{window.releasePreviewWallet=resolve;});
+  return sign(args);
+};
 const rows=Array.from({length:27},(_,i)=>({
   session_key:`fixture|session-${i}`,session_id:`sigen-proxy-fictional-${i}`,
   transaction_id:`EV-20261004-${String(i+1).padStart(3,"0")}`,
@@ -126,11 +134,24 @@ window.fetch=async(url,options)=>{
     return response({identity,sessions:all.slice(offset,offset+25),total:all.length,
       authorisations:params.has("approved")||publicApproved?[{scope:"weekly",spending_active:true,limit_sats:1000,
         expires_at:new Date(Date.now()+6*86400000).toISOString(),receiving_registered:true}]:[],
+      wallet_metadata:{addresses:[{budget_id:terms.budget_id,scope:"weekly",
+        state:"spending_authorised_wallet_permission_required",expires_at:publicTerms.expires_at,
+        operator_identity:terms.operator_identity,payment_address:terms.operator_address,
+        receiving_address:address,receiving_verified:true}]},
       expires_in:params.has("expire")?2:params.has("renew")?240:900});
   }
   if(data.action==="debit_jobs"&&signedIn)return response({jobs:params.has("held")?
     [{budget_id:terms.budget_id,session_id:rows[0].session_id}]:[],has_more:false});
   if(data.action==="debit_status"&&signedIn)return response({collection:{state:"broadcast_unknown"}});
+  if(data.action==="registration_offer")return params.has("registration")&&!publicApproved
+    ?response({state:"awaiting_driver_consent",invitation:publicInvitation})
+    :response({state:"existing_approval"});
+  if(data.action==="registration_read")return window.fetch("/api/bsv_settlement/driver",
+    {body:JSON.stringify({action:"public_read"})});
+  if(data.action==="registration_accept")return window.fetch("/api/bsv_settlement/driver",
+    {body:JSON.stringify({action:"public_approve",receipt:data.receipt})});
+  if(data.action==="registration_receive")return window.fetch("/api/bsv_settlement/driver",
+    {body:JSON.stringify({action:"register_credit_destination"})});
   if(data.action==="pairing_create")return response({error:"Offline preview: real QR pairing is disabled"},401);
   const scenario=params.get("monthly")||"off";
   if(data.action==="station")return response(scenario==="off"?{monthly_enabled:false,station_ids:[]}:

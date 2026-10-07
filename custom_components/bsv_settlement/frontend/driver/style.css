@@ -187,6 +187,10 @@ section[role=tabpanel]{padding:0;background:transparent;border:0;border-radius:0
 .terms-list dd{text-align:left}
 /* Unified driver surface: status first, optional detail on demand. */
 .unified-signin{margin-top:16px}
+.unified-signin h2{margin-top:0}
+#wallet-metadata{margin-top:16px}
+#wallet-metadata dd{overflow-wrap:anywhere}
+.wallet-address-record{margin-top:12px}
 .unified-signin>button{min-height:52px}
 .authorisation-list{padding:0;list-style:none;margin:12px 0}
 .authorisation-list li{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}

@@ -10,13 +10,13 @@ export function collectionOutcome(result){
   return "Payment submission is uncertain or needs review. Do not pay again; no replacement will be attempted automatically.";
 }
 
-// User-started, serial coordinator. Never resumes holds or replaces an attempt.
+// Verified-wallet, serial coordinator. Never resumes holds or replaces an attempt.
 export class PortalCollections {
   constructor({api,assertActive,onState=()=>{},collect=collectOnce,derive=derivedInvitation}){
     Object.assign(this,{api,assertActive,onState,collect,derive});
     this.running=false;this.enabled=false;this.seen=new Set();this.paused=new Map();this.cursor=0;
   }
-  start(){this.enabled=true;} // Only from the explicit sign-in journey, not cookie restore.
+  start(){this.enabled=true;} // Only after live wallet verification, not cookie restore.
   stop(){this.enabled=false;}
   async run(wallet){
     if(!this.enabled||this.running)return;
