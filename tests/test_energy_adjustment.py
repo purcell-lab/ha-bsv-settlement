@@ -136,8 +136,42 @@ async def test_credit_explicit_fee_quote_broadcast_once_receipt_and_owner_isolat
     receipt = await api.auto_credits.receipt_for_item(row, item)
     assert receipt["remittance"] == row["terms"]["credit_receiving"]
     assert receipt["energy_account"]["import_kwh"] is None
-    ack = await acknowledge(api, row, report(api, row, item, driver) | {"credit_id": cid})
-    assert ack["wallet_receipt_status"] == "wallet_reported_accepted"
+    # Exercise the actual authenticated transport. A direct acknowledgement
+    # test misses a malformed envelope rejected by the browser before import.
+    import asyncio
+    import json
+    from types import SimpleNamespace
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    from test_portal import ORIGIN, DriverPortalView, PairingHub, PAIRING_KEY, login, post
+    hass.config.external_url = ORIGIN
+    hass.data["bsv_settlement"]["wallet"] = SimpleNamespace(
+        mode="embedded_mainnet", api=api, lock=asyncio.Lock())
+    view = DriverPortalView(hass)
+    hub = hass.data[PAIRING_KEY] = PairingHub(hass)
+    app = web.Application()
+    app.router.add_post(view.url, view.post)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        cookie, _, _ = await login(client, view, driver)
+        response = await post(client, view, "credit_receipt", cookie, credit_id=cid)
+        assert response.status == 200
+        envelope = await response.json()
+        terms = json.loads(envelope["invitation"]["payload"])
+        assert envelope["receipt"]["budget_id"] == terms["budget_id"]
+        assert envelope["receipt"]["credit_id"] == cid
+        assert envelope["receipt"]["remittance"] == terms["credit_receiving"]
+        assert envelope["receipt"]["recipient_address"] == item["recipient_address"]
+        assert item["budget_id"] == cid  # Never rewrite the stored payment.
+        assert "wallet_receipt_ack" not in item
+        response = await post(client, view, "acknowledge_credit_receipt", cookie,
+                              credit_id=cid, **report(api, row, item, driver))
+        assert response.status == 200
+        assert (await response.json())["wallet_receipt_status"] == "wallet_reported_accepted"
+    finally:
+        await hub.close_all()
+        await client.close()
     assert len(api.chain.posts) == 1
 
 

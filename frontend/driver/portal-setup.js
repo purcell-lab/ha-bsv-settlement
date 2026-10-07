@@ -3,8 +3,10 @@ import {parseInvitation,signConsent} from "./model.js";
 import {registerCredit} from "./credit.js";
 import {privateSessionUrl} from "./private-link.js";
 
-export function authorisationRows({identity,connected,paused,approvals=[],supported=[]}) {
+export function authorisationRows({identity,connected,paused,collectionEnabled=false,approvals=[],supported=[]}) {
   const active=approvals.filter(a=>a.spending_active===true);
+  const paymentApi=supported.includes("createAction")&&supported.includes("signAction");
+  const ready=!!identity&&connected&&active.length>0&&paymentApi&&collectionEnabled;
   return [
     {label:"Wallet identity",ok:!!identity,text:identity?"Verified for private history":"Sign in required"},
     {label:"Wallet connection",ok:connected,text:connected?"Connected on BSV mainnet":"Not verified in this page"},
@@ -13,10 +15,14 @@ export function authorisationRows({identity,connected,paused,approvals=[],suppor
       "No current signed spending approval"},
     {label:"Receive credits",ok:approvals.some(a=>a.receiving_registered),text:
       approvals.some(a=>a.receiving_registered)?"Receiving destination registered":"Receiving registration not verified"},
-    {label:"Credit receipts",ok:connected&&!paused,text:paused?"Paused; sign in to retry":
+    {label:"Credit receipts",ok:connected&&!paused,text:paused?"Paused; use Retry receiving credits":
       connected?"Automatic receipt checks enabled; individual acceptance is in History":"Connect to check existing receipts"},
-    {label:"Wallet payment permission",ok:false,text:supported.includes("createAction")&&supported.includes("signAction")?
-      "Payment API available. Wallet may still ask for each payment":"Not verified. Signed budget is not a wallet-native spending grant"},
+    {label:"Session payments",ok:ready,text:ready?
+      "Automatic collection enabled for covered sessions. Wallet approval may still be required.":
+      !active.length?"No current signed budget covers new payments":
+      !connected?"Connect your wallet to collect covered sessions":
+      !paymentApi?"This connection does not provide the payment APIs":
+      "Budget approved; automatic collection is paused"},
   ];
 }
 

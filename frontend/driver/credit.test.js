@@ -95,6 +95,14 @@ test("wrong remittance or operator cannot be imported",async()=>{
   const {receipt}=await fixture();
   await assert.rejects(()=>importCredit(wallet,checked,{...receipt,sender_identity:driver.toPublicKey().toString()}));
 });
+test("adjustment receipt retains separate payment ID but must use original receiving budget",async()=>{
+  const {receipt}=await fixture();
+  const credit_id="adjustment:fictional-adjustment";
+  await assert.rejects(()=>importCredit(wallet,checked,{...receipt,budget_id:credit_id,credit_id}),
+    /remittance does not match/);
+  // The repair changes the envelope, not the cryptographic identity checks.
+  await importCredit(wallet,checked,{...receipt,credit_id});
+});
 test("TSC duplicate nodes and nonzero transaction index convert to BUMP",async()=>{
   const {address,receipt}=await fixture();
   const pair=(left,right)=>{

@@ -154,6 +154,7 @@ document.querySelector(".intro").after(signin);
 const walletCard=document.createElement("section");
 walletCard.id="wallet-summary";
 walletCard.innerHTML=`<h2>Wallet status</h2><ul id="authorisation-list" class="authorisation-list"></ul>
+<button id="wallet-retry-receipts" class="secondary wide" hidden>Retry receiving credits</button>
 <p id="automatic-settlement-status" class="notice" role="status">Waiting for wallet verification before automatic per-session settlement.</p>
 <p class="small">A check confirms the stated step only. A signed budget is not a wallet-native spending permission, and chain confirmation is not receipt acceptance.</p>
 <details id="wallet-metadata"><summary>Identity, connection and addresses</summary>
@@ -399,6 +400,8 @@ function controls(){
   $("portal-copy").disabled=!$("portal-uri").value;
   const reuseWeekly=authorisations.some(a=>a.spending_active&&a.scope==="weekly");
   $("wallet-resume").disabled=busy||framed||setupHeld;
+  $("wallet-retry-receipts").hidden=!identity||!receiptSync.paused;
+  $("wallet-retry-receipts").disabled=busy||framed||receiptSync.running||collections.running;
   $("unified-budget").hidden=!registrationTerms||reuseWeekly;
   $("unified-signin-note").textContent=setupHeld?
     "Setup needs checking. Do not repeat a signature. Use your charging link or ask the operator to check the saved approval.":
@@ -408,6 +411,7 @@ function controls(){
       "No current spending approval is recorded. Existing credits and history remain available; ask the operator for a fresh invitation.":
     "Wallet verification starts automatically. Your wallet controls identity, budget signatures, payments and credit receipt permissions. A refusal pauses setup; it will not be requested repeatedly.";
   const rows=authorisationRows({identity,connected:connectionState==="connected",paused:receiptSync.paused,
+    collectionEnabled:collections.enabled,
     approvals:authorisations,supported:pairing?.supportedMethods||
       ["createAction","signAction"].filter(method=>typeof wallet?.[method]==="function")});
   const holder=$("authorisation-list");holder.replaceChildren();
@@ -923,6 +927,7 @@ $("portal-logout").onclick=()=>run(async()=>{
   finally{clearPrivate();$("portal-pairing").hidden=true;}
 });
 $("portal-sync").onclick=()=>syncCredits(true);
+$("wallet-retry-receipts").onclick=()=>syncCredits(true);
 async function startPairing(){
   if(framed||document.hidden||setupHeld)return;
   if(pairing)await pairing.disconnect();
