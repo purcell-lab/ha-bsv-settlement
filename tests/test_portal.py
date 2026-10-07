@@ -11,6 +11,7 @@ from bsv import PrivateKey
 
 from custom_components.bsv_settlement.portal import (
     DriverPortalView, COOKIE, KEY, PROTOCOL, SCOPE, history, owned, credit_owner, authorisations,
+    wallet_metadata,
 )
 from custom_components.bsv_settlement.budget import message_hash, sha
 from custom_components.bsv_settlement.pairing import PairingHub, KEY as PAIRING_KEY
@@ -34,6 +35,26 @@ async def test_authorisations_are_owner_scoped_read_only_evidence(tmp_path):
     text = json.dumps(rows)
     for forbidden in ("token", "signature", "address", "secret", "fragment"):
         assert forbidden not in text
+
+
+async def test_wallet_metadata_addresses_are_owned_verified_and_read_only(tmp_path):
+    _, api, row, driver, _ = await confirmed(tmp_path)
+    before = copy.deepcopy(api.saved)
+    metadata = wallet_metadata(api, driver.public_key().hex())
+    address = metadata["addresses"][0]
+    assert address["receiving_address"] == row["credit_destination"]["address"]
+    assert address["receiving_verified"] is True
+    assert address["payment_address"] == row["terms"]["operator_address"]
+    assert address["operator_identity"] == row["terms"]["operator_identity"]
+    assert wallet_metadata(api, PrivateKey(999).public_key().hex()) == {"addresses": []}
+    for forbidden in ("token", "signature", "secret", "fragment", "proof"):
+        assert forbidden not in json.dumps(metadata)
+    assert api.saved == before
+    row["credit_destination"]["address"] = "tampered"
+    assert wallet_metadata(api, driver.public_key().hex())["addresses"][0]["receiving_address"] is None
+    row["credit_destination"] = before["session_budgets"][row["terms"]["budget_id"]]["credit_destination"]
+    row["credit_destination"]["proof"]["signature"] = "00"
+    assert wallet_metadata(api, driver.public_key().hex())["addresses"][0]["receiving_verified"] is False
 
 
 async def test_weekly_authorisation_projection_obeys_expiry_and_revocation(tmp_path, monkeypatch):

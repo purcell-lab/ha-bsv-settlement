@@ -426,7 +426,7 @@ class SessionBudgets:
         await self.api.store.async_save(self.api.saved)
         return self.public(row)
 
-    async def create(self, data, user_id, *, closed_review=None):
+    async def create(self, data, user_id, *, closed_review=None, portal_identity=None, portal_template=None):
         multi=data.get("multi_session",False)
         if data.get("initial_session_id") and not multi:
             raise WalletError("Including a current session requires a fresh multi-session approval")
@@ -458,6 +458,12 @@ class SessionBudgets:
             raise WalletError("Resolve recorder issues before inviting the driver")
         reservation = str(uuid4())
         key = f"{data['proxy_config_entry_id']}:{'multi_session' if multi else data.get('session_id') or 'next_session'}"
+        if portal_identity is not None:
+            if not multi or not re.fullmatch(r"(02|03)[0-9a-f]{64}", portal_identity):
+                raise WalletError("A verified portal identity and weekly terms are required")
+            # Separate pending offers per verified driver; never edit another
+            # driver's invitation or grant. Not accepted through service data.
+            key += ":portal:" + portal_identity
         state = self.api.hass.states.get(data["conversion_rate_entity"])
         if state is None or state.attributes.get("unit_of_measurement") != "sat/AUD":
             raise WalletError("Select a positive conversion-rate sensor in sat/AUD")
@@ -569,6 +575,13 @@ class SessionBudgets:
                "session_key": key, "proxy_config_entry_id": data["proxy_config_entry_id"],
                "created_by": user_id, "receipt": None, "driver_token_hash": sha(token),
                "driver_link_scheme": "hmac-sha256-v1"}
+        if portal_identity is not None:
+            row["portal_driver_identity"] = portal_identity
+            from .portal_registration import registration_context
+            row["portal_registration_context"] = registration_context(self.api, data["proxy_config_entry_id"])
+            if portal_template is None:
+                raise WalletError("The operator template is required for portal registration")
+            row["portal_template_hash"] = sha(portal_template["invitation"]["payload"])
         previous_latest = self.api.saved.get("latest_session_budget")
         if old:
             old["state"] = "revoked"

@@ -22,7 +22,7 @@ from .api import WalletError
 from .budget import approval_payload, canonical, message_hash, sha, signature_protocol
 from .const import DOMAIN
 from .pairing import external_origin, KEY as PAIRING_KEY
-from . import monthly_portal, portal_debits
+from . import monthly_portal, portal_debits, portal_registration
 
 KEY = DOMAIN + "_portal"
 COOKIE = "__Host-bsv_driver_portal"
@@ -112,6 +112,40 @@ def authorisations(api, identity):
             "receiving_registered": bool(row.get("credit_destination")),
         })
     return result
+
+
+def wallet_metadata(api, identity):
+    """Owner-only address evidence. No capabilities, proofs or wallet secrets."""
+    result = []
+    for bid, row in ownership(api, identity).items():
+        if row.get("weekly_parent_id"):
+            continue
+        terms = row["terms"]
+        destination = row.get("credit_destination") or {}
+        receiving_address = None
+        try:
+            expected = api.auto_credits.registration_payload(row)
+            verifier = PublicKey(bytes.fromhex(identity)).derive_child(
+                PrivateKey(1), f"2-ev session spending-{bid}")
+            proof = destination["proof"]
+            if (destination["address"] == api.auto_credits.destination(row).address()
+                    and proof["payload"] == expected
+                    and verifier.verify(bytes.fromhex(proof["signature"]),
+                                        expected.encode(), hasher=message_hash)):
+                receiving_address = destination["address"]
+        except (KeyError, ValueError, TypeError, AttributeError, WalletError):
+            pass
+        result.append({
+            "budget_id": bid,
+            "scope": "weekly" if terms.get("version") == 3 else "session",
+            "state": api.budgets.state(row),
+            "expires_at": terms["expires_at"],
+            "operator_identity": terms["operator_identity"],
+            "payment_address": terms["operator_address"],
+            "receiving_address": receiving_address,
+            "receiving_verified": receiving_address is not None,
+        })
+    return {"addresses": result}
 
 
 def credit_owner(api, identity, credit_id):
@@ -348,7 +382,7 @@ class DriverPortalView(HomeAssistantView):
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
                               "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS,
-                              *portal_debits.ACTIONS):
+                              *portal_debits.ACTIONS, *portal_registration.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -430,7 +464,13 @@ class DriverPortalView(HomeAssistantView):
                     raise WalletError("Sign in to view your sessions")
                 async with coord.lock:
                     api = coord.api
-                    if action in portal_debits.ACTIONS:
+                    if action in portal_registration.ACTIONS:
+                        try:
+                            result = await portal_registration.handle(api, item["identity"], data)
+                        except WalletError:
+                            return web.json_response({"error": "Wallet registration is unavailable or its session is already assigned."},
+                                                     status=409, headers=HEADERS)
+                    elif action in portal_debits.ACTIONS:
                         try:
                             result = await portal_debits.handle(api, item["identity"], data)
                         except WalletError:
@@ -444,7 +484,8 @@ class DriverPortalView(HomeAssistantView):
                         result = {"identity": item["identity"], "sessions": sessions[offset:offset + 25],
                                   "total": len(sessions), "offset": offset, "has_more": offset + 25 < len(sessions),
                                   "expires_in": max(0, int(item["deadline"] - time.monotonic())),
-                                  "authorisations": authorisations(api, item["identity"])}
+                                  "authorisations": authorisations(api, item["identity"]),
+                                  "wallet_metadata": wallet_metadata(api, item["identity"])}
                     else:
                         row, payment, route = credit_owner(api, item["identity"], data.get("credit_id"))
                         if action == "credit_receipt":

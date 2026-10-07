@@ -16,6 +16,7 @@ import {sessionAccount,formatRate,formatKwh} from "./account-projection.js";
 import {readinessView,setupAction,allowanceRows,termsList,signedTermsRows,authorityText,grantText} from "./monthly-ui.js";
 import {authorisationRows,approvePublicBudget} from "./portal-setup.js";
 import {PortalCollections,collectionOutcome} from "./portal-collections.js";
+import {AutomaticWalletEntry,boundedWalletCall} from "./automatic-wallet-entry.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -142,17 +143,23 @@ const main=document.querySelector("main");
 main.classList.add("unified-portal");
 const signin=document.createElement("section");
 signin.className="unified-signin";
-signin.innerHTML=`<button id="unified-signin" class="wide">Sign in</button>
-<p id="unified-signin-note" class="small">Connect your wallet to identify yourself, check your budget and receive existing credits. Wallet prompts may still appear.</p>
+signin.innerHTML=`<h2 id="wallet-entry-state" role="status" aria-live="polite">Connecting to your wallet…</h2>
+<p id="unified-signin-note" class="small">Your wallet controls identity, spending and receipt permissions. Approve or decline its prompts.</p>
+<div class="actions"><button id="wallet-resume" class="secondary" hidden>Retry wallet connection</button>
+<button id="wallet-pause" class="secondary">Pause automatic setup</button></div>
 <div id="unified-budget" hidden><p id="unified-budget-summary"></p>
 <details><summary>Spending and receiving terms</summary><dl id="unified-budget-terms"></dl></details>
-<p class="small">By selecting Sign in you authorise the displayed budget. Charges settle per session. Keep the wallet and charging page available. This does not start the charger or reserve funds.</p></div>`;
+<p class="small">The portal requests this exact budget through your wallet. Your wallet controls permission to sign it. Charges settle per session within that budget. Keep this page and wallet available. This does not start the charger or reserve funds.</p></div>`;
 document.querySelector(".intro").after(signin);
 const walletCard=document.createElement("section");
 walletCard.id="wallet-summary";
 walletCard.innerHTML=`<h2>Wallet status</h2><ul id="authorisation-list" class="authorisation-list"></ul>
-<p id="automatic-settlement-status" class="notice" role="status">Sign in to start automatic per-session settlement.</p>
-<p class="small">A check confirms the stated step only. A signed budget is not a wallet-native spending permission, and chain confirmation is not receipt acceptance.</p>`;
+<p id="automatic-settlement-status" class="notice" role="status">Waiting for wallet verification before automatic per-session settlement.</p>
+<p class="small">A check confirms the stated step only. A signed budget is not a wallet-native spending permission, and chain confirmation is not receipt acceptance.</p>
+<details id="wallet-metadata"><summary>Identity, connection and addresses</summary>
+<dl id="wallet-connection-metadata" class="terms-list"></dl>
+<p class="small">Receiving addresses are for operator credits to you. Payment addresses belong to the operator. Your wallet selects funding inputs and change addresses per transaction; the identity public key is not a payment address.</p>
+<div id="wallet-addresses"></div></details>`;
 signin.after($("portal-status"),walletCard);
 const historyBox=document.createElement("details");
 historyBox.id="history-box";historyBox.className="portal-disclosure";
@@ -161,11 +168,11 @@ historyBox.append($("panel-history"));
 const technical=document.createElement("details");
 technical.id="technical-box";technical.className="portal-disclosure";
 technical.innerHTML="<summary>Wallet options and BSV details</summary><p class='small'>BSV mainnet · BRC-100 wallet interface. Identity uses a signed challenge; credits use receiving registration and receipt import (internalizeAction); debits require a signed budget and wallet transaction approval (createAction / signAction).</p>";
-technical.append($("wallet-drawer"),$("station-access"),$("portal-pairing"),
+technical.append($("wallet-drawer"),$("station-access"),
   document.querySelector(".portal-recovery"),document.querySelector(".journey-more"));
 technical.querySelector(".journey-more").open=true;
 technical.querySelector(".journey-more > summary").hidden=true;
-main.append($("panel-station"),$("panel-charging"),historyBox,technical);
+main.append($("portal-pairing"),$("panel-station"),$("panel-charging"),historyBox,technical);
 $("wallet-drawer").hidden=false;
 for(const id of ["wallet-open","wallet-close"])$(id).hidden=true;
 document.querySelector(".station-nav").hidden=true;
@@ -176,8 +183,10 @@ for(const name of ["station","charging","history"]){
 }
 $("charging-rates").classList.add("superseded-rates");
 $("monthly-offer").hidden=true;
-$("charging-signed-out").textContent="Sign in to see your current session.";
-$("history-signed-out").textContent="Sign in to see your history.";
+$("portal-login").hidden=true;
+$("wallet-signed-out").textContent="Your wallet has not verified your identity yet.";
+$("charging-signed-out").textContent="Your current session appears after wallet verification.";
+$("history-signed-out").textContent="Your history appears after wallet verification.";
 const framed=window.top!==window;
 const requestedJoin=new URLSearchParams(location.hash.slice(1));
 window.addEventListener("hashchange",()=>location.reload());
@@ -185,6 +194,7 @@ let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expire
 let prices=null,pricesBusy=false;
 let registrationUrl=null;
 let registrationTerms=null,registrationData=null,authorisations=[],setupHeld=false;
+let walletMetadata={addresses:[]},identityVerifiedAt=null,connectionMethod=null;
 const imports=new Map();
 const expandedSessions=new Set();
 let syncGeneration=null;
@@ -201,6 +211,7 @@ const collections=new PortalCollections({api,assertActive:()=>{
   $("automatic-settlement-status").textContent=text;
 }});
 async function automaticSettlement(){
+  if(autoEntry.state!=="ready")return;
   // One wallet operation at a time: receipt import and debit collection never race.
   await syncCredits();
   if(!collections.enabled||busy||receiptSync.running||collections.running||document.hidden||framed||!identity||!wallet)return;
@@ -221,11 +232,13 @@ async function automaticSettlement(){
       const result=await api("login",proof);
       if(result.identity!==expected||generation!==before)throw Error("Wallet identity changed.");
       expires=Date.now()+result.expires_in*1000;
+      identityVerifiedAt=Date.now();
     }
     await collections.run(wallet);
   }catch{
     collections.stop();
-    $("automatic-settlement-status").textContent="Automatic collection paused: wallet or private access could not be verified. Sign in again. Existing payment holds are unchanged.";
+    autoEntry.pause("Wallet or private access could not be verified. Retry the connection when ready. Existing payment holds are unchanged.");
+    $("automatic-settlement-status").textContent="Automatic collection paused. Existing payment holds are unchanged.";
   }finally{busy=false;controls();}
 }
 function connection(state){
@@ -280,7 +293,54 @@ const receiptSync=new ReceiptSync({
     }
   },
 });
+const autoEntry=new AutomaticWalletEntry({
+  allowed:()=>!busy&&!receiptSync.running&&!collections.running&&!framed&&!document.hidden&&!setupHeld,
+  attempt:async(candidate,assertRunning)=>{
+    busy=true;controls();
+    const before=generation;
+    const active=()=>{
+      assertRunning();
+      if(before!==generation||document.hidden||framed)throw Error("Wallet context changed. Setup paused.");
+    };
+    try{
+      active();
+      connectionMethod=pairing?.state==="paired"?"BSV Browser encrypted QR relay":
+        window.CWI?"Injected wallet (window.CWI)":"BRC-100 SDK automatic transport";
+      candidate??=setupWallet().candidate;
+      // SDK discovery is not identity or spending approval. Only a definite
+      // no-transport result enables the QR fallback; never a denied signature.
+      if(candidate.connectToSubstrate){
+        try{await boundedWalletCall(()=>candidate.connectToSubstrate(),20000);}
+        catch(error){
+          if(/No wallet available over any communication substrate/.test(error.message))
+            error.code="WALLET_UNAVAILABLE";
+          throw error;
+        }
+      }
+      active();
+      const guarded=new Proxy(candidate,{get:(target,method)=>{
+        const value=target[method];
+        return typeof value==="function"?async(...args)=>{
+          active();const result=await boundedWalletCall(()=>value.apply(target,args));active();return result;
+        }:value;
+      }});
+      await completeSignIn(guarded,active);
+      active();
+      wallet=candidate; // Setup guard must not outlive its own operation.
+    }finally{busy=false;controls();}
+  },
+  onState:(state,detail)=>{
+    $("wallet-entry-state").textContent=({idle:"Waiting for your wallet",running:"Check your wallet",
+      ready:"Wallet connected",paused:"Wallet setup paused",waiting_wallet:"Connect your wallet"})[state];
+    $("wallet-resume").hidden=state!=="paused";
+    $("wallet-pause").hidden=!["idle","running","waiting_wallet"].includes(state);
+    if(detail)message(detail);
+    if(state==="ready")void automaticSettlement();
+  },
+  onUnavailable:()=>startPairing(),
+});
 async function syncCredits(manual=false){
+  if(!manual&&autoEntry.state!=="ready")return;
   const available=!!wallet||!!window.CWI||pairing?.state==="paired";
   if(busy||receiptSync.running||!identity||framed||document.hidden||Date.now()>=expires||
     (!manual&&(!available||receiptSync.paused)))return;
@@ -335,22 +395,18 @@ function controls(){
   paintReadiness();
   $("portal-title").textContent=identity?"Your charging":"Charge. Export. Settle.";
   $("portal-intro").textContent=identity?"Your station, current session and history in one place.":
-    "Sign in. Approve your budget. Charge or export.";
+    "Connect your wallet. Charge or export. Settle automatically.";
   $("portal-copy").disabled=!$("portal-uri").value;
   const reuseWeekly=authorisations.some(a=>a.spending_active&&a.scope==="weekly");
-  const signedInAndRunning=collections.enabled&&!!identity&&connectionState==="connected"&&
-    !receiptSync.paused&&authorisations.some(a=>a.spending_active);
-  $("unified-signin").disabled=busy||framed||setupHeld||signedInAndRunning;
-  $("unified-signin").textContent=busy?"Working…":signedInAndRunning?"Signed in":
-    identity?registrationTerms&&!reuseWeekly?"Approve budget":"Reconnect wallet":"Sign in";
+  $("wallet-resume").disabled=busy||framed||setupHeld;
   $("unified-budget").hidden=!registrationTerms||reuseWeekly;
   $("unified-signin-note").textContent=setupHeld?
     "Setup needs checking. Do not repeat a signature. Use your charging link or ask the operator to check the saved approval.":
-    registrationTerms&&!reuseWeekly?"Sign in checks your existing approval first. If none is active, it signs the budget below and registers this wallet for credits. Review the terms before continuing.":
+    registrationTerms&&!reuseWeekly?"Your wallet is asked to verify identity, sign the exact budget below and register for credits if needed. Approve or decline in your wallet.":
     identity?authorisations.some(a=>a.spending_active)?
       "Your signed budget covers per-session collection here. Keep this page and wallet available; native wallet prompts may still need approval.":
       "No current spending approval is recorded. Existing credits and history remain available; ask the operator for a fresh invitation.":
-    "Sign in starts automatic receipt checks and per-session collection under your signed budget. Review any new budget below. Wallet prompts may still appear.";
+    "Wallet verification starts automatically. Your wallet controls identity, budget signatures, payments and credit receipt permissions. A refusal pauses setup; it will not be requested repeatedly.";
   const rows=authorisationRows({identity,connected:connectionState==="connected",paused:receiptSync.paused,
     approvals:authorisations,supported:pairing?.supportedMethods||
       ["createAction","signAction"].filter(method=>typeof wallet?.[method]==="function")});
@@ -360,6 +416,37 @@ function controls(){
     const mark=node("span",row.ok?"✓":"–","authorisation-mark");mark.setAttribute("aria-label",row.ok?"Verified":"Not verified");
     const text=node("div","");text.append(node("strong",row.label),node("span",row.text,"small"));
     item.append(mark,text);holder.append(item);
+  }
+  paintWalletMetadata();
+}
+function paintWalletMetadata(){
+  list($("wallet-connection-metadata"),[
+    ["Identity public key",identity||"Not verified"],
+    ["Identity proof","BRC-100 signed challenge (ev portal login)"],
+    ["Identity verified",identityVerifiedAt?new Date(identityVerifiedAt).toLocaleString():"Not verified"],
+    ["Connection method",connectionMethod||"Not connected"],
+    ["Network",connectionState==="connected"?"BSV mainnet (wallet reported)":"Not verified"],
+    ["Connection checked",connectionCheckedAt?new Date(connectionCheckedAt).toLocaleString():"Not verified"],
+    ["Private access expires",identity&&expires?new Date(expires).toLocaleString():"Not signed in"],
+    ["Application origin",location.origin],
+    ["Payment API methods",pairing?.supportedMethods?.join(", ")||
+      ["getPublicKey","createSignature","getNetwork","internalizeAction","createAction","signAction"]
+        .filter(k=>typeof wallet?.[k]==="function").join(", ")||"Not verified"],
+  ]);
+  const holder=$("wallet-addresses");holder.replaceChildren();
+  if(!identity){holder.append(node("p","Wallet verification is required to see your addresses.","small"));return;}
+  if(!walletMetadata.addresses?.length){
+    holder.append(node("p","No verified receiving or payment address is recorded for this identity.","small"));return;
+  }
+  for(const a of walletMetadata.addresses){
+    const box=node("details","","wallet-address-record");
+    box.append(node("summary",`${a.scope==="weekly"?"Weekly":"Session"} approval · ${a.state.replaceAll("_"," ")}`));
+    const fields=node("dl","","terms-list");list(fields,[
+      ["Approval ID",a.budget_id],["Expires",new Date(a.expires_at).toLocaleString()],
+      ["Receiving address (credits to you)",a.receiving_verified?a.receiving_address:"Not verified"],
+      ["Payment address (charges to operator)",a.payment_address||"Not recorded"],
+      ["Operator identity",a.operator_identity||"Not recorded"],
+    ]);box.append(fields);holder.append(box);
   }
 }
 async function driverApi(action,data={}){
@@ -443,10 +530,11 @@ async function refreshPrices(){
 }
 function clearPrivate(){
   collections.stop();
-  $("automatic-settlement-status").textContent="Sign in to start automatic per-session settlement. Existing payments and holds are unchanged.";
+  $("automatic-settlement-status").textContent="Waiting for wallet verification. Existing payments and holds are unchanged.";
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
   authorisations=[];
+  walletMetadata={addresses:[]};identityVerifiedAt=null;connectionMethod=null;
   connection("unverified");
   receiptSync.paused=false;receiptSync.completed.clear();
   expandedSessions.clear();
@@ -557,6 +645,7 @@ async function load(more=false){
   if(identity&&result.identity!==identity)throw Error("Wallet sign-in changed. Sign out and sign in again.");
   identity=result.identity;expires=Date.now()+result.expires_in*1000;
   authorisations=result.authorisations||[];
+  walletMetadata=result.wallet_metadata||{addresses:[]};
   sessions=more?[...sessions,...result.sessions]:result.sessions;total=result.total;render();
   if(!more)await loadMonthly();
 }
@@ -568,14 +657,18 @@ async function run(fn){
     else message(e.walletAccepted?e.message:"Action paused: "+e.message);
   }finally{busy=false;controls();void automaticSettlement();}
 }
-async function signIn(candidate){
+async function signIn(candidate,assertActive=()=>{}){
   const before=generation;
+  assertActive();
   message("Verify wallet identity for automatic settlement. Any new spending budget is signed separately in this same setup flow.");
   const proof=await signPortalLogin(candidate,await api("challenge"),location.origin);
+  assertActive();
+  if(identity&&proof.identity!==identity)throw Error("Wallet identity changed. Sign out before using another wallet.");
   const result=await api("login",proof);
+  assertActive();
   if(before!==generation)throw Error("Sign-in was interrupted. Please try again.");
   if(result.identity!==proof.identity)throw Error("Sign-in identity mismatch.");
-  wallet=candidate;identity=result.identity;imports.clear();await load();
+  wallet=candidate;identity=result.identity;identityVerifiedAt=Date.now();imports.clear();await load();
   receiptSync.paused=false;receiptSync.completed.clear();
   await connectReceivingWallet(candidate,()=>{
     if(before!==generation||!identity||Date.now()>=expires||document.hidden)throw Error("Sign-in changed. Reconnect your wallet.");
@@ -677,24 +770,53 @@ function paintMonthly(){
   if($("monthly-cancel-area").hidden)$("monthly-cancel-confirm").hidden=true;
   controls();
 }
-// One application action starts the existing cryptographic steps in sequence.
-// Reusable cookie access alone never renews a budget or starts a payment.
-async function completeSignIn(candidate){
-  const checked=registrationTerms,scope=registrationData;
+// Wallet-native permissions mediate the existing signed steps in sequence.
+// Cookies alone never establish identity, create a budget or start a payment.
+async function completeSignIn(candidate,assertActive=()=>{}){
+  assertActive();
+  let checked=registrationTerms,scope=registrationData,connectedOffer=false;
   candidate??=setupWallet().candidate;
-  if(!identity)await signIn(candidate);
+  if(!identity)await signIn(candidate,assertActive);
   else await connectReceivingWallet(candidate,()=>{
     if(document.hidden||Date.now()>=expires)throw Error("Private access ended. Sign in again.");
   });
+  assertActive();
   receiptSync.paused=false;
+  if(!authorisations.some(a=>a.spending_active&&a.scope==="weekly")&&!requestedJoin.has("join")){
+    // Only authenticated operator-configured terms; no client-chosen limits,
+    // destination or historical session. Existing assigned records stay frozen.
+    try{
+      const offered=await api("registration_offer");
+      assertActive();
+      if(offered.invitation){
+        checked=parseInvitation(JSON.stringify(offered.invitation));
+        scope={budget_id:checked.terms.budget_id};connectedOffer=true;
+        $("unified-budget").hidden=false;
+        $("unified-budget-summary").textContent=
+          `${checked.terms.max_total_sats.toLocaleString()} sat total including fees until ${new Date(checked.terms.expires_at).toLocaleString()}.`;
+        list($("unified-budget-terms"),[
+          ["Operator",checked.terms.operator_name],["Scope",checked.terms.account_scope],
+          ["Payment address",checked.terms.operator_address],["Pricing",checked.terms.pricing_rule],
+          ["Total limit including fees",`${checked.terms.max_total_sats} sat`],
+          ["Expires",new Date(checked.terms.expires_at).toLocaleString()],
+        ]);
+      }else{checked=null;scope=null;}
+    }catch(error){
+      if(error.status!==409)throw error;
+      checked=null;scope=null;
+      message("No new weekly offer is available. Existing owned credits and approved payments can still settle.");
+    }
+  }
   if(checked&&scope&&!authorisations.some(a=>a.spending_active&&a.scope==="weekly")){
-    // Public terms were visible before this click. Freeze them for this action;
+    // Public terms are displayed before the wallet request. Freeze this action;
     // never substitute a newly-issued invitation during the wallet interaction.
     const before=generation,expected=identity;
     const result=await approvePublicBudget({candidate,identity,checked,origin:location.origin,
       onSigned:()=>{setupHeld=true;},
-      read:()=>driverApi("public_read",scope),
-      approve:receipt=>driverApi("public_approve",{...scope,receipt}),driverApi,
+      read:()=>connectedOffer?api("registration_read",scope):driverApi("public_read",scope),
+      approve:receipt=>connectedOffer?api("registration_accept",{...scope,receipt}):driverApi("public_approve",{...scope,receipt}),
+      driverApi:(action,data)=>connectedOffer&&action==="register_credit_destination"
+        ?api("registration_receive",{...scope,proof:data.proof}):driverApi(action,data),
       assertActive:()=>{if(before!==generation||identity!==expected||document.hidden||Date.now()>=expires)
         throw Error("Wallet context changed. Nothing further was authorised.");}});
     message(result.receivingError||"Budget saved. Automatic receipt checks and per-session collection are starting here.");
@@ -709,13 +831,18 @@ async function completeSignIn(candidate){
     history.replaceState(null,"",location.pathname+location.search);
     await load();
   }
-  collections.start();
+  assertActive();collections.start();
   $("automatic-settlement-status").textContent=authorisations.some(a=>a.spending_active)?
     "Automatic settlement started. Eligible closed sessions are collected within your signed budget; existing credit receipts are checked automatically. Keep this page and wallet available.":
     "Signed in for receipts and history. No current spending approval is recorded; a new operator invitation is needed before automatic debit collection.";
   message("Signed in for automatic per-session settlement. No second charging page or session selection is needed.");
 }
-$("unified-signin").onclick=()=>run(()=>completeSignIn());
+$("wallet-resume").onclick=()=>void autoEntry.start(undefined,{resume:true});
+$("wallet-pause").onclick=()=>{
+  autoEntry.pause("Automatic setup paused. Use Retry wallet connection when you want to continue.");
+  collections.stop();
+  if(pairing)void pairing.disconnect();
+};
 // Resolve only from the driver's explicit choice on the exact server terms.
 function askTerms(terms){
   selectTab("station",false);
@@ -785,11 +912,13 @@ $("portal-login").onclick=()=>run(()=>signIn(new WalletClient(window.CWI?"window
 $("portal-refresh").onclick=()=>run(async()=>{await load();await refreshPrices();});
 $("portal-more").onclick=()=>run(()=>load(true));
 $("portal-logout").onclick=()=>run(async()=>{
+  autoEntry.pause("Signed out. Automatic sign-in stays paused on this page until you choose Retry wallet connection.");
   try{await api("logout");if(pairing)await pairing.disconnect();pairing=null;message("Signed out. Spending approvals and payments are unchanged.");}
   finally{clearPrivate();$("portal-pairing").hidden=true;}
 });
 $("portal-sync").onclick=()=>syncCredits(true);
-$("portal-pair").onclick=()=>run(async()=>{
+async function startPairing(){
+  if(framed||document.hidden||setupHeld)return;
   if(pairing)await pairing.disconnect();
   $("portal-pairing").hidden=false;
   pairing=new BrowserPairing({api,origin:location.origin,receiptOnly:false,onState:(state,text)=>{
@@ -801,12 +930,23 @@ $("portal-pair").onclick=()=>run(async()=>{
       $("portal-qr").querySelector("svg").setAttribute("aria-label","Private portal wallet pairing code");
       $("portal-uri").value=pairing.uri;
     }
-    if(state==="paired")void run(()=>completeSignIn(pairing.wallet));
-    if(state==="disconnected"){wallet=null;collections.stop();connection("unavailable");message("Pairing ended. Settlement is paused until the wallet reconnects.");}
+    if(state==="paired"){
+      // A completed scan is wallet-native agency; it continues setup without
+      // a second website button. Never bypass a user's explicit local pause.
+      const candidate=pairing.wallet;
+      queueMicrotask(()=>{if(autoEntry.state!=="paused")void autoEntry.start(candidate,{resume:true});});
+    }
+    if(state==="disconnected"){wallet=null;collections.stop();connection("unavailable");
+      autoEntry.pause("Pairing ended. Retry wallet connection or create a fresh pairing when ready.");}
     controls();
   }});
   await pairing.start();
   $("portal-pairing").scrollIntoView({behavior:"smooth",block:"start"});
+}
+$("portal-pair").onclick=()=>run(async()=>{
+  autoEntry.invalidate();
+  if(autoEntry.state==="paused")autoEntry.set("waiting_wallet");
+  await startPairing();
 });
 $("portal-copy").onclick=async()=>{
   if(!$("portal-uri").value)return;
@@ -817,7 +957,10 @@ $("portal-copy").onclick=async()=>{
   catch{$("portal-uri").focus();$("portal-uri").select();message("Select and copy the pairing URI. Keep it private.");}
   finally{clearTimeout(timer);}
 };
-$("portal-disconnect").onclick=()=>run(async()=>{if(pairing)await pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;});
+$("portal-disconnect").onclick=()=>run(async()=>{
+  autoEntry.pause("Pairing cancelled. No automatic reconnection will be attempted.");
+  if(pairing)await pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;
+});
 $("portal-open").onclick=async()=>{
   const {privateSessionUrl,publicEnrolmentUrl}=await import("./private-link.js");
   const input=$("portal-private").value.trim(),url=privateSessionUrl(input,location.origin)||publicEnrolmentUrl(input,location.origin);
@@ -830,20 +973,24 @@ window.addEventListener("pagehide",()=>{if(pairing)void pairing.disconnect();});
 document.addEventListener("visibilitychange",()=>{paintPrices();if(!document.hidden){
   if(!busy&&!receiptSync.running){connection("unverified");controls();}
   void refreshPrices();void syncCredits();
+  void autoEntry.start();
 }});
 setInterval(()=>void refreshPrices(),60000);
 setInterval(paintPrices,1000); // Expire displayed data even if a fetch is stalled.
 void refreshPrices(); // No wallet prompt, cookie creation or private history required.
-setInterval(()=>{if(identity&&Date.now()>=expires){clearPrivate();message("Private access expired. Sign in again.");}},1000);
-// Restore authenticated history only; auto-receive requires an available wallet.
-try{if(!framed){await load();message("History sign-in restored. Wallet connection is checked separately below.");}}
-catch{clearPrivate();}controls();
+setInterval(()=>{if(identity&&Date.now()>=expires){
+  clearPrivate();autoEntry.invalidate();void autoEntry.start();
+}},1000);
+// Fresh wallet proof on every visit, including when a previous history cookie exists.
+// Never expose old-wallet history or enable spending solely from cookie restoration.
+controls();
 void syncCredits();
 setInterval(()=>{if(identity&&!busy&&!framed&&!document.hidden)void run(()=>load());},30000);
 // Do not leave an old provisional value looking live when history refresh fails.
 setInterval(()=>{if(identity&&!document.hidden)render();},15000);
 setInterval(()=>void automaticSettlement(),15000);
-if(framed)message("Open the driver portal directly in your browser to sign in.");
-void registration();
+if(framed)message("Open the driver portal directly in your wallet browser to connect.");
+await registration(); // Show and freeze public terms before wallet-native prompts.
+void autoEntry.start();
 setInterval(()=>void registration(),30000);
 void loadStation(); // Public facts only; no cookie or wallet prompt.
