@@ -22,11 +22,27 @@ ambiguity latches setup; it is never retried automatically.
 
 A public invitation can be used only while registration is open. Sign-in cannot
 create an invitation, claim an unrelated session or reopen closed registration.
-After approval the driver goes to the existing private charging page, which
-retains per-session collection, fee checks, holds and duplicate-payment guards.
-Returning portal users can receive existing credits, but the static portal does
-not become a new debit worker. They still need their existing charging page for
-collection. This limitation must not be labelled “ready for automatic payment”.
+After approval the driver stays on this portal. One explicit sign-in starts a
+serial receipt-and-debit coordinator. It discovers eligible sessions from the
+signed-in wallet's independently signed budgets and reuses the existing quote,
+claim, unsigned draft, one-use signing permit and report engine. No private link
+handoff, session selector or second application approval is required.
+
+Owner-scoped portal endpoints expose no budget capability tokens. They cannot
+increase a budget, claim an unrelated session or confirm a recovery release.
+Confirmed/submitted/held payments are not new jobs. A failed wallet attempt is
+latched in memory and protected by the existing server attempt record.
+
+The same available wallet refreshes the short-lived identity proof before its
+15-minute portal login expires; this does not renew spending authority. Cookie
+restoration alone never starts a debit worker. Sign-out, hidden/unavailable wallet,
+expired or superseded budget, insufficient allowance and payment holds still
+stop the affected action. Two sessions per polling pass bound wallet/API work.
+
+This is connected automation, not an offline funding guarantee. Closing the
+page or wallet can stop collection. Wallet-native permission prompts cannot be
+suppressed by the site; zero-prompt operation requires native-wallet acceptance
+testing and suitable permissions from the driver.
 
 Wallet APIs being present is not proof of a native spending grant. The UI never
 checks that permission as granted based only on createAction/signAction methods.
@@ -57,7 +73,7 @@ test. Offline UI tests cannot prove a wallet will suppress its permission prompt
 
 ## Local verification
 
-- Driver Node suite: 204 tests passed.
+- Driver Node suite: 210 tests passed after adding portal collection orchestration.
 - Python suite: 1,588 passed on the full run; one distribution-copy check failed
   because the generated stylesheet had not yet been copied. After copying it,
   the 66-test portal, weekly-mandate, budget and distribution run passed,
@@ -71,6 +87,12 @@ test. Offline UI tests cannot prove a wallet will suppress its permission prompt
   overflow or JavaScript errors on the final checked states.
 - Private page inspected at 375 px and desktop; its offline history challenge
   and budget approval complete without payment drafting.
+- Follow-on debit transport run: 110 portal/weekly/collection/budget/pairing tests passed,
+  including two mock-funded session collections, duplicate-report reconciliation,
+  wrong-wallet isolation, revoked/expired approval and recovery refusal.
+- Browser follow-on: new public registration stayed on the portal, signed once,
+  registered receiving details and started debit discovery. Near-expiry identity
+  refreshed with the same wallet without a second app click or budget signature.
 
 Build the isolated fictional preview with
 `cd frontend/driver && node build-unified-preview.mjs`.

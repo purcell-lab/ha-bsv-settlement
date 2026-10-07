@@ -1,6 +1,7 @@
-"""Wallet proof-of-control login and owner-scoped, read-only charging history.
+"""Wallet proof-of-control login and owner-scoped charging settlement.
 
-No budget capabilities, operator keys, payment actions or authority renewal.
+No budget capabilities, operator keys or authority renewal. Debit operations
+delegate to the existing guarded engine under independently signed budgets.
 Monthly consent actions are delegated to ``monthly_portal`` and stay disabled
 unless a reviewed activation configures them; no accounting transition is exposed.
 Login state is memory-only and is lost on restart. Receipt reports use the
@@ -21,12 +22,12 @@ from .api import WalletError
 from .budget import approval_payload, canonical, message_hash, sha, signature_protocol
 from .const import DOMAIN
 from .pairing import external_origin, KEY as PAIRING_KEY
-from . import monthly_portal
+from . import monthly_portal, portal_debits
 
 KEY = DOMAIN + "_portal"
 COOKIE = "__Host-bsv_driver_portal"
 PROTOCOL = "ev portal login"
-SCOPE = "read_own_charging_sessions_and_sync_existing_credit_receipts"
+SCOPE = "read_own_sessions_sync_receipts_and_collect_signed_session_budgets"
 HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Vary": "Origin"}
 IDENTITY = re.compile(r"^(02|03)[0-9a-f]{64}$")
 
@@ -346,7 +347,8 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
-                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS):
+                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS,
+                              *portal_debits.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -428,7 +430,13 @@ class DriverPortalView(HomeAssistantView):
                     raise WalletError("Sign in to view your sessions")
                 async with coord.lock:
                     api = coord.api
-                    if action == "sessions":
+                    if action in portal_debits.ACTIONS:
+                        try:
+                            result = await portal_debits.handle(api, item["identity"], data)
+                        except WalletError:
+                            return web.json_response({"error": "Collection is unavailable or held. No recovery was authorised."},
+                                                     status=409, headers=HEADERS)
+                    elif action == "sessions":
                         offset = data.get("offset", 0)
                         if type(offset) is not int or not 0 <= offset <= 100000:
                             raise WalletError("Invalid page offset")

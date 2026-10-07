@@ -15,6 +15,7 @@ import {MonthlySetup,cancelMonthly} from "./monthly-wallet.js";
 import {sessionAccount,formatRate,formatKwh} from "./account-projection.js";
 import {readinessView,setupAction,allowanceRows,termsList,signedTermsRows,authorityText,grantText} from "./monthly-ui.js";
 import {authorisationRows,approvePublicBudget} from "./portal-setup.js";
+import {PortalCollections,collectionOutcome} from "./portal-collections.js";
 
 const priceCards=prefix=>`<div class="price-grid portal-prices" aria-label="Current energy rates">
 <div><span title="Buy (Import/ EV Charging) rate">Buy / EV charging</span><strong id="${prefix}-buy">Unavailable</strong></div>
@@ -27,7 +28,7 @@ const rateHelp=`<details class="rate-help"><summary>How the rates affect your wa
 <p>Each session combines into one final net charge or credit when it ends. Current rates are not a fixed quote.</p></details>`;
 document.querySelector("main").innerHTML=`
 <div class="intro"><p class="eyebrow">EV CHARGING STATION</p><h1 id="portal-title">Charge. Export. Settle.</h1>
-<p id="portal-intro">Check this station's rates, authorise monthly charging once, then follow your sessions.</p></div>
+<p id="portal-intro">Sign in. Approve your budget. Charge or export.</p></div>
 <div class="station-nav">
 <div class="station-tabs" role="tablist" aria-label="Driver sections">
 <button role="tab" id="tab-station" aria-controls="panel-station" aria-selected="true">Station</button>
@@ -62,8 +63,8 @@ document.querySelector("main").innerHTML=`
 <div class="portal-wallet-actions"><button id="portal-refresh" class="secondary" aria-label="Refresh session history">Refresh</button><button id="portal-sync" aria-label="Retry receiving all confirmed credits">Retry receiving credits</button><button id="portal-logout" class="secondary">Sign out</button></div>
 <details id="portal-wallet-details"><summary>Wallet details <span id="portal-expiry"></span></summary>
 <p class="small">Full wallet identity</p><p id="portal-identity" class="mono"></p>
-<p class="small">This is verified sign-in, not a live wallet connection or spending approval. Signing out or restarting the operator service ends private access.</p>
-<p class="small">Confirmed credits are received automatically while your wallet is connected and you are signed in, including older sessions not shown on this page. Wallet permission prompts can still require approval. This imports existing payments and records acceptance; it never sends another payment or collects a driver charge.</p></details>
+<p class="small">Sign-in starts settlement under your separately signed budget. It cannot increase the limit. Signing out or restarting the operator service ends private access and stops new portal collection attempts.</p>
+<p class="small">Confirmed credit receipts are imported automatically while your wallet is available, including older sessions not shown here. Receipt import never sends a duplicate payment. Debit collection separately processes eligible completed sessions under your signed approval; wallet permission prompts can still appear.</p></details>
 </section>
 </aside>
 <p id="portal-status" class="driver-feedback" role="status" aria-live="polite"></p>
@@ -150,6 +151,7 @@ document.querySelector(".intro").after(signin);
 const walletCard=document.createElement("section");
 walletCard.id="wallet-summary";
 walletCard.innerHTML=`<h2>Wallet status</h2><ul id="authorisation-list" class="authorisation-list"></ul>
+<p id="automatic-settlement-status" class="notice" role="status">Sign in to start automatic per-session settlement.</p>
 <p class="small">A check confirms the stated step only. A signed budget is not a wallet-native spending permission, and chain confirmation is not receipt acceptance.</p>`;
 signin.after($("portal-status"),walletCard);
 const historyBox=document.createElement("details");
@@ -186,6 +188,44 @@ const expandedSessions=new Set();
 let syncGeneration=null;
 let connectionState="unverified",connectionCheckedAt=null;
 let station={monthly_enabled:false,station_ids:[]},monthly=null,tab="station",tabChosen=false;
+const collections=new PortalCollections({api,assertActive:()=>{
+  if(!collections.enabled||!identity||!wallet||framed||document.hidden||Date.now()>=expires)
+    throw Error("The signed-in wallet is unavailable. Collection paused without a retry.");
+},onState:(state,job,detail)=>{
+  const text=state==="collecting"?"Collecting this completed session within your signed budget…":
+    state==="progress"?detail:state==="submitted"?collectionOutcome(detail):
+    state==="held"?"An earlier payment is held for review. It will not be retried automatically.":
+    "Collection paused for this session. Do not pay again; ask the operator to check the attempt.";
+  $("automatic-settlement-status").textContent=text;
+}});
+async function automaticSettlement(){
+  // One wallet operation at a time: receipt import and debit collection never race.
+  await syncCredits();
+  if(!collections.enabled||busy||receiptSync.running||collections.running||document.hidden||framed||!identity||!wallet)return;
+  busy=true;controls();
+  try{
+    if(connectionState!=="connected"){
+      const expected=identity,before=generation;
+      await connectReceivingWallet(wallet,()=>{
+        if(identity!==expected||generation!==before||document.hidden)throw Error("Wallet context changed.");
+      });
+    }
+    if(expires-Date.now()<300000){
+      // Refresh proof of identity while the same connected wallet is available.
+      // No new spending consent, broader allowance or additional app click.
+      const expected=identity,before=generation,candidate=wallet;
+      const proof=await signPortalLogin(candidate,await api("challenge"),location.origin);
+      if(proof.identity!==expected||generation!==before||document.hidden)throw Error("Wallet context changed.");
+      const result=await api("login",proof);
+      if(result.identity!==expected||generation!==before)throw Error("Wallet identity changed.");
+      expires=Date.now()+result.expires_in*1000;
+    }
+    await collections.run(wallet);
+  }catch{
+    collections.stop();
+    $("automatic-settlement-status").textContent="Automatic collection paused: wallet or private access could not be verified. Sign in again. Existing payment holds are unchanged.";
+  }finally{busy=false;controls();}
+}
 function connection(state){
   connectionState=state;
   connectionCheckedAt=state==="connected"?Date.now():null;
@@ -300,8 +340,10 @@ function controls(){
   $("unified-signin-note").textContent=setupHeld?
     "Setup needs checking. Do not repeat a signature. Use your charging link or ask the operator to check the saved approval.":
     registrationTerms?"Sign in checks your existing approval first. If none is active, it signs the budget below and registers this wallet for credits. Review the terms before continuing.":
-    identity?"Reconnect or check existing credits. Your saved spending approval is unchanged.":
-    "Connect your wallet to identify yourself and receive existing credits. If no approval exists, an operator invitation is needed for spending.";
+    identity?authorisations.some(a=>a.spending_active)?
+      "Your signed budget covers per-session collection here. Keep this page and wallet available; native wallet prompts may still need approval.":
+      "No current spending approval is recorded. Existing credits and history remain available; ask the operator for a fresh invitation.":
+    "Sign in starts automatic receipt checks and per-session collection under your signed budget. Review any new budget below. Wallet prompts may still appear.";
   const rows=authorisationRows({identity,connected:connectionState==="connected",paused:receiptSync.paused,
     approvals:authorisations,supported:pairing?.supportedMethods||
       ["createAction","signAction"].filter(method=>typeof wallet?.[method]==="function")});
@@ -389,6 +431,7 @@ async function refreshPrices(){
   finally{pricesBusy=false;paintPrices();}
 }
 function clearPrivate(){
+  collections.stop();
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
   authorisations=[];
@@ -425,7 +468,7 @@ function render(){
       `${payment.amount_sats} sat ${payment.direction==="operator_to_driver"?"to your wallet":"to the operator"}`:summary.payment;
     $("portal-current-energy").textContent=`Energy Imported to EV: ${formatKwh(account.importKwh)}. Energy Imported from EV: ${formatKwh(account.exportKwh)}.`;
     $("portal-current-note").textContent=provisional?provisional.note:current.transactions.length?
-      current.transactions.map(transactionStatus).join(". "):"No payment is recorded. Signing in does not collect this session.";
+      current.transactions.map(transactionStatus).join(". "):"No payment is recorded. Eligible completed accounts are collected under your signed budget.";
     $("portal-current-eyebrow").textContent=account.live?"Current session":"Latest session";
     $("charging-ocpp").textContent=account.live?(account.ocppStatus||"Unavailable"):"Session ended";
     $("charging-import").textContent=formatKwh(account.importKwh);$("charging-export").textContent=formatKwh(account.exportKwh);
@@ -478,7 +521,7 @@ function render(){
     else if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
     if(s.closure)addRow("Account",s.closure.state.replaceAll("_"," "));
     if(provisional)addRow("Payment","Not created. Session is still in progress.");
-    else if(!s.transactions.length)addRow("Payment","No recorded payment. Sign-in does not collect this session.");
+    else if(!s.transactions.length)addRow("Payment","No recorded payment. Eligible completed accounts are collected under your signed budget.");
     for(const t of provisional?[]:s.transactions){
       addRow(t.direction==="operator_to_driver"?"Credit to driver":"Payment to operator",
         Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded","portal-payment-heading");
@@ -511,11 +554,11 @@ async function run(fn){
   try{await fn();}catch(e){
     if(e.status===401){clearPrivate();message("Private access ended or the request could not be verified. Sign in again.");}
     else message(e.walletAccepted?e.message:"Action paused: "+e.message);
-  }finally{busy=false;controls();void syncCredits();}
+  }finally{busy=false;controls();void automaticSettlement();}
 }
 async function signIn(candidate){
   const before=generation;
-  message("Verify wallet identity. This signature is for sign-in only, not spending.");
+  message("Verify wallet identity for automatic settlement. Any new spending budget is signed separately in this same setup flow.");
   const proof=await signPortalLogin(candidate,await api("challenge"),location.origin);
   const result=await api("login",proof);
   if(before!==generation)throw Error("Sign-in was interrupted. Please try again.");
@@ -525,7 +568,7 @@ async function signIn(candidate){
   await connectReceivingWallet(candidate,()=>{
     if(before!==generation||!identity||Date.now()>=expires||document.hidden)throw Error("Sign-in changed. Reconnect your wallet.");
   });
-  message("Signed in. Confirmed credits will be received automatically. No new spending approved.");
+  message("Signed in. Existing receipts and authorised session payments can be processed here. No budget was increased.");
 }
 function monthlyActionEnabled(){
   return !busy&&!framed&&station.monthly_enabled&&
@@ -624,9 +667,9 @@ function paintMonthly(){
 }
 // One application action starts the existing cryptographic steps in sequence.
 // Reusable cookie access alone never renews a budget or starts a payment.
-$("unified-signin").onclick=()=>run(async()=>{
+async function completeSignIn(candidate){
   const checked=registrationTerms,scope=registrationData;
-  const {candidate}=setupWallet();
+  candidate??=setupWallet().candidate;
   if(!identity)await signIn(candidate);
   else await connectReceivingWallet(candidate,()=>{
     if(document.hidden||Date.now()>=expires)throw Error("Private access ended. Sign in again.");
@@ -642,10 +685,23 @@ $("unified-signin").onclick=()=>run(async()=>{
       approve:receipt=>driverApi("public_approve",{...scope,receipt}),driverApi,
       assertActive:()=>{if(before!==generation||identity!==expected||document.hidden||Date.now()>=expires)
         throw Error("Wallet context changed. Nothing further was authorised.");}});
-    message(result.receivingError||"Budget saved. Opening your charging page for per-session settlement.");
-    location.assign(result.url);
-  }else message("Signed in. Checking existing credits. No new budget was signed.");
-});
+    message(result.receivingError||"Budget saved. Automatic receipt checks and per-session collection are starting here.");
+    registrationTerms=null;registrationData=null;registrationUrl=null;
+    $("unified-budget").hidden=true;
+    if(result.receivingError){
+      $("portal-private").value=result.url; // User-only recovery; never auto-repeat the signed mandate.
+      throw Error("Budget saved, but receiving registration needs completion. Open the existing invitation in Wallet options; do not sign a new budget.");
+    }
+    setupHeld=false;
+    await load();
+  }
+  collections.start();
+  $("automatic-settlement-status").textContent=authorisations.some(a=>a.spending_active)?
+    "Automatic settlement started. Eligible closed sessions are collected within your signed budget; existing credit receipts are checked automatically. Keep this page and wallet available.":
+    "Signed in for receipts and history. No current spending approval is recorded; a new operator invitation is needed before automatic debit collection.";
+  message("Signed in for automatic per-session settlement. No second charging page or session selection is needed.");
+}
+$("unified-signin").onclick=()=>run(()=>completeSignIn());
 // Resolve only from the driver's explicit choice on the exact server terms.
 function askTerms(terms){
   selectTab("station",false);
@@ -722,7 +778,7 @@ $("portal-sync").onclick=()=>syncCredits(true);
 $("portal-pair").onclick=()=>run(async()=>{
   if(pairing)await pairing.disconnect();
   $("portal-pairing").hidden=false;
-  pairing=new BrowserPairing({api,origin:location.origin,receiptOnly:true,onState:(state,text)=>{
+  pairing=new BrowserPairing({api,origin:location.origin,receiptOnly:false,onState:(state,text)=>{
     $("portal-pair-status").textContent=text;
     $("portal-qr").replaceChildren();$("portal-uri").value="";
     if(state==="scanning"&&pairing.uri){
@@ -731,8 +787,8 @@ $("portal-pair").onclick=()=>run(async()=>{
       $("portal-qr").querySelector("svg").setAttribute("aria-label","Private portal wallet pairing code");
       $("portal-uri").value=pairing.uri;
     }
-    if(state==="paired")void run(()=>signIn(pairing.wallet));
-    if(state==="disconnected"){wallet=null;connection("unavailable");message("Pairing ended. Your history is still signed in. Reconnect your wallet to receive credits.");}
+    if(state==="paired")void run(()=>completeSignIn(pairing.wallet));
+    if(state==="disconnected"){wallet=null;collections.stop();connection("unavailable");message("Pairing ended. Settlement is paused until the wallet reconnects.");}
     controls();
   }});
   await pairing.start();
@@ -772,6 +828,7 @@ void syncCredits();
 setInterval(()=>{if(identity&&!busy&&!framed&&!document.hidden)void run(()=>load());},30000);
 // Do not leave an old provisional value looking live when history refresh fails.
 setInterval(()=>{if(identity&&!document.hidden)render();},15000);
+setInterval(()=>void automaticSettlement(),15000);
 if(framed)message("Open the driver portal directly in your browser to sign in.");
 void registration();
 setInterval(()=>void registration(),30000);

@@ -8,6 +8,7 @@ window.previewNavigate=()=>{window.location.href=new URL("./session/index.html?s
 window.portalPreviewCalls=[];
 window.portalPreviewWallet={imports:0,acks:0};
 let signedIn=params.has("restored");
+let publicApproved=false;
 if(params.has("restored")){
   // A history cookie is present; the injected wallet arrives only after the
   // explicit reconnect gesture. It must not be treated as already connected.
@@ -83,9 +84,9 @@ window.fetch=async(url,options)=>{
       prices:{valid:true,checked_at:new Date().toISOString(),...Object.fromEntries(["import","export"].map(k=>[k,{
         available:true,aud_per_kwh:k==="import"?"0.285":"-0.052",start:new Date(Date.now()-60000).toISOString(),
         end:new Date(Date.now()+300000).toISOString()}]))}});
-    if(d.action==="public_approve")return Response.json({state:"spending_authorised_wallet_permission_required",driver_identity:identity,
+    if(d.action==="public_approve"){publicApproved=true;return Response.json({state:"spending_authorised_wallet_permission_required",driver_identity:identity,
       automatic_credit_enabled:true,credit_destination_registered:false,
-      private_link_fragment:"#budget=11111111-2222-4333-8444-555555555555&token="+"p".repeat(43)});
+      private_link_fragment:"#budget=11111111-2222-4333-8444-555555555555&token="+"p".repeat(43)});}
     if(d.action==="register_credit_destination")return Response.json({state:"credit_destination_registered"});
     throw Error("Offline preview: unsupported driver action");
   }
@@ -123,10 +124,13 @@ window.fetch=async(url,options)=>{
     if(!signedIn)return response({error:"Sign in"},401);
     const all=params.has("empty")?[]:rows,offset=data.offset||0;
     return response({identity,sessions:all.slice(offset,offset+25),total:all.length,
-      authorisations:params.has("approved")?[{scope:"weekly",spending_active:true,limit_sats:1000,
+      authorisations:params.has("approved")||publicApproved?[{scope:"weekly",spending_active:true,limit_sats:1000,
         expires_at:new Date(Date.now()+6*86400000).toISOString(),receiving_registered:true}]:[],
-      expires_in:params.has("expire")?2:900});
+      expires_in:params.has("expire")?2:params.has("renew")?240:900});
   }
+  if(data.action==="debit_jobs"&&signedIn)return response({jobs:params.has("held")?
+    [{budget_id:terms.budget_id,session_id:rows[0].session_id}]:[],has_more:false});
+  if(data.action==="debit_status"&&signedIn)return response({collection:{state:"broadcast_unknown"}});
   if(data.action==="pairing_create")return response({error:"Offline preview: real QR pairing is disabled"},401);
   const scenario=params.get("monthly")||"off";
   if(data.action==="station")return response(scenario==="off"?{monthly_enabled:false,station_ids:[]}:
