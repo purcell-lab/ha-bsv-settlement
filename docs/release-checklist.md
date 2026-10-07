@@ -31,7 +31,7 @@ several roles, but validation and deployment sign-off are recorded separately.
 | Component | Version | Evidence |
 |---|---|---|
 | Home Assistant (declared minimum, `hacs.json`) | **2026.9.4** | Required CI: `Python and Home Assistant tests`, `Clean install smoke test (HA 2026.9.4)` |
-| Home Assistant (next release) | **2026.10.0b2** pre-release | CI: `Python and Home Assistant tests (HA 2026.10.0b2)`, `Clean install smoke test (HA 2026.10.0b2)` |
+| Home Assistant (next release) | **2026.10.0b3** pre-release | CI: `Python and Home Assistant tests (HA 2026.10.0b3)`, `Clean install smoke test (HA 2026.10.0b3)` |
 | Python | 3.14 | All CI jobs |
 | Node (build only) | 22 | Driver and operator bundle jobs |
 
@@ -54,6 +54,9 @@ protection uses that name.
       version), clean-install smoke tests, HACS validation, driver bundle and
       operator cards. Queued, cancelled or runner-infrastructure failures do
       not count as passing evidence ([testing](testing.md)).
+      Normal prototype changes use the focused gate plus changed-area tests.
+      Before a versioned release, manually run Validate with
+      `full_regression=true` on the exact intended commit.
 - [ ] **Storage review.** If the change alters a `Store` version or
       `test_store_versions_are_pinned_for_rollback_review`, update
       [Downgrade hazards](#downgrade-hazards) before release.
@@ -150,7 +153,7 @@ added later:
 |---|---|
 | `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 44 actions (43 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
 | `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by the earlier main layout load in full HA. Mainnet identity, proxy observations and an uncertain-broadcast reservation are kept. Legacy mock (v0.1.2) and testnet entries fail closed and can be deleted, with their stores left byte-identical. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
-| Python/HA CI matrix | The full regression suite on each supported HA version |
+| Python/HA CI matrix | Focused development gate plus changed-area tests; full regression on explicit manual runs, version tags and broad-change fallback |
 
 These are offline, fictional-data tests. They are **not**:
 

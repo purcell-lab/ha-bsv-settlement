@@ -1,64 +1,67 @@
-# Validation and test-suite ownership
+# Validation for rapid prototyping
 
-One full release gate, smaller feedback loops, no live money in automated tests.
-Use Python 3.14 and Node 22, as pinned in CI. CI runs the Python suite on each
-supported Home Assistant version: 2026.9.4 (the declared minimum) and
-2026.10.0b2 (the next release). See the
-[release checklist](release-checklist.md#supported-versions). Install
-`requirements-dev.txt`, one of those HA packages and `pytest-asyncio`. Run
-`npm ci` in both `frontend` and `frontend/driver`.
+Routine changes use a focused weekly-settlement gate, not the entire Python
+archive. The full regression suite remains intact for releases, manual checks
+and broad changes. Automated tests never use live funds.
 
-## Commands
+Use Python 3.14 and Node 22. Install `requirements-dev.txt`, `pytest-asyncio` and
+one supported Home Assistant version. CI checks 2026.9.4 and 2026.10.0b3, with
+separate clean-install jobs using only HA and the manifest requirements. Run
+`npm ci` in `frontend` and `frontend/driver`.
 
-From the repository root, using the prepared Python environment:
+## Everyday commands
 
-| Command | Purpose | Release evidence |
-|---|---|---|
-| `python scripts/validate.py quick` | Distribution, arithmetic and tariff feedback | No |
-| `python scripts/validate.py python` | Every Python regression, HA runtime and compile check | Python portion |
-| `python scripts/validate.py driver` | Every driver test and reproducible shipped bundle | Driver portion |
-| `python scripts/validate.py operator` | Every operator test and reproducible cards | Operator portion |
-| `python scripts/validate.py all` | Union of the three release portions | Local full gate |
-| `python scripts/validate.py all --list` | Review the exact commands without executing | No |
+| Command | Scope |
+|---|---|
+| `python scripts/validate.py` | Default prototype gate and Python compilation |
+| `python scripts/validate.py prototype --changed-from origin/main` | Core gate plus changed test files and matching backend tests |
+| `python scripts/validate.py quick` | Small distribution, weekly-budget and tariff feedback loop |
+| `python scripts/validate.py driver` | All driver JavaScript tests and reproducible bundle |
+| `python scripts/validate.py operator` | All operator JavaScript tests and reproducible cards |
+| `python scripts/validate.py python` | Every Python regression, explicitly requested |
+| `python scripts/validate.py all` | Full Python and both JavaScript suites |
+| `python scripts/validate.py --list` | Show the selected commands without running them |
 
-`python scripts/clean_install_smoke.py` installs only the HACS payload into an
-empty temporary configuration. An isolated interpreter then sets it up through
-the config flows (sensor proxy, OCPP import shadow, mainnet refusal without every
-acknowledgement, and no mock/testnet choice), checks entities, actions and
-frontend paths, and unloads it,
-with no network. The Python suite runs it too (`tests/test_clean_install.py`).
-CI also runs it in a separate job with only HA and the manifest requirements
-installed. `tests/test_upgrade_rollback.py` loads fixture stores written by
-earlier releases.
+The prototype core retains full test modules for weekly budgets, current-session
+inclusion, wallet identity, registration, debit collection, automatic credits,
+receipt acceptance, dynamic fees, metering, tariffs, persistence and rollback.
+Interruption tests check both payment directions. Exhaustive monthly, OCPP
+shadow, retention and historical matrices remain in the full suite rather than
+running on every unrelated interface edit.
 
-The GitHub gate also includes HACS validation. Queued, cancelled or runner
-infrastructure failures are not passing evidence. Do not bypass this gate.
+The changed-area selector is deliberately conservative. It adds a changed Python
+test or the matching `test_<module>.py` for a changed backend. An unmapped backend,
+deleted path, fixture change, shared runtime/storage boundary or standalone
+wallet-service change triggers the full Python suite. An invalid Git base fails
+the command rather than quietly selecting fewer tests. This is not a complete
+dependency graph: reviewers must request full regression for cross-module
+behaviour or a change outside the focused gate's assurance.
 
-Build checks compare tracked files to the committed source tree. Rebuild and
-review changed artifacts before committing a feature, then rerun validation.
+## GitHub gate
 
-## Rationalisation decisions
+- **Normal PR and main push:** prototype core plus changed-area tests on both
+  supported HA versions; all driver/operator tests and reproducible builds;
+  clean-install smoke tests and HACS validation.
+- **Manual full regression:** run the Validate workflow with
+  `full_regression=true`. It runs the complete Python directory on both versions.
+- **Version tag (`v*`):** full Python regression automatically. This does not
+  create or authorise a tag or a release.
+- **Before a versioned release:** explicitly run full regression on the intended
+  commit before tagging. A prototype-green PR is not full-release evidence.
 
-- Discover all top-level `*.test.js` files in each JavaScript package. New tests
-  can no longer be silently omitted from manually maintained npm script lists.
-- Keep backend, driver and operator as separate owners of distinct contracts.
-  Contract overlap is intentional where both trust boundaries must enforce it.
-- Keep restart/checkpoint, duplicate collection, uncertain broadcast, allowance,
-  fee, receipt acceptance and wrong-driver regressions. No safety tests removed.
-- Keep the full Python directory in release CI. Focused tests aid development,
-  but cannot replace the release run.
-- Fail early when the full Python environment lacks HA or pytest-asyncio,
-  rather than accepting import-skipped HA coverage.
-- Report the slowest 15 Python tests before optimising fixtures or adding
-  parallel execution. Shared HA cleanup and imported fixtures need isolation
-  evidence first; do not blindly enable xdist.
-- Cancel obsolete runs for the same PR, never unrelated PRs. Pin Ubuntu 24.04
-  and Node 22 rather than depend on moving runner labels.
+No tests have been deleted, skipped through import failures or randomly sampled.
+Both prototype and full validation require HA and pytest-asyncio to be installed.
+No xdist/shared-state parallelism was introduced. CI cancels only superseded
+runs of the same PR or ref.
+
+The smaller gate trades exhaustive regression coverage for shorter feedback
+cycles. A prototype deployment still needs an exact commit, green applicable
+checks, protected backup, explicit deployment authority and post-restart checks.
+See the [release checklist](release-checklist.md).
 
 ## Evidence boundaries
 
-Automated tests use fictional wallets and in-process HA instances. They are
-not native BSV Browser acceptance, chain verification, physical ownership
-evidence or authorisation to move funds. Native acceptance remains a separately
-recorded gate in `monthly-release.md`. The primary-device checklist and current
-interface blocker are in [BSV Browser acceptance](bsv-browser-acceptance.md).
+Offline tests and clean installs cannot prove native wallet acceptance, chain
+confirmation, wallet receipt acceptance, production recovery or permission to
+move funds. Keep those checks separate. Never resend a confirmed or uncertain
+payment merely to test an interface.
