@@ -114,6 +114,13 @@ class SettlementCoordinator(DataUpdateCoordinator):
                         return result
                     self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
                     return result
+                if action == "configure_early_credit_delivery":
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    from .early_credit import configure
+                    result = await configure(self.api, data["enabled"], approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
                 if action == "configure_automatic_credit":
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")

@@ -80,6 +80,57 @@ export function creditTransaction(receipt, expectedAddress) {
   return tx;
 }
 
+export const earlyCreditStage="unconfirmed_ancestor_proven_v1";
+
+export async function earlyCreditTransaction(receipt,expectedAddress){
+  if(receipt.delivery_stage!==earlyCreditStage||receipt.state!=="provider_unconfirmed"||
+    !Array.isArray(receipt.ancestry)||receipt.ancestry.length!==1||
+    typeof receipt.raw_tx!=="string"||receipt.raw_tx.length>200000)
+    throw Error("Unsupported early credit envelope.");
+  const source=receipt.ancestry[0],p=source.proof,b=source.block;
+  if(typeof source.raw_tx!=="string"||source.raw_tx.length>200000)
+    throw Error("Unsupported credit funding transaction.");
+  const tx=Transaction.fromHex(receipt.raw_tx),parent=Transaction.fromHex(source.raw_tx);
+  const input=tx.inputs[0],index=input?.sourceOutputIndex;
+  if(tx.id("hex")!==receipt.txid||parent.id("hex")!==source.txid||tx.inputs.length!==1||
+    tx.lockTime!==0||!input?.unlockingScript||input.sourceTXID!==source.txid||
+    !Number.isSafeInteger(index)||index<0||!parent.outputs[index]||
+    receipt.recipient_address!==expectedAddress||
+    !Number.isSafeInteger(receipt.amount_sats)||receipt.amount_sats<1||
+    !Number.isSafeInteger(receipt.fee_sats)||receipt.fee_sats<1||
+    receipt.amount_sats+receipt.fee_sats>1000||
+    tx.outputs.length<1||tx.outputs.length>2||
+    tx.outputs.some(o=>!Number.isSafeInteger(o.satoshis)||o.satoshis<0)||
+    tx.outputs[0].satoshis!==receipt.amount_sats||
+    tx.outputs[0].lockingScript.toHex()!==new P2PKH().lock(expectedAddress).toHex()||
+    parent.outputs[index].lockingScript.toHex()!==new P2PKH().lock(
+      PublicKey.fromString(receipt.sender_identity).toAddress()).toHex()||
+    parent.outputs[index].satoshis-tx.outputs.reduce((sum,o)=>sum+o.satoshis,0)!==receipt.fee_sats)
+    throw Error("Early credit funding, signature or recipient mismatch.");
+  if(!p||!b||p.txOrId!==source.txid||p.target!==b.hash||
+    !/^[0-9a-f]{64}$/.test(b.hash)||!/^[0-9a-f]{64}$/.test(b.merkleroot)||
+    !Number.isSafeInteger(p.index)||p.index<0||!Number.isSafeInteger(b.height)||b.height<1||
+    !Array.isArray(p.nodes)||p.nodes.length>40||p.index>=2**p.nodes.length)
+    throw Error("Invalid confirmed funding proof.");
+  const path=[[{offset:p.index,hash:source.txid,txid:true}]];
+  let offset=p.index;
+  for(let level=0;level<p.nodes.length;level++){
+    const node=p.nodes[level];
+    if(node!=="*"&&!/^[0-9a-f]{64}$/.test(node))throw Error("Invalid funding proof node.");
+    if(!path[level])path[level]=[];
+    const sibling=offset%2===0?offset+1:offset-1;
+    path[level].push(node==="*"?{offset:sibling,duplicate:true}:{offset:sibling,hash:node});
+    path[level].sort((a,b)=>a.offset-b.offset);offset=Math.floor(offset/2);
+  }
+  const merkle=new MerklePath(b.height,path);
+  if(merkle.computeRoot(source.txid)!==b.merkleroot)throw Error("Funding Merkle root mismatch.");
+  parent.merklePath=merkle;input.sourceTransaction=parent;
+  // Validate spending scripts locally; native wallet must validate headers and
+  // apply its own unconfirmed-payment policy. Never fabricate a child proof.
+  if(!await tx.verify("scripts only"))throw Error("Invalid early credit spending scripts.");
+  return tx;
+}
+
 export async function importCredit(wallet, checked, receipt) {
   const t=checked.terms,r=t.credit_receiving;
   if(canonical(receipt.remittance)!==canonical(r) || receipt.sender_identity!==t.operator_identity ||
@@ -89,7 +140,11 @@ export async function importCredit(wallet, checked, receipt) {
     protocolID:r.protocolID,keyID:`${r.derivationPrefix} ${r.derivationSuffix}`,
     counterparty:t.operator_identity,forSelf:true,
   });
-  const tx=creditTransaction(receipt,PublicKey.fromString(publicKey).toAddress());
+  if(receipt.delivery_stage!==undefined&&receipt.delivery_stage!==earlyCreditStage)
+    throw Error("Unsupported credit receipt stage.");
+  const tx=receipt.delivery_stage===earlyCreditStage?
+    await earlyCreditTransaction(receipt,PublicKey.fromString(publicKey).toAddress()):
+    creditTransaction(receipt,PublicKey.fromString(publicKey).toAddress());
   const result=await wallet.internalizeAction({
     tx:tx.toAtomicBEEF(),
     outputs:[{outputIndex:0,protocol:"wallet payment",paymentRemittance:{
@@ -116,7 +171,7 @@ export async function importAndReportCredit(wallet, checked, receipt, identity, 
   let entry=cache.get(key);
   if(!entry) {
     await importCredit(wallet,checked,receipt);
-    entry={accepted:true};cache.set(key,entry);
+    entry={accepted:true,deliveryStage:receipt.delivery_stage};cache.set(key,entry);
   }
   try {
     if(!entry.acknowledgement) {
@@ -127,16 +182,20 @@ export async function importAndReportCredit(wallet, checked, receipt, identity, 
         output_index:0,amount_sats:receipt.amount_sats,recipient_address:receipt.recipient_address,
         driver_identity:identity,operator_identity:checked.terms.operator_identity,
         invitation_hash:await hash(checked.invitation.payload),accepted:true,
+        ...(entry.deliveryStage===earlyCreditStage?{version:2,delivery_stage:earlyCreditStage}:{}),
       });
       const {signature}=await wallet.createSignature({
         protocolID:receiptProtocol,keyID:checked.terms.budget_id,counterparty:"anyone",
         data:bytes(payload),
-        description:"Report receipt acceptance for this existing EV credit. No payment or spending permission.",
+        description:entry.deliveryStage===earlyCreditStage?
+          "Report receipt of this unconfirmed EV credit. Not block confirmation or spending permission.":
+          "Report receipt acceptance for this existing EV credit. No payment or spending permission.",
       });
       entry.acknowledgement={payload,signature:hex(signature)};
     }
     const result=await api("acknowledge_credit_receipt",{
       ...(receipt.credit_id?{credit_id:receipt.credit_id}:{}),
+      ...(entry.deliveryStage===earlyCreditStage?{delivery_stage:earlyCreditStage}:{}),
       acknowledgement:entry.acknowledgement,
     });
     if(result.txid!==receipt.txid || !receiptReported(result))

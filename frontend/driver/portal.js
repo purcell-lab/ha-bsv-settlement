@@ -62,11 +62,11 @@ document.querySelector("main").innerHTML=`
 <p class="small">Payments already signed or submitted, and credits owed to you, are unchanged. Your wallet's own permission is revoked separately in the wallet.</p>
 <div class="actions"><button id="monthly-cancel-yes">Cancel monthly charging</button><button id="monthly-cancel-no" class="secondary">Keep it</button></div></div>
 </div>
-<div class="portal-wallet-actions"><button id="portal-refresh" class="secondary" aria-label="Refresh session history">Refresh</button><button id="portal-sync" aria-label="Retry receiving all confirmed credits">Retry receiving credits</button><button id="portal-logout" class="secondary">Sign out</button></div>
+<div class="portal-wallet-actions"><button id="portal-refresh" class="secondary" aria-label="Refresh session history">Refresh</button><button id="portal-sync" aria-label="Retry receiving eligible credits">Retry receiving credits</button><button id="portal-logout" class="secondary">Sign out</button></div>
 <details id="portal-wallet-details"><summary>Wallet details <span id="portal-expiry"></span></summary>
 <p class="small">Full wallet identity</p><p id="portal-identity" class="mono"></p>
 <p class="small">Sign-in starts settlement under your separately signed budget. It cannot increase the limit. Signing out or restarting the operator service ends private access and stops new portal collection attempts.</p>
-<p class="small">Confirmed credit receipts are imported automatically while your wallet is available, including older sessions not shown here. Receipt import never sends a duplicate payment. Debit collection separately processes eligible completed sessions under your signed approval; wallet permission prompts can still appear.</p></details>
+<p class="small">Eligible credit receipts are imported automatically while your wallet is available, including older sessions not shown here. Early receipts, when enabled, remain unconfirmed until the provider observes a block confirmation. Receipt import never creates a replacement payment. Debit collection separately processes eligible completed sessions under your signed approval; wallet permission prompts can still appear.</p></details>
 </section>
 </aside>
 <p id="portal-status" class="driver-feedback" role="status" aria-live="polite"></p>
@@ -278,8 +278,13 @@ const receiptSync=new ReceiptSync({
   },
   importReceipt:async(candidate,{row,session},driver)=>{
     assertSyncActive();
-    const response=await api("credit_receipt",{credit_id:row.id});
+    const response=await api("credit_receipt",{credit_id:row.id,
+      ...(row.early_receipt_available===true?{allow_unconfirmed:true}:{})});
     assertSyncActive();
+    if(response.deferred_until_confirmation===true){
+      message("Early credit receipt unavailable. Waiting for block confirmation; no new payment will be sent.");
+      return; // This early-stage job is deferred once; confirmed delivery has a separate key.
+    }
     if(response.receipt.txid!==row.txid||response.receipt.session_id!==session.session_id)
       throw Error("Receipt does not match this session.");
     const checked=parseInvitation(JSON.stringify(response.invitation),Date.now(),true);
@@ -291,8 +296,8 @@ const receiptSync=new ReceiptSync({
   },
   onState:(state,error)=>{
     if(generation!==syncGeneration||!identity)return;
-    if(state==="syncing")message("Receiving confirmed credits into your wallet… Approve any wallet permission prompts.");
-    if(state==="synced")message("Confirmed credits received and wallet acceptance recorded. No new payment was sent.");
+    if(state==="syncing")message("Checking credit receipts with your wallet… Approve any wallet permission prompts.");
+    if(state==="synced")message("Credit receipt checks complete. Wallet acceptance and block confirmation are tracked separately. No new payment was sent.");
     if(state==="paused"){
       if(error?.status===401){clearPrivate();message("Private access ended. Sign in again to receive credits.");}
       else message(error?.walletAccepted?error.message:
@@ -931,7 +936,7 @@ $("portal-reconnect").onclick=()=>{
         throw Error("Private access changed. Sign in again before reconnecting.");
     });
     receiptSync.paused=false;
-    message("Wallet connected. Checking confirmed credits automatically. No new spending approved.");
+    message("Wallet connected. Checking eligible credit receipts automatically. No new spending approved.");
   });
 };
 $("portal-login").onclick=()=>run(()=>signIn(new WalletClient(window.CWI?"window.CWI":"auto")));

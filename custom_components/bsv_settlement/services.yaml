@@ -152,6 +152,17 @@ broadcast_operator_credit_recovery:
       required: true
       selector:
         boolean:
+configure_early_credit_delivery:
+  name: Configure experimental early credit delivery
+  description: Administrator-only opt-in for delivering newly submitted credits with confirmed funding ancestry before the credit is mined. Does not enable payments or change confirmation policy. Disabled by default; native wallet compatibility must be tested.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    enabled:
+      required: true
+      selector: {boolean: {}}
+
 configure_automatic_credit:
   name: Set automatic operator credit policy
   description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fresh provider-quoted, size-based fee. Missing or stale fee evidence blocks signing. Disable stops new signatures, not transactions already submitted.

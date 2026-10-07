@@ -37,6 +37,9 @@ export function averageRate(amount,kwh){
   return Number.isFinite(result)?result:null;
 }
 export function transactionStatus(t){
+  if(t.state==="provider_unconfirmed"&&t.direction==="operator_to_driver"&&
+    t.wallet_receipt_status==="wallet_reported_accepted")
+    return "Wallet received credit · awaiting block confirmation";
   if(t.state==="provider_confirmed")return t.direction==="operator_to_driver"?
     t.wallet_receipt_status==="wallet_reported_accepted"?"Confirmed · wallet acceptance recorded":"Confirmed · receipt sync needed":
     "Payment confirmed";
@@ -82,7 +85,8 @@ export function sessionSummary(s,now=Date.now()){
       t.direction==="operator_to_driver"?
         (t.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(t.wallet_imported_at))?"Received":"Receipt due"):
         "Confirmed":
-      ({provider_unconfirmed:"Confirming",submitted:"Submitted",broadcast_unknown:"Review",
+      ({provider_unconfirmed:t.direction==="operator_to_driver"&&t.wallet_receipt_status==="wallet_reported_accepted"?
+          "Received · unconfirmed":"Confirming",submitted:"Submitted",broadcast_unknown:"Review",
         awaiting_driver_payment:"Awaiting payment",ready:"Wallet approval",submission_authorised:"Signing",
         wallet_attempt_reserved:"Held",waived:"Waived",waiting_for_session_end:"Active",
         no_operator_credit:"No credit"})[t.state]||"Review";

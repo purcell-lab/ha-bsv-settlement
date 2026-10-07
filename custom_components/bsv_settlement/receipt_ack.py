@@ -31,8 +31,11 @@ def payment_for(api, row, credit_id=None):
     return item
 
 
-def acceptance_payload(api, row, item):
-    return canonical({
+def acceptance_payload(api, row, item, delivery_stage=None):
+    from .early_credit import MODE
+    if delivery_stage not in (None, MODE):
+        raise WalletError("Unsupported receipt delivery stage")
+    fields = {
         "action": "report_credit_receipt_accepted", "version": 1,
         "network": "BSV mainnet", "budget_id": row["terms"]["budget_id"],
         "credit_id": item["budget_id"], "session_id": item["session_id"],
@@ -43,7 +46,10 @@ def acceptance_payload(api, row, item):
         "operator_identity": api.identity["public_key"],
         "invitation_hash": sha(row["invitation"]["payload"]),
         "accepted": True,
-    })
+    }
+    if delivery_stage == MODE:
+        fields.update(version=2, delivery_stage=MODE)
+    return canonical(fields)
 
 
 async def acknowledge(api, row, data):
@@ -53,7 +59,9 @@ async def acknowledge(api, row, data):
     No provider call, broadcast, policy change or payment-state change occurs.
     """
     item = payment_for(api, row, data.get("credit_id"))
-    expected = acceptance_payload(api, row, item)
+    from .early_credit import MODE
+    stage = data.get("delivery_stage")
+    expected = acceptance_payload(api, row, item, stage)
     proof = data.get("acknowledgement")
     try:
         if (not isinstance(proof, dict) or proof.get("payload") != expected
@@ -70,9 +78,14 @@ async def acknowledge(api, row, data):
         if item["wallet_receipt_ack"]["payload"] != expected:
             raise WalletError("Stored receipt acknowledgement conflicts with this payment")
         return api.auto_credits.public(item)
-    # The client only obtains a receipt after provider confirmation. Preserve
-    # that prerequisite, without treating a historical report as chain finality.
-    if item["state"] != "provider_confirmed":
+    # Normal receipts require confirmation. Early reports require an explicitly
+    # offered, stage-bound envelope; neither report establishes chain finality.
+    early_offered = (stage == MODE and
+                     (item.get("early_receipt_offer") or {}).get("txid") == item["txid"])
+    if stage == MODE and not early_offered:
+        raise WalletError("No matching early receipt was offered")
+    if item["state"] != "provider_confirmed" and not (
+            early_offered and item["state"] == "provider_unconfirmed"):
         raise WalletError("Credit receipt acknowledgement awaits provider confirmation")
     before = copy.deepcopy(item)
     item["wallet_receipt_ack"] = {

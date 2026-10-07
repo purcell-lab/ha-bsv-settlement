@@ -11,10 +11,11 @@ export async function pendingCreditJobs(fetchPage,identity,assertActive=()=>{}){
       !Number.isSafeInteger(page.total)||page.total<0||page.total>100000||
       page.sessions.length>25)throw Error("Private credit history could not be verified.");
     for(const session of page.sessions)for(const row of session.transactions||[]){
-      if(row.direction!=="operator_to_driver"||row.state!=="provider_confirmed"||receiptReported(row))continue;
+      const early=row.early_receipt_available===true&&["submitted","provider_unconfirmed"].includes(row.state);
+      if(row.direction!=="operator_to_driver"||(!early&&row.state!=="provider_confirmed")||receiptReported(row))continue;
       if(typeof row.id!=="string"||!/^[0-9a-f]{64}$/.test(row.txid||""))
         throw Error("A confirmed credit is missing its payment reference. Contact the operator.");
-      const key=`${row.id}:${row.txid}`;
+      const key=`${row.id}:${row.txid}${early?":unconfirmed":""}`;
       if(!seen.has(key)){seen.add(key);jobs.push({key,row,session});}
     }
     offset+=page.sessions.length;

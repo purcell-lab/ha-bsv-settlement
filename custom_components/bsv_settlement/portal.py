@@ -199,7 +199,7 @@ def history(api, identity):
         fields = ("state", "txid", "amount_sats", "fee_sats", "confirmations", "created_at", "checked_at",
                   "recipient_address", "wallet_receipt_status", "wallet_imported_at",
                   "broadcast_attempted_at", "broadcast_acknowledged_at",
-                  "provider_first_confirmed_at", "wallet_accepted_reported_at")
+                  "provider_first_confirmed_at", "wallet_accepted_reported_at", "early_receipt_available")
         entry = {k: copy.deepcopy(item.get(k)) for k in fields}
         entry.update(id=tid, direction=direction, receiving_budget_id=budget_id if direction == "operator_to_driver" else None)
         if not any(p["id"] == tid for p in target["transactions"]):
@@ -495,7 +495,14 @@ class DriverPortalView(HomeAssistantView):
                     else:
                         row, payment, route = credit_owner(api, item["identity"], data.get("credit_id"))
                         if action == "credit_receipt":
-                            if route and route.get("adjustment"):
+                            if data.get("allow_unconfirmed") is True:
+                                try:
+                                    receipt = await api.auto_credits.receipt_for_item(row, payment, allow_early=True)
+                                except WalletError:
+                                    return web.json_response({"deferred_until_confirmation": True}, headers=HEADERS)
+                                receipt = receipt | {"budget_id": row["terms"]["budget_id"],
+                                                     "credit_id": data["credit_id"]}
+                            elif route and route.get("adjustment"):
                                 receipt = await api.auto_credits.receipt_for_item(row, payment)
                                 # The payment ID is not its receiving approval.
                                 # Match the ongoing-credit envelope: retain both
@@ -512,7 +519,8 @@ class DriverPortalView(HomeAssistantView):
                             from .receipt_ack import acknowledge
                             result = await acknowledge(api, row, {
                                 **({"credit_id": data["credit_id"]} if route else {}),
-                                "acknowledgement": data.get("acknowledgement")})
+                                "acknowledgement": data.get("acknowledgement"),
+                                "delivery_stage": data.get("delivery_stage")})
             response = web.json_response(result, headers=HEADERS)
             if cookie:
                 response.set_cookie(COOKIE, cookie, secure=True, httponly=True, samesite="Strict", path="/",

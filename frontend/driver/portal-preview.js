@@ -69,6 +69,11 @@ if(params.has("active")){
     meter_updated_at:new Date(Date.now()-(params.has("stalemeter")?3600000:0)).toISOString(),satoshis_per_aud:"100",
     transactions:[{id:"fixture-active",state:"waiting_for_session_end",direction:"operator_to_driver",amount_sats:null}]});
 }
+if(params.has("early")){
+  Object.assign(rows[0].transactions[0],{state:"provider_unconfirmed",confirmations:0,
+    wallet_receipt_status:"wallet_reported_accepted",wallet_imported_at:"2026-10-07T09:01:00Z",
+    wallet_accepted_reported_at:"2026-10-07T09:01:00Z",provider_first_confirmed_at:null});
+}
 const operator=new PrivateKey(101),terms={
   version:2,budget_id:"11111111-2222-4333-8444-555555555555",
   session_id:rows[0].session_id,transaction_id:rows[0].transaction_id,session_mode:"existing_session",
