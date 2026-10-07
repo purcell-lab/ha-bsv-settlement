@@ -12,6 +12,7 @@ from .provenance_archive import archive, freeze
 from .mainnet import build_transaction, MIN_CHANGE_SATS, TXID
 from .fees import quote, validate, MODE
 from . import payment_timing
+from . import early_credit
 
 MAX_TOTAL = 1000
 PROTOCOL = [2, "3241645161d8"]
@@ -38,6 +39,8 @@ class AutomaticCredits:
             raise WalletError("An administrator must set the automatic-credit policy")
         if enabled and not self.policy.get("enabled"):
             self.api.saved["automatic_credit_policy"] = {
+                **({"early_delivery": copy.deepcopy(self.policy["early_delivery"])}
+                   if "early_delivery" in self.policy else {}),
                 "enabled": True, "enabled_at": now().isoformat(), "authorised_by": user_id,
                 "max_total_sats": MAX_TOTAL, "fee_mode": MODE,
             }
@@ -59,13 +62,15 @@ class AutomaticCredits:
             (item.get("account") or {}).get("quality_flags", [])),
             "wallet_receipt_status": "wallet_reported_accepted" if acknowledgement else "not_recorded",
             "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None,
-            **payment_timing.public(item)}
+            **payment_timing.public(item),
+            "early_receipt_available": early_credit.eligible(self.api, item)}
 
     def summary(self):
         from .summary_window import credit_unresolved, window
         shown, counts = window(self.api.saved["automatic_credits"].values(), credit_unresolved)
         return {
             "enabled": self.policy.get("enabled", False),
+            "early_receipt_delivery_enabled": early_credit.enabled(self.api),
             "max_total_sats": MAX_TOTAL, "fee_sats": None, "fee_mode": MODE,
             "enabled_at": self.policy.get("enabled_at"),
             "payments": [self.public(i) for i in shown],
@@ -351,12 +356,16 @@ class AutomaticCredits:
         item = self.get(row)
         return await self.receipt_for_item(row, item)
 
-    async def receipt_for_item(self, row, item):
+    async def receipt_for_item(self, row, item, *, allow_early=False):
         if item and item.get("txid"):
             await self.reconcile(item, force=True)
-        if not item or item["state"] != "provider_confirmed":
+        if allow_early and item and item["state"] != "provider_confirmed":
+            receipt_data = await early_credit.envelope(self.api, item)
+        elif not item or item["state"] != "provider_confirmed":
             raise WalletError("Credit receipt awaits provider confirmation")
-        if not item.get("receipt"):
+        else:
+            receipt_data = None
+        if receipt_data is None and not item.get("receipt"):
             proof = await self.api.chain.request("GET", f"/tx/{item['txid']}/proof/tsc")
             if (not isinstance(proof, list) or len(proof) != 1 or
                     proof[0].get("txOrId") != item["txid"] or
@@ -383,7 +392,7 @@ class AutomaticCredits:
                  account.get("ocpp_transaction_id") != item["transaction_id"] or
                  account.get("net_amount_aud") != item["net_amount_aud"])):
             account = None
-        return self.public(item) | copy.deepcopy(item["receipt"]) | {
+        return self.public(item) | copy.deepcopy(receipt_data or item["receipt"]) | {
             "remittance": row["terms"]["credit_receiving"],
             "sender_identity": self.api.identity["public_key"],
             "energy_account": ({k: copy.deepcopy(account[k]) for k in (

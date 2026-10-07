@@ -83,6 +83,7 @@ async def async_setup(hass, config):
             vol.Required("confirm_old_driver_pages_closed"): vol.In([True]),
         },
         "configure_automatic_credit": {**common, vol.Required("enabled"): bool},
+        "configure_early_credit_delivery": {**common, vol.Required("enabled"): bool},
         "configure_ongoing_credit": {**common, vol.Required("enabled"): bool,
             vol.Optional("proxy_config_entry_id"): str, vol.Optional("conversion_rate_entity"): str,
             vol.Optional("initial_session_id"): str, vol.Optional("expected_budget_id"): str,
@@ -219,7 +220,7 @@ async def async_setup(hass, config):
 
     async def handle(call):
         if call.service in ("get_credit_receipt_link", "prepare_operator_payment", "broadcast_operator_payment",
-                            "configure_automatic_credit", "configure_ongoing_credit",
+                            "configure_automatic_credit", "configure_ongoing_credit", "configure_early_credit_delivery",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
                             # #113: these persist to (or expose) the mainnet ledger and coordinator store.
                             "wallet_status", "wallet_self_test", "bind_session", "add_interval",
