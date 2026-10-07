@@ -116,7 +116,7 @@ class SessionReviews:
         # Private HA/user identifiers and raw signing material are never returned.
         for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash",
                     "driver_payment_raw", "one_click_authorised_by", "tariff_provenance",
-                    "tariff_provenance_ref", "wallet_collection"):
+                    "tariff_provenance_ref", "wallet_collection", "adjustment_renewals"):
             result.pop(key, None)
         if review.get("account_kind") != "manual_energy_adjustment":
             result["tariff_provenance"] = self.provenance(review)
@@ -445,6 +445,12 @@ class SessionReviews:
     async def execute(self, action, data, user_id):
         if not user_id:
             raise WalletError("An explicit administrator context is required")
+        if action in ("prepare_adjustment_renewal", "renew_expired_adjustment"):
+            from .adjustment_renewal import execute
+            return await execute(self, action, data, user_id)
+        if action in ("prepare_settlement_recovery", "execute_settlement_recovery"):
+            from .settlement_recovery import execute
+            return await execute(self.api, action, data, user_id)
         handlers = {
             "pay_energy_adjustment": lambda: self.pay_adjustment(data, user_id),
             "prepare_energy_adjustment": lambda: self.prepare_adjustment(data, user_id),

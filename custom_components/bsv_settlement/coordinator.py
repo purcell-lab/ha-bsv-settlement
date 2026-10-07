@@ -140,6 +140,9 @@ class SettlementCoordinator(DataUpdateCoordinator):
                 if action in SESSION_REVIEW_SERVICES:
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the separate mainnet operator wallet for session review")
+                    if action in ("prepare_adjustment_renewal", "prepare_settlement_recovery"):
+                        # Read-only preparation must not refresh/tick the wallet.
+                        return await self.api.reviews.execute(action, data, approving_user_id)
                     try:
                         result = await self.api.reviews.execute(action, data, approving_user_id)
                     finally:
