@@ -53,6 +53,15 @@ if(params.has("adjustments")){
         txid:i===0?"a".repeat(64):null,wallet_receipt_status:"not_recorded"}]});
   }
 }
+if(params.has("timing")){
+  Object.assign(rows[0].transactions[0],{
+    state:"provider_confirmed",wallet_receipt_status:"wallet_reported_accepted",
+    broadcast_attempted_at:"2026-10-07T08:57:52.171Z",
+    broadcast_acknowledged_at:"2026-10-07T08:57:53.400Z",
+    provider_first_confirmed_at:"2026-10-07T09:08:10.000Z",
+    wallet_accepted_reported_at:"2026-10-07T09:08:15.300Z",
+  });
+}
 if(params.has("active")){
   Object.assign(rows[0],{ended_at:null,running_state:"Charging",import_kwh:0,export_kwh:.530,
     ocpp:{available:true,status:"Charging",checked_at:new Date().toISOString()},

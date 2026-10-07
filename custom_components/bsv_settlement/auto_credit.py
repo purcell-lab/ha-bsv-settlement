@@ -11,6 +11,7 @@ from .session_review import account_snapshot, decimal, digest, now
 from .provenance_archive import archive, freeze
 from .mainnet import build_transaction, MIN_CHANGE_SATS, TXID
 from .fees import quote, validate, MODE
+from . import payment_timing
 
 MAX_TOTAL = 1000
 PROTOCOL = [2, "3241645161d8"]
@@ -57,7 +58,8 @@ class AutomaticCredits:
         ) if k in item} | {"quality_flags": copy.deepcopy(
             (item.get("account") or {}).get("quality_flags", [])),
             "wallet_receipt_status": "wallet_reported_accepted" if acknowledgement else "not_recorded",
-            "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None}
+            "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None,
+            **payment_timing.public(item)}
 
     def summary(self):
         from .summary_window import credit_unresolved, window
@@ -245,12 +247,14 @@ class AutomaticCredits:
         item["fee_quote"] = fresh
         item.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                     source_txid=source["tx_hash"], source_index=source["tx_pos"], error=None)
+        payment_timing.stamp(item, "broadcast_attempted_at")
         self.api.invalidate_balance("refresh_required_after_submission")
         await self.save()  # Signed bytes and input reservation MUST precede network submission.
         try:
             if await self.api.chain.broadcast(signed["raw"]) != signed["txid"]:
                 raise WalletError("Unexpected broadcast response")
             item["state"] = "submitted"
+            payment_timing.stamp(item, "broadcast_acknowledged_at")
         except WalletError:
             item["error"] = "Submission outcome uncertain. Reconcile this txid; never replace it."
         await self.save()
@@ -306,6 +310,7 @@ class AutomaticCredits:
             raise WalletError(item["error"]) from None
         # A proof cached for a previous block must never survive reassessment.
         item.pop("receipt", None)
+        payment_timing.confirmed(item, confirmations)
         item.update(state="provider_confirmed" if confirmations else "provider_unconfirmed",
                     confirmations=confirmations, checked_at=now().isoformat(), error=None)
         if item["state"] != previous:

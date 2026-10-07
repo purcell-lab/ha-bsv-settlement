@@ -25,6 +25,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import WalletError
 from .embedded import EmbeddedWalletAPI
+from . import payment_timing
 
 MAX_PAYMENT_SATS = 100000
 MAX_FEE_SATS = 1000
@@ -344,6 +345,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                 "checked_at": p.get("checked_at"),
                 "confirmations": p.get("confirmations"), "output_index": p.get("output_index"),
                 "error": p.get("verification_error"), "source": "manual",
+                **payment_timing.public(p),
             })
         for budget_id, item in collections:
             row = budgets.get(budget_id)
@@ -361,6 +363,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                     "source": "driver", "diagnostic": copy.deepcopy(item.get("diagnostic")),
                     "recovery": copy.deepcopy(item.get("recovery")),
                     **collection_display_terms(item, budget_id, session_id),
+                    **payment_timing.public(item),
                 })
         return rows, combine(review_counts, collection_counts)
 
@@ -370,7 +373,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         return {key: copy.deepcopy(payment.get(key)) for key in (
             "draft_id", "reference", "recipient_address", "amount_sats", "fee_sats",
             "change_sats", "expires_at", "state", "txid", "approved_at", "confirmations",
-            "session_review_id")}
+            "session_review_id")} | payment_timing.public(payment)
 
     async def set_driver(self, field, value):
         if field not in self.saved["driver"]:
@@ -457,6 +460,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
                                                     else "payment_evidence_unavailable")
                     chain["payment_check_attempted_at"] = attempted_at
                 else:
+                    payment_timing.confirmed(p, confirmations)
                     p["confirmations"] = confirmations
                     p["state"] = "provider_confirmed" if confirmations else "provider_unconfirmed"
             elif previous.get("payment_check_error") and p and p.get("txid") and p["state"] in (
@@ -589,6 +593,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         p["fee_quote"] = fee_quote
         p.update(signed_raw=signed["raw"], txid=signed["txid"], state="broadcast_unknown",
                  approved_at=utcnow().isoformat(), approving_user_id=approving_user_id)
+        payment_timing.stamp(p, "broadcast_attempted_at")
         self.invalidate_balance("refresh_required_after_submission")
         # Commit exact signed bytes and input reservation BEFORE touching network.
         await self.store.async_save(self.saved)
@@ -597,6 +602,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             if returned != p["txid"]:
                 raise WalletError("Broadcast response did not match the prepared transaction")
             p["state"] = "submitted"  # Provider acknowledgement, not paid/confirmed.
+            payment_timing.stamp(p, "broadcast_acknowledged_at")
             await self.store.async_save(self.saved)
         except WalletError:
             # Preserve ambiguous state across restarts; never release or retry.

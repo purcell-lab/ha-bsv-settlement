@@ -18,6 +18,7 @@ from .session_review import account_snapshot, decimal, digest, now
 from .provenance_archive import archive, freeze
 from .const import DOMAIN
 from .confirmation import read_transaction, confirmation_count
+from . import payment_timing
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 P2PKH_HEX = re.compile(r"^76a914[0-9a-f]{40}88ac$")
@@ -49,7 +50,7 @@ class DriverCollections:
             "state", "quote", "txid", "output_index", "fee_sats", "confirmations",
             "created_at", "claimed_at", "submission_authorised_at", "checked_at", "error",
             "diagnostic", "recovery", "waiver_key"
-        ) if k in item}
+        ) if k in item} | payment_timing.public(item)
 
     def mandate(self, row):
         if row.get("weekly_parent_id"):
@@ -310,12 +311,14 @@ class DriverCollections:
         if self.api.entry.data.get("enable_broadcast") is not True:
             raise WalletError("Mainnet broadcast is disabled")
         item.update(txid=txid, state="broadcast_unknown", signed_raw=raw)
+        payment_timing.stamp(item, "broadcast_attempted_at")
         await self.save()
         try:
             returned = await self.api.chain.broadcast(raw)
             if returned != txid:
                 raise WalletError("Provider returned a different transaction ID")
             item["state"] = "submitted"
+            payment_timing.stamp(item, "broadcast_acknowledged_at")
         except WalletError as exc:
             item["error"] = "Submission outcome uncertain: " + str(exc)
         await self.save()
@@ -342,6 +345,7 @@ class DriverCollections:
             if owner and owner != own:
                 raise WalletError("Payment output already belongs to another session")
             self.api.saved["received_outpoints"][point] = own
+            payment_timing.confirmed(item, confirmations)
             item.update(state="provider_confirmed" if confirmations else "provider_unconfirmed",
                         confirmations=confirmations, checked_at=now().isoformat())
             item.pop("error", None)
