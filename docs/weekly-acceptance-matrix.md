@@ -68,11 +68,20 @@ No live wallet, provider, HA or charging commands are used by the preview.
 
 ## Rollout boundaries
 
-R1/R2/R3 remain draft PRs. Before deployment: review exact combined commits,
-passing full CI, current sessions/in-flight attempts, a fresh protected backup,
-and separate merge/install/restart approval. After deployment, first check
-read-only states and absence of side effects. Any native wallet mutation or
-real-value acceptance test requires separately reviewed scope.
+R1/R2/R3 were merged and deployed at
+`fdbcacc78ccc1324f11f852e01c9f947beebeaaf`, with protected backup, explicit
+active-session restart approval and read-only checks. See the
+[deployment record](https://github.com/purcell-lab/ha-bsv-settlement/issues/91#issuecomment-6009727833).
+The deployed administrator diagnostic matched an existing held transaction;
+no hold was released and no native-wallet repair or receipt import was performed.
+
+The [native-wallet acceptance pack](native-wallet-acceptance.md) provides the
+next staged run sequence, exact scope boundaries and evidence template.
+Its helper remains outside production entry points. Before any later deployment:
+review exact commits, passing full CI, current sessions/in-flight attempts,
+a fresh protected backup and separate merge/install/restart approval.
+Any native wallet mutation or real-value acceptance test requires separately
+reviewed scope.
 
 Do not close #22 or pilot readiness from automated results alone. Independent
 meter/tariff accounts, protected restore, native-device evidence and security/

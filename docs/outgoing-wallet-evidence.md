@@ -53,3 +53,8 @@ Before wiring a native repair into the UI:
    exact-byte broadcast ownership intact.
 
 No live wallet test or status repair was performed by this PR.
+
+The next staged [native-wallet acceptance pack](native-wallet-acceptance.md)
+wraps this adapter with versioned environment checks, timeout/overlap guards
+and a private-target-safe observation. It is still not imported by the shipped
+page and cannot repair a native action.
