@@ -16,6 +16,7 @@ import {sessionJourney,simplifySessionLayout} from "./journey.js";
 import {liveSessionView} from "./session-live.js";
 import {walletConnectionUnavailable,walletConnectionHelp} from "./wallet-connection.js";
 import {createIcons,CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight} from "lucide";
+import {sessionPortal} from "./session-portal.js";
 createIcons({icons:{CarFront,PlugZap,Wallet,QrCode,ArrowLeftRight}});
 function drawApprovalQR(holder,url){
   const qr=qrcode(0,"M");qr.addData(url,"Byte");qr.make();
@@ -26,6 +27,14 @@ function drawApprovalQR(holder,url){
 const $ = id => document.getElementById(id);
 const toolbar=mountDriverToolbar("session");
 const simpleLayout=simplifySessionLayout();
+const portal=sessionPortal();
+document.querySelector(".simple-session-content").prepend(portal.card);
+document.querySelector(".driver-support").before(portal.history);
+document.querySelector(".journey-steps").hidden=true;
+document.querySelector(".driver-support > summary").textContent="Wallet options and BSV details";
+document.querySelector(".driver-support").append(document.querySelector(".journey-more"));
+document.querySelector(".journey-more").open=true;
+document.querySelector(".journey-more > summary").hidden=true;
 const fragment = new URLSearchParams(location.hash.slice(1));
 // A new fragment identifies a different private invitation. Reset every wallet
 // and session variable rather than displaying the old session in the same tab.
@@ -307,15 +316,17 @@ function controls() {
     credit:creditDirection,imported:importedCredits.has(latestTxid),failure:!!collectionFailure,expired});
   if(checked){$("page-title").textContent=journey.title;$("page-subtitle").textContent=journey.hint;}
   $("receive-ongoing").classList.add("toolbar-managed");
+  const canResume=!$("resume-collection").disabled&&!$("resume-collection").hidden&&
+    !["waiting_for_operator_binding","broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState);
   toolbar.update({
     connect:walletUnavailable&&!accepted&&!receipt?{target:"driver-link-copy",
       enabled:!!capability&&!busy&&!pairingBusy&&!collectionBusy&&!framed,
       label:"Copy link for BSV Browser",primary:true}:
-    {target:"resume-collection",enabled:!$("resume-collection").disabled&&!$("resume-collection").hidden&&
-      !["waiting_for_operator_binding","broadcast_unknown","wallet_attempt_reserved","submitted","provider_unconfirmed","provider_confirmed","waived"].includes(collectionState),
-      label:collectionState==="recovery_ready"?"Review and resume payment":liveSession?.ended_at?"Reconnect to finish payment":"Reconnect wallet",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."},
+    canResume?{target:"resume-collection",enabled:true,
+      label:collectionState==="recovery_ready"?"Review and resume payment":liveSession?.ended_at?"Reconnect to finish payment":"Reconnect wallet",reason:"Available only when this approved session needs wallet reconnection. Initial approval connects your wallet itself."}
+      :{enabled:accepted&&!locked,run:()=>signInHistory(),label:portal.signedIn?"Check wallet":"Sign in",reason:"Sign in for private history and existing credit receipts only."},
     pair:{target:"pairing-connect",enabled:!$("pairing-section").hidden&&!$("pairing-connect").disabled,reason:"Load a valid private invitation, or finish the active wallet action."},
-    approve:{target:"approve",primary:!walletUnavailable,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
+    approve:{target:"approve",label:"Sign in",primary:!walletUnavailable,reason:accepted?"Budget already authorised. No new approval is needed.":"Requires a valid unsigned invitation, current pricing and an available wallet."},
     refresh:{enabled:!!capability&&!locked,run:()=>refresh(),reason:"Load an invitation and wait for the current action to finish."},
     sync:{enabled:!!pendingCredit&&!locked&&!!capability&&!enrolment,run:()=>syncConfirmedReceipts(true),primary:!!pendingCredit,reason:"No confirmed credit receipt is awaiting acceptance, or the wallet is busy."},
     signout:{enabled:false,reason:"This is a private-link session, not a portal login. Closing it does not revoke spending approval."},
@@ -324,6 +335,13 @@ function controls() {
   },{step:journey.step,title:journey.title,hint:walletUnavailable&&!accepted?"Connect your wallet, then return to authorise.":"",
     unavailable:!accepted&&checked?expired?"Ask the operator for a new approval link.":!pricesValid()?"Waiting for current rates before approval.":locked?"Waiting for the current wallet action…":"":""});
   simpleLayout.update({accepted,receiptOnly,step:journey.step});
+  const primary=document.querySelector(".journey-primary");
+  document.querySelector(".intro").after(primary);
+  primary.after(portal.card);
+  if(!accepted&&checked){
+    $("driver-next-hint").textContent=`Sign in authorises ${checked.terms.max_total_sats.toLocaleString()} sat total including fees, until ${new Date(checked.terms.expires_at).toLocaleString()}. Review the rates and full terms below.`;
+  }
+  portal.update({connected:!!connectedWallet,paused:halted});
   paintLiveSession();
   $("approval-action").classList.add("toolbar-managed");
   $("credit-status").hidden=!accepted||creditRegistered||!!checked?.terms.closed_session_review;
@@ -612,6 +630,20 @@ async function connectWallet(receiptAutomatic=false) {
   if(!/^(02|03)[0-9a-f]{64}$/.test(identity))throw Error("Invalid wallet identity.");
   return {wallet,identity};
 }
+async function signInHistory(){
+  if(busy||collectionBusy||receivingOngoing||framed)return;
+  busy=true;controls();
+  try{
+    const result=await api("read"),{wallet,identity}=await connectWallet();
+    if(identity!==result.driver_identity)throw Error("Use the wallet that approved this session.");
+    await portal.signIn(wallet,identity);
+    // History-only authentication must not resume a held debit or install a
+    // collection worker. Existing receipt sync verifies its own wallet context.
+    status("Signed in. Checking existing credit receipts. No new spending approval.");
+  }catch(e){status(e.message,true);}
+  finally{busy=false;controls();}
+  await syncConfirmedReceipts(true);
+}
 function clear() {
   walletUnavailable=false;
   if(pairing){void pairing.disconnect();pairing=null;}
@@ -677,7 +709,11 @@ $("approve").onclick=async()=>{
     receipt=await signConsent(wallet,checked,identity);
     connectedWallet=wallet;
     $("receipt").value=JSON.stringify(receipt,null,2);$("result").hidden=false;
-    if(capability)await submitReceipt();
+    if(capability){
+      await submitReceipt();
+      try{await portal.signIn(wallet,identity);}
+      catch{status("Budget saved. Private history sign-in did not complete; your spending approval is unchanged.",true);}
+    }
     else status("Spending approval signed. Return the receipt to the operator for verification. No funds moved.");
   } catch(e) {
     if(!receipt&&walletConnectionUnavailable(e))walletUnavailable=true;
@@ -699,6 +735,8 @@ $("resume-collection").onclick=async()=>{
     const {wallet,identity}=await connectWallet();
     if(identity!==result.driver_identity)throw Error("Connect the wallet that signed this session approval.");
     connectedWallet=wallet;binding=result.binding;halted=false;
+    try{await portal.signIn(wallet,identity);}
+    catch{status("Wallet connected. Private history sign-in did not complete.",true);}
     if(result.automatic_credit_enabled && !result.credit_destination_registered){
       await registerCredit(wallet,checked,identity,api);creditRegistered=true;
     }

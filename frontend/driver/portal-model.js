@@ -2,7 +2,7 @@ import {KeyDeriver,Signature} from "@bsv/sdk";
 import {bytes,hex,canonical} from "./model.js";
 import {provisionalSats} from "../ui.js";
 export const loginProtocol=[2,"ev portal login"];
-export const loginScope="read_own_charging_sessions_and_sync_existing_credit_receipts";
+export const loginScope="read_own_sessions_sync_receipts_and_collect_signed_session_budgets";
 export function compactIdentity(identity){
   return typeof identity==="string"&&/^(02|03)[0-9a-f]{64}$/.test(identity)?
     `${identity.slice(0,6)}…${identity.slice(-4)}`:"";
@@ -19,7 +19,7 @@ export async function signPortalLogin(wallet,challenge,origin,now=Date.now()){
   const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
   if(!/^(02|03)[0-9a-f]{64}$/.test(identity))throw Error("Invalid wallet identity.");
   const {signature}=await wallet.createSignature({protocolID:loginProtocol,keyID:p.nonce,counterparty:"anyone",
-    data:bytes(challenge.payload),description:"Sign in to view your EV sessions and sync existing credit receipts. No spending approval or payment."});
+    data:bytes(challenge.payload),description:"Sign in for automatic per-session charging payments under your separately signed budget, private history and existing credit receipts. This signature does not create or increase a spending budget."});
   const key=new KeyDeriver("anyone").derivePublicKey(loginProtocol,p.nonce,identity);
   if(!key.verify(bytes(challenge.payload),Signature.fromDER(signature)))throw Error("Wallet login signature did not verify.");
   return {identity,payload:challenge.payload,signature:hex(signature)};

@@ -1,12 +1,14 @@
 // Offline UI fixture only. No real wallet, relay, provider, payments or credentials.
 import {PrivateKey,ProtoWallet,PublicKey,Transaction,P2PKH} from "@bsv/sdk";
-import {canonical,bytes,paymentAuthority,spendingScope} from "./model.js";
+import {canonical,bytes,paymentAuthority,spendingScope,multiScope} from "./model.js";
 import {loginProtocol,loginScope} from "./portal-model.js";
 const wallet=new ProtoWallet(new PrivateKey(19)),params=new URLSearchParams(location.search);
 window.CWI=wallet;
+window.previewNavigate=()=>{window.location.href=new URL("./session/index.html?scenario=active",window.location.href).href;};
 window.portalPreviewCalls=[];
 window.portalPreviewWallet={imports:0,acks:0};
 let signedIn=params.has("restored");
+let publicApproved=false;
 if(params.has("restored")){
   // A history cookie is present; the injected wallet arrives only after the
   // explicit reconnect gesture. It must not be treated as already connected.
@@ -50,6 +52,12 @@ const operator=new PrivateKey(101),terms={
 };
 terms.payment_authority=paymentAuthority(terms);
 const payload=canonical(terms),invitation={version:1,payload,signature:operator.sign(bytes(payload)).toDER("hex")};
+const publicTerms={...terms,version:3,scope:multiScope,session_mode:"multi_session",
+  account_scope:"Future sessions under one seven-day total",
+  created_at:new Date().toISOString(),expires_at:new Date(Date.now()+7*86400000).toISOString()};
+publicTerms.payment_authority=paymentAuthority(publicTerms);
+const publicPayload=canonical(publicTerms),publicInvitation={version:1,payload:publicPayload,
+  signature:operator.sign(bytes(publicPayload)).toDER("hex")};
 const {publicKey}=await wallet.getPublicKey({protocolID:terms.credit_receiving.protocolID,keyID:"YWJj ZGVm",
   counterparty:terms.operator_identity,forSelf:true});
 const address=PublicKey.fromString(publicKey).toAddress(),tx=new Transaction();
@@ -68,9 +76,20 @@ wallet.internalizeAction=async()=>{window.portalPreviewWallet.imports++;return {
 wallet.createAction=wallet.signAction=async()=>{throw Error("Forbidden payment in offline preview");};
 let failedReport=false;
 window.fetch=async(url,options)=>{
-  if(url==="/api/bsv_settlement/driver"&&JSON.parse(options.body).action==="public_invitation")
-    return Response.json(params.has("registration")?{state:"available",
+  if(url==="/api/bsv_settlement/driver"){
+    const d=JSON.parse(options.body);window.portalPreviewCalls.push(d.action);
+    if(d.action==="public_invitation")return Response.json(params.has("registration")&&!publicApproved?{state:"available",
       public_link_fragment:"#join=11111111-2222-4333-8444-555555555555&key="+"x".repeat(43)}:{state:"unavailable"});
+    if(d.action==="public_read")return Response.json({state:"awaiting_driver_consent",invitation:publicInvitation,
+      prices:{valid:true,checked_at:new Date().toISOString(),...Object.fromEntries(["import","export"].map(k=>[k,{
+        available:true,aud_per_kwh:k==="import"?"0.285":"-0.052",start:new Date(Date.now()-60000).toISOString(),
+        end:new Date(Date.now()+300000).toISOString()}]))}});
+    if(d.action==="public_approve"){publicApproved=true;return Response.json({state:"spending_authorised_wallet_permission_required",driver_identity:identity,
+      automatic_credit_enabled:true,credit_destination_registered:false,
+      private_link_fragment:"#budget=11111111-2222-4333-8444-555555555555&token="+"p".repeat(43)});}
+    if(d.action==="register_credit_destination")return Response.json({state:"credit_destination_registered"});
+    throw Error("Offline preview: unsupported driver action");
+  }
   if(url!=="/api/bsv_settlement/portal")throw Error("Offline preview: network disabled");
   const data=JSON.parse(options.body);window.portalPreviewCalls.push(data.action);
   const response=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json"}});
@@ -105,8 +124,13 @@ window.fetch=async(url,options)=>{
     if(!signedIn)return response({error:"Sign in"},401);
     const all=params.has("empty")?[]:rows,offset=data.offset||0;
     return response({identity,sessions:all.slice(offset,offset+25),total:all.length,
-      expires_in:params.has("expire")?2:900});
+      authorisations:params.has("approved")||publicApproved?[{scope:"weekly",spending_active:true,limit_sats:1000,
+        expires_at:new Date(Date.now()+6*86400000).toISOString(),receiving_registered:true}]:[],
+      expires_in:params.has("expire")?2:params.has("renew")?240:900});
   }
+  if(data.action==="debit_jobs"&&signedIn)return response({jobs:params.has("held")?
+    [{budget_id:terms.budget_id,session_id:rows[0].session_id}]:[],has_more:false});
+  if(data.action==="debit_status"&&signedIn)return response({collection:{state:"broadcast_unknown"}});
   if(data.action==="pairing_create")return response({error:"Offline preview: real QR pairing is disabled"},401);
   const scenario=params.get("monthly")||"off";
   if(data.action==="station")return response(scenario==="off"?{monthly_enabled:false,station_ids:[]}:
@@ -170,7 +194,7 @@ async function monthlyPreview(data,response){
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
 const previewNav=document.createElement("p");
-previewNav.innerHTML='<a href="./session/index.html?scenario=approval">Try budget approval</a> · <a href="./session/index.html?scenario=active">Charging</a> · <a href="./session/index.html?scenario=unconfirmed">Settlement</a>';
+previewNav.innerHTML='<a href="?active&approved">Weekly approval and live session</a> · <a href="?registration">New registration</a> · <a href="./session/index.html?scenario=approval">Private budget approval</a> · <a href="./session/index.html?scenario=unconfirmed">Settlement</a>';
 banner.append(previewNav);
 banner.style.cssText="max-width:1012px;width:calc(100% - 32px);margin:16px auto";
 await import("./portal.js");

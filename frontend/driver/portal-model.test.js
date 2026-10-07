@@ -48,7 +48,8 @@ test("wallet login signs a separate protocol, never a spending action",async()=>
   const proof=await signPortalLogin(wallet,challenge(),origin);
   assert.equal(proof.identity,(await wallet.getPublicKey({identityKey:true})).publicKey);
   assert.deepEqual(request.protocolID,loginProtocol);
-  assert.match(request.description,/No spending approval or payment/);
+  assert.match(request.description,/automatic per-session charging payments/);
+  assert.match(request.description,/does not create or increase a spending budget/);
 });
 test("login rejects wrong origin, expiry, scope and binding before wallet use",async()=>{
   const wallet={getPublicKey:()=>assert.fail("Do not contact wallet")};

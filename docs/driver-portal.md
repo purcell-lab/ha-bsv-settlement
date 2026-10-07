@@ -2,15 +2,27 @@
 
 The stable entry point is `/bsv_settlement/driver/index.html`. A driver signs in with a wallet to view retained charging sessions linked to that wallet identity, without receiving a new private URL for each session.
 
-The verified-wallet panel uses a compact identity preview with visible Refresh, Sync credits and Sign out controls. “Wallet details” shows the access expiry and expands to reveal the full identity and permission explanation. The preview is display-only; all wallet matching still uses the complete key. Verified sign-in is not a claim that the wallet transport is currently connected.
+One top-level Sign in action coordinates identity, a new operator-issued weekly
+budget if needed, receiving registration, automatic receipts and per-session debit
+collection. Wallet status distinguishes each permission; history and technical
+options are collapsed. All wallet matching uses the complete identity key.
 
 ## Authority boundary
 
-Sign-in proves control of a wallet key. It does not authorise spending, reserve funds, create a payment, renew a mandate, change a recipient, register an unclaimed session, or start charging. Existing signed spending approvals and collection safeguards remain separate.
+The login signature proves identity and requests settlement under independently
+signed budgets; it cannot itself create or increase a spending budget. The single
+Sign in journey can separately sign a displayed operator invitation, register
+receiving details and start collection. Existing fee/amount limits, session
+ownership, holds and one-use signing permits remain mandatory. It does not start
+charging or guarantee payment while the page or wallet is offline.
 
 The portal only lists records with verified historical driver signatures. It resolves operator credits to their original receiving registration, not the last registered driver. Expired or revoked spending permission does not remove historical read access. Unattributed legacy payments and unrelated wallet transactions are excluded.
 
-Existing `#budget=…&token=…` private links and `#join=…&key=…` registration links still open the existing approval interface. The no-fragment page now opens the portal instead of automatic public registration. New drivers still require a separate operator invitation. The recovery control accepts only same-origin links.
+Existing `#budget=…&token=…` private links retain their legacy interface.
+Public `#join=…&key=…` registration links open the unified portal with their exact
+terms, never a substituted invitation. New drivers still need an operator-issued
+invitation, but complete approval and settlement on the portal without a private
+page handoff. The recovery control accepts only same-origin links.
 
 ## Login protocol
 
@@ -19,6 +31,9 @@ Existing `#budget=…&token=…` private links and `#join=…&key=…` registrat
 - The wallet signs using protocol `[2, "ev portal login"]`, nonce as key ID, and counterparty `anyone`.
 - The server independently verifies the derived-key signature against the supplied wallet identity.
 - Success rotates the anonymous cookie into a 15-minute, non-sliding authenticated session.
+- During user-started connected automation the same wallet supplies a fresh
+  challenge signature before login expiry. This rotates login, not spending
+  authority. Cookie restoration alone does not start debit collection.
 - The `__Host-bsv_driver_portal` cookie is Secure, HttpOnly, SameSite=Strict and root-path only. No login token is put in a URL or browser storage.
 - Memory-only sessions expire on restart, sign-out, coordinator removal or configured-origin change. The frontend clears private content at expiry.
 - Exact Origin and JSON checks apply to every request. Responses are no-store. Wallet actions are disabled in frames.
@@ -34,7 +49,20 @@ Each session starts as one compact line: local date/time, payment direction and 
 
 “Sync credits on this page” imports only already-confirmed operator payments belonging to the signed-in identity. Receipt retrieval can refresh provider evidence and cache an existing proof. Reporting acceptance requires the separate existing wallet-signed acknowledgement. Login alone cannot mark a receipt accepted. No new payment is created or broadcast.
 
-Sync is explicit in this first portal revision. Load more pages to sync older credits. A page reload may restore a valid server login, but the wallet must be available again for receipt import. Chain confirmation and wallet-reported receipt acceptance remain distinct.
+Receipt checks run automatically across owned records while the wallet is
+available. A page reload may restore history access, but it does not start the
+debit worker. Chain confirmation and wallet-reported receipt acceptance remain
+distinct.
+
+## Automatic debit collection
+
+Explicit portal sign-in starts the serial coordinator. Owner-scoped debit
+endpoints discover eligible completed sessions and delegate to the existing
+signed quote, claim, unsigned draft, signing permit and report implementation.
+No private capabilities are returned. At most two sessions are checked per pass.
+Held, submitted and confirmed attempts are never replaced; a failed wallet
+interaction remains latched. Sign-out or loss of verified wallet context stops
+new actions. See `unified-driver-signin.md` for acceptance boundaries and tests.
 
 ## Current public rates
 
@@ -59,7 +87,10 @@ before authentication.
 
 The portal can create a fresh two-minute QR and pasteable connection URI without an active spending invitation. The encrypted relay belongs to the browser login, transfers through cookie rotation, and closes on sign-out.
 
-Sign-in requires only `getPublicKey` and `createSignature`. The portal wallet proxy does not expose `createAction` or `signAction`. Receipt sync additionally requires `getNetwork` and `internalizeAction`, with an explicit mainnet check. A wallet missing those methods can sign in but cannot import receipts through this channel.
+Full portal pairing requests `getPublicKey`, `getNetwork`, `createSignature`,
+`createAction`, `signAction` and `internalizeAction`. These methods enable the
+guarded client workflow, not a native monetary allowance. Wallet prompts still
+require the driver's approval where the wallet demands them.
 
 Native mobile BSV Browser interoperability still requires a supervised live test after deployment. Mock/SDK relay tests are not proof of native connection success. Saved expired connections remain invalid; the portal creates a fresh QR rather than restoring an old relay.
 
@@ -69,7 +100,9 @@ Automated coverage includes cookie rotation and expiry, challenge replay and tam
 
 The offline preview uses fictional keys and data. It exercises real frontend signing with the TypeScript SDK, but mocks server responses and receipt imports, and disables real pairing and payments. Python HTTP tests cover actual backend authentication independently, including verification of an actual TypeScript SDK login signature.
 
-Local validation: the complete existing-plus-portal Python suite passed (727 tests), followed by two additional passing interoperability and expired weekly-child ownership tests. The driver suite passed 84 tests and the operator suite passed 56 tests. CI runs the final combined Python suite.
+Historical initial-portal validation: the complete existing-plus-portal Python
+suite passed (727 tests), followed by two interoperability/ownership tests.
+Current unified-flow validation is recorded in `unified-driver-signin.md`.
 
 Browser checks at 1280 px and 375 px covered sign-in, owner history, pagination (25 then 27 records), refresh, sign-out, empty history, rejected login, login expiry, invalid external invitation links, light/dark mode and existing receipt sync. An interrupted receipt report followed by retry produced one mock wallet import and two acknowledgement attempts, with no payment API. Screenshots showed no horizontal overflow or clipped session values. Native QR scanning and real wallet prompts remain deployment acceptance checks, not completed live tests.
 

@@ -1,6 +1,7 @@
-"""Wallet proof-of-control login and owner-scoped, read-only charging history.
+"""Wallet proof-of-control login and owner-scoped charging settlement.
 
-No budget capabilities, operator keys, payment actions or authority renewal.
+No budget capabilities, operator keys or authority renewal. Debit operations
+delegate to the existing guarded engine under independently signed budgets.
 Monthly consent actions are delegated to ``monthly_portal`` and stay disabled
 unless a reviewed activation configures them; no accounting transition is exposed.
 Login state is memory-only and is lost on restart. Receipt reports use the
@@ -21,12 +22,12 @@ from .api import WalletError
 from .budget import approval_payload, canonical, message_hash, sha, signature_protocol
 from .const import DOMAIN
 from .pairing import external_origin, KEY as PAIRING_KEY
-from . import monthly_portal
+from . import monthly_portal, portal_debits
 
 KEY = DOMAIN + "_portal"
 COOKIE = "__Host-bsv_driver_portal"
 PROTOCOL = "ev portal login"
-SCOPE = "read_own_charging_sessions_and_sync_existing_credit_receipts"
+SCOPE = "read_own_sessions_sync_receipts_and_collect_signed_session_budgets"
 HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Vary": "Origin"}
 IDENTITY = re.compile(r"^(02|03)[0-9a-f]{64}$")
 
@@ -85,6 +86,32 @@ def owned(api, row, identity):
 
 def ownership(api, identity):
     return {bid: row for bid, row in api.saved["session_budgets"].items() if owned(api, row, identity)}
+
+
+def authorisations(api, identity):
+    """Read-only evidence, not capabilities or a new wallet permission."""
+    from .weekly import verify_parent, remaining
+    from .budget import SPENDING_STATE
+    result = []
+    for row in ownership(api, identity).values():
+        if row.get("weekly_parent_id"):
+            continue
+        t = row["terms"]
+        state = api.budgets.state(row)
+        active = state == SPENDING_STATE
+        if t.get("version") == 3:
+            try:
+                verify_parent(api, row)
+                active = active and remaining(api, row) > 0
+            except WalletError:
+                active = False
+        result.append({
+            "state": state, "spending_active": bool(active),
+            "limit_sats": t["max_total_sats"], "expires_at": t["expires_at"],
+            "scope": "weekly" if t.get("version") == 3 else "session",
+            "receiving_registered": bool(row.get("credit_destination")),
+        })
+    return result
 
 
 def credit_owner(api, identity, credit_id):
@@ -320,7 +347,8 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
-                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS):
+                              "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS,
+                              *portal_debits.ACTIONS):
                 raise WalletError("Unsupported portal action")
             coords = [c for c in self.hass.data.get(DOMAIN, {}).values()
                       if getattr(c, "mode", None) == "embedded_mainnet"]
@@ -402,14 +430,21 @@ class DriverPortalView(HomeAssistantView):
                     raise WalletError("Sign in to view your sessions")
                 async with coord.lock:
                     api = coord.api
-                    if action == "sessions":
+                    if action in portal_debits.ACTIONS:
+                        try:
+                            result = await portal_debits.handle(api, item["identity"], data)
+                        except WalletError:
+                            return web.json_response({"error": "Collection is unavailable or held. No recovery was authorised."},
+                                                     status=409, headers=HEADERS)
+                    elif action == "sessions":
                         offset = data.get("offset", 0)
                         if type(offset) is not int or not 0 <= offset <= 100000:
                             raise WalletError("Invalid page offset")
                         sessions = history(api, item["identity"])
                         result = {"identity": item["identity"], "sessions": sessions[offset:offset + 25],
                                   "total": len(sessions), "offset": offset, "has_more": offset + 25 < len(sessions),
-                                  "expires_in": max(0, int(item["deadline"] - time.monotonic()))}
+                                  "expires_in": max(0, int(item["deadline"] - time.monotonic())),
+                                  "authorisations": authorisations(api, item["identity"])}
                     else:
                         row, payment, route = credit_owner(api, item["identity"], data.get("credit_id"))
                         if action == "credit_receipt":

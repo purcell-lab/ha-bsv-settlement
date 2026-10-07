@@ -185,3 +185,27 @@ select{font:inherit;max-width:100%;width:100%;min-height:44px;background:var(--p
   .station-tabs{width:100%}.station-tabs [role=tab]{flex:1;padding:var(--s2)}.wallet-button{width:100%}}
 section[role=tabpanel]{padding:0;background:transparent;border:0;border-radius:0;margin-bottom:0}
 .terms-list dd{text-align:left}
+/* Unified driver surface: status first, optional detail on demand. */
+.unified-signin{margin-top:16px}
+.unified-signin>button{min-height:52px}
+.authorisation-list{padding:0;list-style:none;margin:12px 0}
+.authorisation-list li{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.authorisation-list li:last-child{border-bottom:0}
+.authorisation-list li>div{min-width:0}
+.authorisation-list strong,.authorisation-list li>div>span{display:block}
+.authorisation-list li>div>span{color:var(--muted);font-size:.9rem;line-height:1.5}
+.authorisation-mark{flex:0 0 24px;text-align:center;font-weight:700;color:var(--muted)}
+.authorisation-list [data-verified=true] .authorisation-mark{color:var(--accent)}
+.portal-disclosure{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0}
+.portal-disclosure>summary{font-size:1.05rem;font-weight:700;min-height:32px;cursor:pointer}
+.unified-portal #panel-station,.unified-portal #panel-charging,.unified-portal #panel-history{border:0;padding:0;background:transparent}
+.unified-portal .superseded-rates,.unified-portal .station-nav,.unified-portal #monthly-offer,
+.unified-portal .driver-toolbar{display:none!important}
+.unified-portal #wallet-drawer{position:static;box-shadow:none;margin:0;border:0;padding:0}
+.unified-portal #station-access .actions{flex-direction:column}
+.unified-portal #portal-login{display:none}
+.unified-portal #wallet-signed-out{display:none}
+.unified-portal #portal-account>.terms-list,.unified-portal #portal-account>h3{display:none}
+#unified-budget-summary{font-weight:650}
+#session-wallet-summary{margin-bottom:16px}
+@media(max-width:480px){.authorisation-list li{gap:8px}.portal-disclosure{padding:12px}}
