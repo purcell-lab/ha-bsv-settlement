@@ -78,8 +78,8 @@ async def acknowledge(api, row, data):
         if item["wallet_receipt_ack"]["payload"] != expected:
             raise WalletError("Stored receipt acknowledgement conflicts with this payment")
         return api.auto_credits.public(item)
-    # The client only obtains a receipt after provider confirmation. Preserve
-    # that prerequisite, without treating a historical report as chain finality.
+    # Normal receipts require confirmation. Early reports require an explicitly
+    # offered, stage-bound envelope; neither report establishes chain finality.
     early_offered = (stage == MODE and
                      (item.get("early_receipt_offer") or {}).get("txid") == item["txid"])
     if stage == MODE and not early_offered:
