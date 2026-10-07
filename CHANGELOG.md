@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: rapid prototype validation
+
+- Use a focused weekly-settlement Python gate for routine PRs and main pushes, adding changed-area regressions and falling back to full validation for broad or unmapped backend changes.
+- Retain every regression test. Full Python validation remains explicit through `validate.py python`, manual CI with `full_regression=true`, and version-tag CI.
+- Keep driver/operator tests, reproducible bundles, clean-install smoke tests and HACS checks. Update forward compatibility to HA 2026.10.0b3.
+- No runtime integration, ledger, payment, wallet-policy or storage changes.
+
 ## Unreleased: mainnet wallet fixes (#102, #113, #114)
 
 - #102: a provider with no evidence for the active payment's txid (e.g. signed, never posted) no longer blanks the operator balance or fails the refresh. The balance is kept, the payment state is unchanged, and `payment_check_error` (`payment_evidence_unavailable` / `payment_evidence_invalid`) appears on wallet status and the balance/status sensors until evidence appears.

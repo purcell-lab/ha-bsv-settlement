@@ -3,8 +3,14 @@ name: Validate
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      full_regression:
+        description: Run every Python regression for release assurance
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,10 +32,12 @@ jobs:
         include:
           - homeassistant: "2026.9.4"
             check: Python and Home Assistant tests
-          - homeassistant: "2026.10.0b2"
-            check: Python and Home Assistant tests (HA 2026.10.0b2)
+          - homeassistant: "2026.10.0b3"
+            check: Python and Home Assistant tests (HA 2026.10.0b3)
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
@@ -42,7 +50,17 @@ jobs:
       - run: npm ci
         working-directory: frontend/driver
       - name: Run tests
-        run: python scripts/validate.py python
+        env:
+          FULL: ${{ inputs.full_regression || startsWith(github.ref, 'refs/tags/v') }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "$FULL" = "true" ]; then
+            python scripts/validate.py python
+          elif [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ]; then
+            python scripts/validate.py prototype --changed-from "$BASE"
+          else
+            python scripts/validate.py prototype
+          fi
 
   clean-install:
     name: Clean install smoke test (HA ${{ matrix.homeassistant }})
@@ -50,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        homeassistant: ["2026.9.4", "2026.10.0b2"]
+        homeassistant: ["2026.9.4", "2026.10.0b3"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
