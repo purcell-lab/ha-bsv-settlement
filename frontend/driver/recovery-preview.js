@@ -1,6 +1,7 @@
 // Isolated UI fixture. Never included in the installed HACS bundle.
 import { PrivateKey, ProtoWallet } from "@bsv/sdk";
 import { canonical, bytes, hash, paymentAuthority, spendingScope } from "./model.js";
+import {loginProtocol,loginScope} from "./portal-model.js";
 const banner=document.createElement("section");
 banner.className="preview-controls";
 banner.innerHTML=`<p>Design preview. Fictional sessions, no real payments.</p><details><summary>Try another state</summary>
@@ -86,6 +87,19 @@ window.CWI={
   signAction:async()=>{window.previewCalls.signs++;throw Error("No signing in preview");},
 };
 window.fetch=async(url,options)=>{
+  if(url==="/api/bsv_settlement/portal"){
+    const d=JSON.parse(options.body),stamp=Math.floor(Date.now()/1000);
+    if(d.action==="challenge")return Response.json({protocolID:loginProtocol,keyID:"a".repeat(43),
+      payload:canonical({action:"sign_in_driver_portal",version:1,origin:"https://charging.example.com",
+        nonce:"a".repeat(43),browser_binding:"b".repeat(64),scope:loginScope,issued_at:stamp,expires_at:stamp+120})});
+    if(d.action==="login")return Response.json({identity,expires_in:900});
+    if(d.action==="sessions")return Response.json({identity,expires_in:900,total:1,
+      authorisations:[{spending_active:!["expired","waived"].includes(mode),limit_sats:1000,expires_at:terms.expires_at,
+        receiving_registered:mode!=="closed"}],
+      sessions:[{session_id:terms.session_id,opened_at:terms.created_at,ended_at:account.ended_at,
+        import_kwh:3.8,export_kwh:.2,net_amount_aud:.89,quality_flags:[],agreements:[],transactions:[]}]});
+    throw Error("Offline history fixture refused this operation");
+  }
   // Also refuse WalletClient's localhost discovery probes: no external connections.
   if(url!=="/api/bsv_settlement/driver")throw new TypeError("Preview network disabled");
   const body=JSON.parse(options.body);

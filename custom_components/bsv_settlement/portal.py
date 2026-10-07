@@ -87,6 +87,32 @@ def ownership(api, identity):
     return {bid: row for bid, row in api.saved["session_budgets"].items() if owned(api, row, identity)}
 
 
+def authorisations(api, identity):
+    """Read-only evidence, not capabilities or a new wallet permission."""
+    from .weekly import verify_parent, remaining
+    from .budget import SPENDING_STATE
+    result = []
+    for row in ownership(api, identity).values():
+        if row.get("weekly_parent_id"):
+            continue
+        t = row["terms"]
+        state = api.budgets.state(row)
+        active = state == SPENDING_STATE
+        if t.get("version") == 3:
+            try:
+                verify_parent(api, row)
+                active = active and remaining(api, row) > 0
+            except WalletError:
+                active = False
+        result.append({
+            "state": state, "spending_active": bool(active),
+            "limit_sats": t["max_total_sats"], "expires_at": t["expires_at"],
+            "scope": "weekly" if t.get("version") == 3 else "session",
+            "receiving_registered": bool(row.get("credit_destination")),
+        })
+    return result
+
+
 def credit_owner(api, identity, credit_id):
     """Resolve the original registration, never the latest driver."""
     if not isinstance(credit_id, str):
@@ -409,7 +435,8 @@ class DriverPortalView(HomeAssistantView):
                         sessions = history(api, item["identity"])
                         result = {"identity": item["identity"], "sessions": sessions[offset:offset + 25],
                                   "total": len(sessions), "offset": offset, "has_more": offset + 25 < len(sessions),
-                                  "expires_in": max(0, int(item["deadline"] - time.monotonic()))}
+                                  "expires_in": max(0, int(item["deadline"] - time.monotonic())),
+                                  "authorisations": authorisations(api, item["identity"])}
                     else:
                         row, payment, route = credit_owner(api, item["identity"], data.get("credit_id"))
                         if action == "credit_receipt":

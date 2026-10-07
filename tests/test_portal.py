@@ -10,7 +10,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from bsv import PrivateKey
 
 from custom_components.bsv_settlement.portal import (
-    DriverPortalView, COOKIE, KEY, PROTOCOL, SCOPE, history, owned, credit_owner,
+    DriverPortalView, COOKIE, KEY, PROTOCOL, SCOPE, history, owned, credit_owner, authorisations,
 )
 from custom_components.bsv_settlement.budget import message_hash, sha
 from custom_components.bsv_settlement.pairing import PairingHub, KEY as PAIRING_KEY
@@ -20,6 +20,33 @@ from test_budget import no_network
 
 pytestmark = pytest.mark.asyncio
 ORIGIN = "https://charging.example.com"
+
+
+async def test_authorisations_are_owner_scoped_read_only_evidence(tmp_path):
+    _, api, row, driver, _ = await confirmed(tmp_path)
+    before = copy.deepcopy(api.saved)
+    rows = authorisations(api, driver.public_key().hex())
+    assert len(rows) == 1
+    assert rows[0]["limit_sats"] == row["terms"]["max_total_sats"]
+    assert rows[0]["receiving_registered"] is True
+    assert authorisations(api, PrivateKey(999).public_key().hex()) == []
+    assert api.saved == before
+    text = json.dumps(rows)
+    for forbidden in ("token", "signature", "address", "secret", "fragment"):
+        assert forbidden not in text
+
+
+async def test_weekly_authorisation_projection_obeys_expiry_and_revocation(tmp_path, monkeypatch):
+    from datetime import timedelta
+    from test_weekly_mandate import setup
+    _, api, _, row, driver, _, clock = await setup(tmp_path, monkeypatch)
+    identity = driver.public_key().hex()
+    assert authorisations(api, identity)[0]["spending_active"] is True
+    row["state"] = "revoked"
+    assert authorisations(api, identity)[0]["spending_active"] is False
+    row["state"] = "spending_authorised_wallet_permission_required"
+    clock[0] += timedelta(days=8)
+    assert authorisations(api, identity)[0]["spending_active"] is False
 
 
 async def fixture(tmp_path, ongoing=False):
