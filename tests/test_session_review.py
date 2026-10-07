@@ -361,7 +361,9 @@ async def test_frontend_registered_once_and_hacs_bundle_matches(monkeypatch):
     assert (package / "frontend/session-review-card.js").read_bytes() == (
         root / "frontend/bsv-session-review-card.bundle.js").read_bytes()
     metadata = yaml.safe_load((package / "services.yaml").read_text())
-    assert set(SERVICES) <= set(metadata)
+    # Check both directions: metadata without registration caused the live
+    # early-credit switch to be documented but unavailable after installation.
+    assert set(metadata) == set(SERVICES) | {"configure_grouped_wallet_test"}
     hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()),
                            http=SimpleNamespace(async_register_static_paths=AsyncMock(), register_view=Mock()),
                            services=SimpleNamespace(async_register=Mock()))

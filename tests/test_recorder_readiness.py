@@ -630,6 +630,7 @@ async def test_no_services_registered_beyond_existing(tmp_path):
     try:
         await async_setup(hass, {})
         assert set(hass.services.async_services_for_domain(DOMAIN)) == set(SERVICES)
+        assert hass.services.has_service(DOMAIN, "configure_early_credit_delivery")
         for name in ("recorder.py", "recorder_reconciliation.py"):
             source = (COMPONENT / name).read_text()
             for forbidden in ("async_register", "services.async_call", "async_call(",
