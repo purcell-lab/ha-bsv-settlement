@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: adjustment receipt identity and settlement status
+
+- Return the original receiving-approval ID as `budget_id` and the adjustment payment ID as `credit_id` in authenticated adjustment receipt responses. Preserve the original payment, receiving address and all cryptographic checks.
+- Add a visible receipt-only retry beside paused wallet receipt status; remove the obsolete instruction to sign in again.
+- Describe session-collection readiness separately from wallet-native spending permission. A ready indication applies only to eligible covered sessions, never another wallet's historical charge.
+- Add authenticated adjustment receipt/acknowledgement and browser remittance regressions. No payment retry, historical reassignment or approval changes.
+
 ## Unreleased: automatic wallet setup expiry race
 
 - Set the verified login deadline before exposing the identity or awaiting session history. A slow HA history response no longer lets the one-second expiry watchdog clear a freshly authenticated wallet.

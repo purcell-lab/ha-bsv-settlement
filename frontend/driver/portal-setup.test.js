@@ -46,10 +46,19 @@ test("ambiguous saving never retries or proceeds to receiving registration",asyn
 test("identity, connection, budget and wallet-native spending are independent",()=>{
   const rows=authorisationRows({identity:"verified",connected:false,approvals:[]});
   assert.deepEqual(rows.map(r=>r.ok),[true,false,false,false,false,false]);
-  const complete=authorisationRows({identity:"verified",connected:true,supported:["createAction","signAction"],
+  const complete=authorisationRows({identity:"verified",connected:true,collectionEnabled:true,supported:["createAction","signAction"],
     approvals:[{spending_active:true,limit_sats:1000,expires_at:"2099-01-01T00:00:00Z",receiving_registered:true}]});
-  assert.deepEqual(complete.map(r=>r.ok),[true,true,true,true,true,false]);
-  assert.match(complete.at(-1).text,/may still ask/);
+  assert.deepEqual(complete.map(r=>r.ok),[true,true,true,true,true,true]);
+  assert.equal(complete.at(-1).label,"Session payments");
+  assert.match(complete.at(-1).text,/Wallet approval may still be required/);
+});
+test("paused collections are not presented as enabled or wallet-native permission",()=>{
+  const rows=authorisationRows({identity:"driver",connected:true,paused:true,
+    supported:["createAction","signAction"],collectionEnabled:false,
+    approvals:[{spending_active:true,limit_sats:1000,expires_at:"2099-01-01T00:00:00Z"}]});
+  assert.equal(rows.at(-1).ok,false);
+  assert.match(rows.at(-1).text,/collection is paused/);
+  assert.match(rows[4].text,/Retry receiving credits/);
 });
 test("expired, superseded and exhausted approvals do not get a budget check",()=>{
   for(const state of ["expired","superseded","exhausted"]){

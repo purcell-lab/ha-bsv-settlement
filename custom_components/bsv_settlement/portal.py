@@ -491,6 +491,13 @@ class DriverPortalView(HomeAssistantView):
                         if action == "credit_receipt":
                             if route and route.get("adjustment"):
                                 receipt = await api.auto_credits.receipt_for_item(row, payment)
+                                # The payment ID is not its receiving approval.
+                                # Match the ongoing-credit envelope: retain both
+                                # IDs, without rewriting the stored payment.
+                                receipt = receipt | {
+                                    "budget_id": row["terms"]["budget_id"],
+                                    "credit_id": data["credit_id"],
+                                }
                             else:
                                 receipt = await (api.ongoing_credits.driver_receipt(row, data["credit_id"]) if route
                                                  else api.auto_credits.receipt(row))
