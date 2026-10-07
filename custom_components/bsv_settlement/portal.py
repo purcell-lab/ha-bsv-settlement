@@ -248,6 +248,10 @@ def history(api, identity):
         target["account_kind"] = "manual_energy_adjustment"
         target["quality_flags"] = ["manual_energy_adjustment"]
         target["adjustment_kwh"] = account["adjustment_kwh"]
+        target["adjustment_direction"] = account["adjustment_direction"]
+        target["adjustment_price_aud_per_kwh"] = review["price_aud_per_kwh"]
+        target["opened_at"] = review["created_at"]
+        target["wallet_connected_adjustment"] = bool(review.get("wallet_collection_enabled"))
         public = api.reviews.public(review)
         payment = api.saved["payments"].get(review.get("credit_draft_id"))
         item = api.auto_credits.public(payment) if payment else (

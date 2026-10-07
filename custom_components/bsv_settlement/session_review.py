@@ -116,7 +116,7 @@ class SessionReviews:
         # Private HA/user identifiers and raw signing material are never returned.
         for key in ("approved_by", "created_by", "proxy_config_entry_id", "source_hash",
                     "driver_payment_raw", "one_click_authorised_by", "tariff_provenance",
-                    "tariff_provenance_ref"):
+                    "tariff_provenance_ref", "wallet_collection"):
             result.pop(key, None)
         if review.get("account_kind") != "manual_energy_adjustment":
             result["tariff_provenance"] = self.provenance(review)
@@ -127,9 +127,14 @@ class SessionReviews:
                 result["state"] = "credit_" + payment["state"]
                 if payment["state"] == "prepared" and now() >= datetime.fromisoformat(review["expires_at"]):
                     result["state"] = "credit_review_expired"
+        if review.get("wallet_collection_enabled") and review.get("wallet_collection"):
+            from .collection import DriverCollections
+            collection = DriverCollections.public(self.api.collections, review["wallet_collection"])
+            result["receipt"] = collection
+            result["state"] = "driver_payment_" + collection["state"]
         if (review["state"] in ("awaiting_account_approval", "credit_review_approved", "awaiting_driver_payment")
                 and now() >= datetime.fromisoformat(review["expires_at"])
-                and not review.get("credit_draft_id")):
+                and not review.get("credit_draft_id") and not review.get("wallet_collection")):
             result["state"] = "expired_awaiting_reconciliation" if review.get("payment_request") else "expired"
         return result
 
@@ -338,6 +343,8 @@ class SessionReviews:
 
     async def verify_driver_payment(self, data, user_id):
         review = self.get(data["review_id"])
+        if review.get("wallet_collection_enabled"):
+            raise WalletError("Wallet-connected adjustment owns this payment; do not attach a manual replacement")
         from .session_closure import ensure_open
         ensure_open(self.api, review["proxy_config_entry_id"] + "|" + review["account"]["session_id"])
         if review["direction"] != "driver_to_operator" or not review.get("payment_request"):

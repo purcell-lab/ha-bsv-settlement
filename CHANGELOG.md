@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: wallet-connected 5 kWh adjustments
+
+- New debit-button adjustments enter the authenticated wallet queue with an
+  exact signed quote, explicit wallet-native approval and a one-use signing
+  permit. They do not consume the weekly charging allowance.
+- Credit-button adjustments retain automatic owner-scoped receipt delivery.
+  Both directions show the adjustment basis and applied rate in driver history.
+- Reuse guarded draft validation and confirmation-only reconciliation. Preserve
+  all historical manual requests, uncertain attempts and frozen recipients.
+
 ## Unreleased: adjustment receipt identity and settlement status
 
 - Return the original receiving-approval ID as `budget_id` and the adjustment payment ID as `credit_id` in authenticated adjustment receipt responses. Preserve the original payment, receiving address and all cryptographic checks.

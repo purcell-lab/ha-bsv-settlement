@@ -201,11 +201,16 @@ const expandedSessions=new Set();
 let syncGeneration=null;
 let connectionState="unverified",connectionCheckedAt=null;
 let station={monthly_enabled:false,station_ids:[]},monthly=null,tab="station",tabChosen=false;
-const collections=new PortalCollections({api,assertActive:()=>{
+const collections=new PortalCollections({api,operatorIdentity:()=>{
+  const keys=[...new Set(walletMetadata.addresses.filter(a=>a.receiving_verified).map(a=>a.operator_identity))];
+  return keys.length===1?keys[0]:null;
+},assertActive:()=>{
   if(!collections.enabled||!identity||!wallet||framed||document.hidden||Date.now()>=expires)
     throw Error("The signed-in wallet is unavailable. Collection paused without a retry.");
 },onState:(state,job,detail)=>{
-  const text=state==="collecting"?"Collecting this completed session within your signed budget…":
+  const text=state==="collecting"?(job.kind==="adjustment"?
+    "Requesting wallet approval for a separate 5 kWh adjustment. Your weekly charging budget is unchanged.":
+    "Collecting this completed session within your signed budget…"):
     state==="progress"?detail:state==="submitted"?collectionOutcome(detail):
     state==="held"?"An earlier payment is held for review. It will not be retried automatically.":
     "Collection paused for this session. Do not pay again; ask the operator to check the attempt.";
@@ -594,7 +599,9 @@ function render(){
     const arrow=node("span","›","portal-chevron");arrow.setAttribute("aria-hidden","true");
     summary.append(arrow,node("span",shortDate,"portal-row-date"),
       node("span",overview.payment,"portal-row-payment"),
-      node("span",`${number(account.importKwh)} in / ${number(account.exportKwh)} out kWh`,"portal-row-energy"),
+      node("span",s.account_kind==="manual_energy_adjustment"?
+        `5 kWh ${s.adjustment_direction||""} equivalent`:
+        `${number(account.importKwh)} in / ${number(account.exportKwh)} out kWh`,"portal-row-energy"),
       node("span",overview.status+(overview.warning?" !":""),"portal-row-status"));
     summary.setAttribute("aria-label",`${shortDate}, ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}. Session ${s.transaction_id||s.session_id}. Expand details.`);
     summary.title=`${s.transaction_id||s.session_id}: ${overview.payment}, ${overview.status}${overview.warning?", metering warning":""}`;
@@ -614,14 +621,20 @@ function render(){
     const provisional=provisionalSession(s);
     if(provisional){addRow("Provisional session amount",provisional.amount);addRow("Estimate basis",provisional.note);}
     const buy=account.averageBuy,sell=account.averageSell;
-    for(const [label,value] of [
+    for(const [label,value] of s.account_kind==="manual_energy_adjustment"?[
+      ["Adjustment basis",`5 kWh ${s.adjustment_direction||""} equivalent (not metered energy)`],
+      ["Applied rate",`${number(s.adjustment_price_aud_per_kwh)} $/kWh`],
+      ["Net adjustment",number(account.netAud," AUD")],
+    ]:[
       ["Energy Imported to EV",number(account.importKwh," kWh")],["Energy Imported from EV",number(account.exportKwh," kWh")],
       ["Average buy price",buy===null?"Unavailable":`${buy.toFixed(4)} $/kWh`],
       ["Average sell price",sell===null?"Unavailable":`${sell.toFixed(4)} $/kWh`],
       ["Net energy account",number(account.netAud,account.live?" AUD · provisional":" AUD")],
       ["Average net price",account.averageNet===null?"Unavailable":`${account.averageNet.toFixed(4)} $/kWh`]])
       addRow(label,value);
-    if(s.account_kind==="manual_energy_adjustment")addRow("Separate adjustment","5 kWh-equivalent monetary adjustment. Not measured session energy.","portal-warning");
+    if(s.account_kind==="manual_energy_adjustment")addRow("Payment authority",s.wallet_connected_adjustment?
+      "Separate wallet approval. Does not consume the weekly charging budget.":
+      "Separate operator credit or legacy manual payment request.");
     else if(s.quality_flags?.length)addRow("Metering warning",s.quality_flags.join(", "),"portal-warning");
     if(s.closure)addRow("Account",s.closure.state.replaceAll("_"," "));
     if(provisional)addRow("Payment","Not created. Session is still in progress.");

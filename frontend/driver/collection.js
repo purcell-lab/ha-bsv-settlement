@@ -105,9 +105,16 @@ export function inspectDraft(beef,q) {
 }
 
 export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=>{},recoveryConfirmed=false) {
+  return collectQuotedPayment(wallet,()=>checkQuote(envelope,checked,binding),
+    ()=>parseInvitation(JSON.stringify(checked.invitation)),envelope,api,notify,recoveryConfirmed);
+}
+
+// Shared single-use transaction pipeline. Callers supply a strict, signed quote
+// verifier, not an unvalidated amount/address. Neither caller bypasses draft checks.
+export async function collectQuotedPayment(wallet,verify,revalidate,envelope,api,notify=()=>{},recoveryConfirmed=false) {
   let stage="check_quote",token=null;
   try {
-  const q=await checkQuote(envelope,checked,binding);
+  const q=await verify();
   stage="wallet_identity";
   const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
   if(identity!==q.driver_identity)throw Error("Connect the approved driver's wallet.");
@@ -120,8 +127,10 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
     quote_hash:envelope.hash,attempt_token_hash:await hash(token),driver_identity:identity});
   stage="sign_claim";
   const proof=await wallet.createSignature({protocolID:spendingProtocol,keyID:q.budget_id,
-    counterparty:"anyone",data:bytes(payload),description:"Collect the approved EV session payment"});
-  parseInvitation(JSON.stringify(checked.invitation));
+    counterparty:"anyone",data:bytes(payload),description:q.kind==="wallet_connected_energy_adjustment_v1"?
+      `Approve separate 5 kWh adjustment: ${q.amount_sats} sat plus wallet fee, ${q.max_total_sats} sat maximum total. Not charged to weekly budget.`:
+      "Collect the approved EV session payment"});
+  await revalidate();
   stage="claim_collection";
   const claim=await api("claim_collection",{attempt_token:token,proof:{payload,signature:hex(proof.signature)},
     confirm_recovered_attempt:recoveryConfirmed});
@@ -129,7 +138,8 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
   notify("Preparing the session payment. Keep this page open.");
   // Never let the wallet sign or broadcast before the fee/recipient checks.
   stage="create_draft";
-  const description=paymentDescription(q);
+  const description=q.kind==="wallet_connected_energy_adjustment_v1"?
+    `EV adjustment | 5 kWh ${q.account.adjustment_direction} equivalent | A$${q.price_aud_per_kwh}/kWh | ${q.amount_sats} sat`:paymentDescription(q);
   const created=await wallet.createAction({
     description,
     outputs:[{lockingScript:new P2PKH().lock(q.recipient_address).toHex(),
@@ -147,7 +157,7 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
   const permit=await api("authorise_collection",{attempt_token:token,draft});
   if(permit.submit_once!==true || permit.draft_hash!==await hash(canonical(draft)) || permit.fee_sats!==fee)
     throw Error("The one-use signing permit does not match the wallet draft.");
-  parseInvitation(JSON.stringify(checked.invitation));
+  await revalidate();
   stage="recheck_wallet";
   if((await wallet.getPublicKey({identityKey:true})).publicKey!==identity ||
       (await wallet.getNetwork()).network!=="mainnet")throw Error("Wallet identity or network changed.");
@@ -179,4 +189,42 @@ export async function collectOnce(wallet,checked,binding,envelope,api,notify=()=
     }
     throw e;
   }
+}
+
+export async function checkAdjustmentQuote(envelope,job,operatorIdentity) {
+  if(!envelope||typeof envelope.payload!=="string"||envelope.payload.length>12000)
+    throw Error("Invalid adjustment quote.");
+  const q=JSON.parse(envelope.payload),a=q.account;
+  if(!/^(02|03)[0-9a-f]{64}$/.test(operatorIdentity||"")||
+      q.operator_identity!==operatorIdentity||
+      await hash(envelope.payload)!==envelope.hash||
+      !PublicKey.fromString(operatorIdentity).verify(bytes(envelope.payload),Signature.fromDER(envelope.signature,"hex")))
+    throw Error("Adjustment operator signature did not verify.");
+  if(q.version!==1||q.kind!=="wallet_connected_energy_adjustment_v1"||q.network!=="BSV mainnet"||
+      q.review_id!==job.review_id||q.budget_id!=="adjustment:"+job.review_id||
+      q.budget_id!==job.budget_id||a?.session_id!==job.session_id||a.session_id!==q.budget_id||
+      !/^[0-9a-f]{64}$/.test(q.terms_hash||"")||
+      q.recipient_address!==PublicKey.fromString(operatorIdentity).toAddress()||
+      !Number.isSafeInteger(q.amount_sats)||q.amount_sats<1||q.amount_sats>=1000||
+      q.max_total_sats!==1000||q.max_fee_sats!==1000-q.amount_sats||
+      !Number.isFinite(Date.parse(q.expires_at))||Date.parse(q.expires_at)<=Date.now()||
+      !Number.isFinite(Date.parse(q.created_at))||Date.parse(q.created_at)>Date.now()+5000||
+      Date.parse(q.expires_at)-Date.parse(q.created_at)>600000||
+      a.currency!=="AUD"||a.adjustment_kwh!=="5"||
+      !["import","export"].includes(a.adjustment_direction)||
+      a.import_kwh!==null||a.export_kwh!==null||
+      !a.ended_at||!Number.isFinite(Date.parse(a.ended_at))||Date.parse(a.ended_at)>Date.now()+5000)
+    throw Error("Adjustment quote does not match the separate payment request.");
+  const [net,nd]=decimalParts(a.net_amount_aud),[raw,rd]=decimalParts(a.net_cost_aud_unrounded);
+  const [price,pd]=decimalParts(q.price_aud_per_kwh),[rate,fd]=decimalParts(q.satoshis_per_aud);
+  const sign=a.adjustment_direction==="import"?1n:-1n;
+  if(net<=0n||rate<=0n||raw*nd!==net*rd||price*5n*sign*nd!==net*pd||
+      roundPositive(net*rate,nd*fd)!==BigInt(q.amount_sats))
+    throw Error("Adjustment amount does not match its 5 kWh basis and rate.");
+  return q;
+}
+
+export async function collectAdjustmentOnce(wallet,job,operatorIdentity,envelope,api,notify=()=>{}) {
+  const verify=()=>checkAdjustmentQuote(envelope,job,operatorIdentity);
+  return collectQuotedPayment(wallet,verify,verify,envelope,api,notify);
 }

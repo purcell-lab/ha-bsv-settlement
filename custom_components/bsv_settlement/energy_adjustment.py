@@ -166,6 +166,17 @@ async def pay(reviews, data, user_id):
         review["identity_verification"] = "registered_wallet_verified_and_operator_one_click"
         await reviews.save()
         if review["direction"] == "driver_to_operator":
+            # New button actions only. Existing manual requests remain manual:
+            # they may already have been paid outside this integration.
+            from .adjustment_collection import FORMAT
+            review["wallet_collection_enabled"] = True
+            review["payment_request"].update(
+                format=FORMAT,
+                instructions="Open the driver portal with the registered wallet. "
+                             "Approve this separate 5 kWh adjustment in the wallet. "
+                             "It does not consume the weekly charging budget.",
+            )
+            await reviews.save()
             return reviews.public(review)
         result = await reviews.prepare_adjustment_credit(exact)
         draft = result["credit_draft"]

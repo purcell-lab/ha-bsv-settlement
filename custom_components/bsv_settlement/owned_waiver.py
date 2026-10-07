@@ -22,7 +22,7 @@ async def inspect(api, data):
     if review_id:
         target = api.reviews.get(review_id)
         if (target["direction"] != "driver_to_operator" or not target.get("payment_request")
-                or target.get("receipt") or target.get("credit_draft_id")
+                or target.get("receipt") or target.get("credit_draft_id") or target.get("wallet_collection")
                 or target["state"] not in ("awaiting_driver_payment", "expired_awaiting_reconciliation")):
             raise WalletError("Only an issued driver request without an allocated payment can use this waiver")
         account = target["account"]
