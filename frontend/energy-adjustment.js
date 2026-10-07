@@ -41,7 +41,16 @@ export function adjustmentFeedback(review) {
   const path=review.direction==="operator_to_driver"?"operator-credits":"payments";
   const amount=`${review.amount_sats} sat`;
   const messages={
-    awaiting_driver_payment:`Driver payment requested: ${amount}. Driver wallet approval and payment are still required.`,
+    awaiting_driver_payment:review.wallet_collection_enabled?
+      `Wallet-connected debit requested: ${amount}. The registered driver portal will request wallet approval. Weekly budget unchanged.`:
+      `Legacy manual driver payment requested: ${amount}. Check settlement; no automatic wallet collection.`,
+    driver_payment_ready:`Wallet-connected debit ready: ${amount}. Awaiting the registered wallet.`,
+    driver_payment_wallet_attempt_reserved:`Wallet payment in progress: ${amount}. Do not submit another request.`,
+    driver_payment_submission_authorised:`Wallet signing authorised: ${amount}. Do not submit another request.`,
+    driver_payment_submitted:`Driver payment submitted: ${amount}. Awaiting block confirmation.`,
+    driver_payment_provider_unconfirmed:`Driver payment submitted: ${amount}. Awaiting block confirmation.`,
+    driver_payment_provider_confirmed:`Driver payment provider-confirmed: ${amount}.`,
+    driver_payment_broadcast_unknown:`Driver payment outcome unknown: ${amount}. Do not resend.`,
     credit_submitted:`Driver credit submitted: ${amount}. Awaiting block confirmation.`,
     credit_provider_unconfirmed:`Driver credit submitted: ${amount}. Awaiting block confirmation.`,
     credit_provider_confirmed:`Driver credit provider-confirmed: ${amount}. Wallet receipt acceptance is separate.`,

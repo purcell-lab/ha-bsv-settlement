@@ -40,6 +40,19 @@ const rows=Array.from({length:27},(_,i)=>({
     wallet_receipt_status:i%2?null:"wallet_reported_accepted",wallet_imported_at:"2026-10-04T08:01:00Z",amount_sats:i%2?218:119,
     fee_sats:36,txid:"a".repeat(64)}],
 }));
+if(params.has("adjustments")){
+  for(const [i,direction,amount,rate] of [[0,"export",60,"0.1207512"],[1,"import",185,"0.3691626"]]){
+    Object.assign(rows[i],{account_kind:"manual_energy_adjustment",adjustment_kwh:"5",
+      adjustment_direction:direction,adjustment_price_aud_per_kwh:rate,
+      wallet_connected_adjustment:i===1,import_kwh:null,export_kwh:null,
+      import_cost_aud:null,export_credit_aud:null,quality_flags:["manual_energy_adjustment"],
+      net_amount_aud:i===0?"-0.6037560":"1.8458130",agreements:[],
+      opened_at:new Date().toISOString(),ended_at:new Date().toISOString(),
+      transactions:[{id:"adjustment:fictional-"+i,direction:i===0?"operator_to_driver":"driver_to_operator",
+        state:i===0?"provider_unconfirmed":"ready",amount_sats:amount,fee_sats:i===0?23:null,
+        txid:i===0?"a".repeat(64):null,wallet_receipt_status:"not_recorded"}]});
+  }
+}
 if(params.has("active")){
   Object.assign(rows[0],{ended_at:null,running_state:"Charging",import_kwh:0,export_kwh:.530,
     ocpp:{available:true,status:"Charging",checked_at:new Date().toISOString()},

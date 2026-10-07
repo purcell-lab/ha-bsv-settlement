@@ -33,6 +33,7 @@ const hass={user:{is_admin:true},states:{},callWS:async({service,service_data:d}
     window.adjustmentFixtures[d.request_id] ||= {review_id:d.request_id,
       direction:d.energy_direction==="export"?"operator_to_driver":"driver_to_operator",
       state:d.energy_direction==="export"?"credit_submitted":"awaiting_driver_payment",
+      wallet_collection_enabled:d.energy_direction==="import",
       amount_sats:d.energy_direction==="export"?41:62};
     return {response:window.adjustmentFixtures[d.request_id]};
   }

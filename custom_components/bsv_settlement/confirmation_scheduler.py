@@ -45,6 +45,12 @@ class DriverConfirmationScheduler:
                     and item.get("state") in COLLECTION_STATES):
                 yield "collection:" + bid, item, row
         for rid, review in self.api.saved.get("session_reviews", {}).items():
+            adjustment = review.get("wallet_collection")
+            if (review.get("wallet_collection_enabled") and adjustment
+                    and adjustment.get("txid") and adjustment.get("signed_raw")
+                    and adjustment.get("state") in COLLECTION_STATES):
+                from .adjustment_collection import AdjustmentCollections
+                yield "adjustment:" + rid, adjustment, AdjustmentCollections(self.api).row(review)
             receipt = review.get("receipt")
             if (review.get("direction") == "driver_to_operator" and receipt
                     and receipt.get("txid") and review.get("state") in MANUAL_STATES):
@@ -77,7 +83,10 @@ class DriverConfirmationScheduler:
         schedule.update(cursor=selected[-1][0], last_run=now.isoformat())
         await self.api.store.async_save(self.api.saved)
         for key, item, row in selected:
-            if row is not None:
+            if key.startswith("adjustment:"):
+                from .adjustment_collection import AdjustmentCollections
+                await AdjustmentCollections(self.api).reconcile(row)
+            elif row is not None:
                 await self.api.collections.reconcile(row)
             else:
                 await self.api.reviews.reconcile_driver_payment(item["review_id"])

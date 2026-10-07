@@ -57,7 +57,7 @@ class BSVOperatorCard extends HTMLElement{
       <p class="note">Current registered driver · separate from metered sessions. A click sends an operator-funded credit immediately, up to 1,000 sat including the quoted network fee. Driver debits create a request that the driver must pay. Negative rates reverse the direction.</p>
       <div class="actions">${["export","import"].map(direction=>{const amount=adjustmentAmount(direction==="export"?sell:buy,rateState,direction);return `<button id="adjust-${direction}" ${adjustmentBlocked||this.adjustmentBusy||!amount.available?"disabled":""}><ha-icon icon="mdi:cash-${direction==="export"?"plus":"minus"}"></ha-icon>${this.adjustmentDirection===direction&&adjustmentFinished(this.adjustmentResult)?"New payment: ":""}${esc(amount.available?amount.label:`5 kWh ${direction} · ${amount.label}`)}</button>`;}).join("")}</div>
       <p class="note">Indicative payment amount, excluding fees. The server freezes the current valid rate when clicked.</p>
-      <p class="note" role="status">${esc(this.adjustmentMessage||adjustment?.text||adjustmentBlocked||"Uses the current buy/sell rates above. No additional operator review step.")}</p>
+      <p class="note" role="status">${esc(this.adjustmentMessage||adjustment?.text||adjustmentBlocked||"Uses current rates and the registered driver. Credits send a wallet receipt; debits request wallet approval in the open portal. Separate from the weekly budget.")}</p>
       ${adjustment?link(adjustment.path,"View adjustment status"):link("operator-credits","View driver credits")}
       </section>
       ${(proxy?.attributes.issues||[]).length?`<p class="notice">Recorder needs attention: ${esc(proxy.attributes.issues.join(", "))}</p>`:""}

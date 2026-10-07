@@ -32,7 +32,7 @@ test("explicit recorder configuration remains supported",()=>{
 });
 test("negative price direction chooses the actual recipient tab, no false paid claim",()=>{
  const debit=adjustmentFeedback({direction:"driver_to_operator",state:"awaiting_driver_payment",amount_sats:125});
- assert.equal(debit.path,"payments");assert.match(debit.text,/approval and payment are still required/);
+  assert.equal(debit.path,"payments");assert.match(debit.text,/Legacy manual.*no automatic wallet collection/);
  const credit=adjustmentFeedback({direction:"operator_to_driver",state:"credit_submitted",amount_sats:125});
  assert.equal(credit.path,"operator-credits");assert.match(credit.text,/Awaiting block confirmation/);
  assert.match(adjustmentFeedback({direction:"operator_to_driver",state:"credit_broadcast_unknown",amount_sats:125}).text,/Do not resend/);

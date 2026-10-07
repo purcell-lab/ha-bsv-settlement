@@ -41,6 +41,8 @@ export function transactionStatus(t){
     t.wallet_receipt_status==="wallet_reported_accepted"?"Confirmed · wallet acceptance recorded":"Confirmed · receipt sync needed":
     "Payment confirmed";
   return ({provider_unconfirmed:"Awaiting block confirmation",submitted:"Submitted · awaiting confirmation",
+    awaiting_driver_payment:"Awaiting driver payment",
+    ready:"Awaiting wallet approval",submission_authorised:"Wallet signing in progress",
     broadcast_unknown:"Submission uncertain · do not retry payment",waived:"Waived",
     wallet_attempt_reserved:"Held for review",waiting_for_session_end:"Session in progress",
     no_operator_credit:"No operator credit due",
@@ -81,8 +83,9 @@ export function sessionSummary(s,now=Date.now()){
         (t.wallet_receipt_status==="wallet_reported_accepted"&&Number.isFinite(Date.parse(t.wallet_imported_at))?"Received":"Receipt due"):
         "Confirmed":
       ({provider_unconfirmed:"Confirming",submitted:"Submitted",broadcast_unknown:"Review",
+        awaiting_driver_payment:"Awaiting payment",ready:"Wallet approval",submission_authorised:"Signing",
         wallet_attempt_reserved:"Held",waived:"Waived",waiting_for_session_end:"Active",
         no_operator_credit:"No credit"})[t.state]||"Review";
   }
-  return {payment,status,warning:!!s.quality_flags?.length};
+  return {payment,status,warning:!!s.quality_flags?.some(f=>f!=="manual_energy_adjustment")};
 }

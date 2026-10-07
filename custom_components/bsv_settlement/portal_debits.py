@@ -26,7 +26,8 @@ def owner(api, identity, budget_id):
 
 async def jobs(api, identity):
     from .portal import ownership
-    result, seen = [], set()
+    from .adjustment_collection import jobs as adjustment_jobs
+    result, seen = adjustment_jobs(api, identity), set()
     for bid, row in ownership(api, identity).items():
         if row.get("weekly_parent_id") or api.budgets.state(row) != SPENDING_STATE:
             continue
@@ -60,6 +61,9 @@ async def handle(api, identity, data):
     action = data["action"]
     if action == "debit_jobs":
         return await jobs(api, identity)
+    if data.get("kind") == "adjustment":
+        from .adjustment_collection import handle as adjustment_handle
+        return await adjustment_handle(api, identity, data)
     parent = owner(api, identity, data.get("budget_id"))
     sid = data.get("session_id")
     if not isinstance(sid, str) or not sid or len(sid) > 200:

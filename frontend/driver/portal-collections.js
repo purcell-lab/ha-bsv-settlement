@@ -1,5 +1,5 @@
 import {parseInvitation,derivedInvitation} from "./model.js";
-import {collectOnce} from "./collection.js";
+import {collectOnce,collectAdjustmentOnce} from "./collection.js";
 
 const actions={claim_collection:"debit_claim",authorise_collection:"debit_authorise",
   report_collection:"debit_report",report_collection_failure:"debit_failure"};
@@ -12,8 +12,9 @@ export function collectionOutcome(result){
 
 // Verified-wallet, serial coordinator. Never resumes holds or replaces an attempt.
 export class PortalCollections {
-  constructor({api,assertActive,onState=()=>{},collect=collectOnce,derive=derivedInvitation}){
-    Object.assign(this,{api,assertActive,onState,collect,derive});
+  constructor({api,assertActive,onState=()=>{},collect=collectOnce,derive=derivedInvitation,
+    collectAdjustment=collectAdjustmentOnce,operatorIdentity=()=>null}){
+    Object.assign(this,{api,assertActive,onState,collect,derive,collectAdjustment,operatorIdentity});
     this.running=false;this.enabled=false;this.seen=new Set();this.paused=new Map();this.cursor=0;
   }
   start(){this.enabled=true;} // Only after live wallet verification, not cookie restore.
@@ -40,12 +41,13 @@ export class PortalCollections {
             this.onState("held",job,status.collection.state);
           continue;
         }
-        const parent=parseInvitation(JSON.stringify(status.invitation));
-        if(parent.terms.budget_id!==job.budget_id||
+        const adjustment=job.kind==="adjustment";
+        const parent=adjustment?null:parseInvitation(JSON.stringify(status.invitation));
+        if(!adjustment&&(parent.terms.budget_id!==job.budget_id||
           (parent.terms.version!==3&&
-           (parent.terms.session_mode==="next_session_reservation"?status.binding?.session_id:parent.terms.session_id)!==job.session_id))
+           (parent.terms.session_mode==="next_session_reservation"?status.binding?.session_id:parent.terms.session_id)!==job.session_id)))
           throw Error("The discovered session does not match its signed budget.");
-        const checked=parent.terms.version===3?
+        const checked=adjustment?null:parent.terms.version===3?
           await this.derive(status.session_invitation,parent,job.session_id):parent;
         // Lock before any wallet interaction. Failed or ambiguous attempts
         // require operator reconciliation, not another automatic run.
@@ -65,8 +67,10 @@ export class PortalCollections {
         }});
         try{
           this.onState("collecting",job);
-          const result=await this.collect(guarded,checked,status.binding,status.collection.quote,scoped,
-            text=>this.onState("progress",job,text));
+          const notify=text=>this.onState("progress",job,text);
+          const result=adjustment?
+            await this.collectAdjustment(guarded,job,this.operatorIdentity(),status.collection.quote,scoped,notify):
+            await this.collect(guarded,checked,status.binding,status.collection.quote,scoped,notify);
           this.onState("submitted",job,result);
         }catch(error){
           this.paused.set(key,error); // Includes exact pending report, in memory only.

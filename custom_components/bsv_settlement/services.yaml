@@ -18,7 +18,7 @@ configure_grouped_wallet_test:
         boolean:
 pay_energy_adjustment:
   name: Pay separate 5 kWh adjustment
-  description: REAL MAINNET FUNDS. Administrator click authorises a separate 5 kWh adjustment at the current valid tariff to the current verified driver. Operator credits send immediately with a fresh fee quote within 1000 sat total. Driver debits issue a manual payment request, never consume charging consent. Existing or uncertain adjustments return their status without another attempt.
+  description: REAL MAINNET FUNDS. Administrator click authorises a separate 5 kWh adjustment at the current valid tariff to the current verified driver. Operator credits send immediately with a fresh fee quote within 1000 sat total and appear in the connected wallet receipt queue. New driver debits request separate wallet approval through the open authenticated driver portal, with a 1000 sat total ceiling; they never consume charging consent. Existing manual or uncertain adjustments return their status without another attempt or automatic migration.
   fields:
     config_entry_id:
       required: true
