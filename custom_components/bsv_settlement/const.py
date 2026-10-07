@@ -7,6 +7,8 @@ BUDGET_SERVICES = ("create_session_budget", "accept_session_budget",
                    "revoke_session_budget", "session_budget_status", "bind_session_budget",
                    "open_public_registration", "close_public_registration")
 SESSION_REVIEW_SERVICES = (
+    "prepare_settlement_recovery", "execute_settlement_recovery",
+    "prepare_adjustment_renewal", "renew_expired_adjustment",
     "prepare_energy_adjustment", "prepare_adjustment_credit", "pay_energy_adjustment",
     "prepare_session_review", "approve_session_review", "prepare_session_credit",
     "broadcast_session_credit", "verify_session_driver_payment",

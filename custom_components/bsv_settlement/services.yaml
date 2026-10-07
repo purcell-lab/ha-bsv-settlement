@@ -49,6 +49,97 @@ pay_energy_adjustment:
       required: true
       selector:
         boolean:
+prepare_settlement_recovery:
+  name: Inspect and plan guarded settlement recovery
+  description: Read-only exact-record recovery classification for reviews, budgets, credit routes and operator payments. Distinguishes expired requests, interrupted attempts, unknown broadcasts and missing receipts. Does not refresh, sign, send, release or change records.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    record_type:
+      required: true
+      selector:
+        select: {options: [review, budget, credit, payment]}
+    record_id:
+      required: true
+      selector: {text: {}}
+execute_settlement_recovery:
+  name: Apply reviewed non-payment recovery
+  description: Applies only a currently eligible, exact-hash recovery plan after administrator evidence checks. Can renew a never-started adjustment or release an eligible pre-permit budget attempt. Cannot sign or broadcast payments, resend, waive, redirect funds or mark a receipt accepted.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    record_type:
+      required: true
+      selector:
+        select: {options: [review, budget, credit, payment]}
+    record_id:
+      required: true
+      selector: {text: {}}
+    expected_recovery_hash:
+      required: true
+      selector: {text: {}}
+    evidence_reference:
+      required: true
+      selector: {text: {}}
+    confirm_driver_wallet_checked:
+      required: true
+      selector: {boolean: {}}
+    confirm_recipient_history_checked:
+      required: true
+      selector: {boolean: {}}
+    confirm_unsigned_draft_cancelled_or_absent:
+      required: true
+      selector: {boolean: {}}
+    confirm_old_driver_pages_closed:
+      required: true
+      selector: {boolean: {}}
+    confirm_recovery:
+      name: Confirm the reviewed recovery action
+      required: true
+      selector: {boolean: {}}
+prepare_adjustment_renewal:
+  name: Review expired wallet adjustment renewal
+  description: Read-only administrator review. Only expired wallet-connected debit adjustments with no wallet collection record are eligible. No new quote, payment, expiry change or automatic retry.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    review_id:
+      required: true
+      selector: {text: {}}
+renew_expired_adjustment:
+  name: Renew never-started wallet adjustment
+  description: Administrator-reviewed ten-minute renewal of the same debit after wallet and receiving-history checks. Preserves original amount, tariff, recipient and identifiers. Requires fresh native-wallet consent; refuses all existing wallet attempts, including ready quotes. Does not sign or broadcast.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    review_id:
+      required: true
+      selector: {text: {}}
+    expected_review_hash:
+      required: true
+      selector: {text: {}}
+    evidence_reference:
+      required: true
+      selector: {text: {}}
+    confirm_driver_wallet_checked:
+      required: true
+      selector: {boolean: {}}
+    confirm_recipient_history_checked:
+      required: true
+      selector: {boolean: {}}
+    confirm_unsigned_draft_cancelled_or_absent:
+      required: true
+      selector: {boolean: {}}
+    confirm_old_driver_pages_closed:
+      required: true
+      selector: {boolean: {}}
+    confirm_renewal:
+      required: true
+      selector: {boolean: {}}
 prepare_energy_adjustment:
   name: Prepare separate 5 kWh adjustment
   description: Administrator only. Freeze the current registered driver and current live tariff for a separate real-value 5 kWh adjustment. Does not change metered sessions, consume charging consent, sign or send money. Negative prices reverse direction.
