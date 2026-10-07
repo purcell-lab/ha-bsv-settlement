@@ -179,6 +179,7 @@ $("monthly-offer").hidden=true;
 $("charging-signed-out").textContent="Sign in to see your current session.";
 $("history-signed-out").textContent="Sign in to see your history.";
 const framed=window.top!==window;
+const requestedJoin=new URLSearchParams(location.hash.slice(1));
 let wallet=null,identity=null,pairing=null,busy=false,sessions=[],total=0,expires=0,generation=0;
 let prices=null,pricesBusy=false;
 let registrationUrl=null;
@@ -337,9 +338,11 @@ function controls(){
   $("portal-copy").disabled=!$("portal-uri").value;
   $("unified-signin").disabled=busy||framed||setupHeld;
   $("unified-signin").textContent=busy?"Connecting…":identity?"Continue with wallet":"Sign in";
+  const reuseWeekly=authorisations.some(a=>a.spending_active&&a.scope==="weekly");
+  $("unified-budget").hidden=!registrationTerms||reuseWeekly;
   $("unified-signin-note").textContent=setupHeld?
     "Setup needs checking. Do not repeat a signature. Use your charging link or ask the operator to check the saved approval.":
-    registrationTerms?"Sign in checks your existing approval first. If none is active, it signs the budget below and registers this wallet for credits. Review the terms before continuing.":
+    registrationTerms&&!reuseWeekly?"Sign in checks your existing approval first. If none is active, it signs the budget below and registers this wallet for credits. Review the terms before continuing.":
     identity?authorisations.some(a=>a.spending_active)?
       "Your signed budget covers per-session collection here. Keep this page and wallet available; native wallet prompts may still need approval.":
       "No current spending approval is recorded. Existing credits and history remain available; ask the operator for a fresh invitation.":
@@ -369,7 +372,11 @@ async function registration(){
       referrerPolicy:"no-referrer",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({action:"public_invitation"}),signal:AbortSignal.timeout(4500)});
     if(!response.ok)throw Error("Registration unavailable");
-    const data=await response.json();
+    let data=await response.json();
+    // An invitation QR retains its exact public terms. Never silently replace
+    // a scanned expired invitation with the station's newer one.
+    if(requestedJoin.has("join")&&requestedJoin.has("key"))
+      data={state:"available",public_link_fragment:"#"+requestedJoin.toString()};
     registrationUrl=data.state==="available"?publicEnrolmentUrl(
       location.origin+"/bsv_settlement/driver/index.html"+data.public_link_fragment,location.origin):null;
     registrationTerms=null;registrationData=null;
@@ -432,6 +439,7 @@ async function refreshPrices(){
 }
 function clearPrivate(){
   collections.stop();
+  $("automatic-settlement-status").textContent="Sign in to start automatic per-session settlement. Existing payments and holds are unchanged.";
   if(pairing){void pairing.disconnect();pairing=null;$("portal-pairing").hidden=true;}
   generation++;identity=null;wallet=null;sessions=[];total=0;expires=0;imports.clear();
   authorisations=[];
@@ -693,6 +701,8 @@ async function completeSignIn(candidate){
       throw Error("Budget saved, but receiving registration needs completion. Open the existing invitation in Wallet options; do not sign a new budget.");
     }
     setupHeld=false;
+    requestedJoin.delete("join");requestedJoin.delete("key");
+    history.replaceState(null,"",location.pathname+location.search);
     await load();
   }
   collections.start();

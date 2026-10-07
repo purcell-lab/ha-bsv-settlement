@@ -78,7 +78,7 @@ let failedReport=false;
 window.fetch=async(url,options)=>{
   if(url==="/api/bsv_settlement/driver"){
     const d=JSON.parse(options.body);window.portalPreviewCalls.push(d.action);
-    if(d.action==="public_invitation")return Response.json(params.has("registration")?{state:"available",
+    if(d.action==="public_invitation")return Response.json(params.has("registration")&&!publicApproved?{state:"available",
       public_link_fragment:"#join=11111111-2222-4333-8444-555555555555&key="+"x".repeat(43)}:{state:"unavailable"});
     if(d.action==="public_read")return Response.json({state:"awaiting_driver_consent",invitation:publicInvitation,
       prices:{valid:true,checked_at:new Date().toISOString(),...Object.fromEntries(["import","export"].map(k=>[k,{
