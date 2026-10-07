@@ -668,6 +668,12 @@ async function signIn(candidate,assertActive=()=>{}){
   assertActive();
   if(before!==generation)throw Error("Sign-in was interrupted. Please try again.");
   if(result.identity!==proof.identity)throw Error("Sign-in identity mismatch.");
+  if(!Number.isSafeInteger(result.expires_in)||result.expires_in<=0||result.expires_in>900)
+    throw Error("The sign-in lifetime could not be verified. No wallet setup continued.");
+  // Publish the deadline before identity, with no await between them. The
+  // one-second expiry watchdog runs while the slower history request is pending.
+  // Leaving expires at zero here clears a valid login before load() returns.
+  expires=Date.now()+result.expires_in*1000;
   wallet=candidate;identity=result.identity;identityVerifiedAt=Date.now();imports.clear();await load();
   receiptSync.paused=false;receiptSync.completed.clear();
   await connectReceivingWallet(candidate,()=>{

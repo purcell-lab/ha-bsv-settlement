@@ -129,6 +129,8 @@ window.fetch=async(url,options)=>{
       recipient_address:address,credit_id:"fixture-0",budget_id:terms.budget_id});
   }
   if(data.action==="sessions"){
+    // Reproduce a real HA response crossing the one-second expiry watchdog.
+    if(params.has("slowhistory"))await new Promise(resolve=>setTimeout(resolve,1500));
     if(!signedIn)return response({error:"Sign in"},401);
     const all=params.has("empty")?[]:rows,offset=data.offset||0;
     return response({identity,sessions:all.slice(offset,offset+25),total:all.length,
