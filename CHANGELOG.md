@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: automatic wallet setup expiry race
+
+- Set the verified login deadline before exposing the identity or awaiting session history. A slow HA history response no longer lets the one-second expiry watchdog clear a freshly authenticated wallet.
+- Reject invalid login lifetimes before publishing identity; retain identity mismatch, cancellation, real expiry and payment-hold protections.
+- Add a delayed-history preview and regression tests over the actual portal sign-in function. No wallet permission, budget, recipient or payment changes.
+
 ## Unreleased: rapid prototype validation
 
 - Use a focused weekly-settlement Python gate for routine PRs and main pushes, adding changed-area regressions and falling back to full validation for broad or unmapped backend changes.
