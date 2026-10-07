@@ -197,7 +197,9 @@ def history(api, identity):
     def transaction(target, item, direction, tid, budget_id, account=None):
         # Explicit whitelist: never expose signatures, raw transactions, permits or private links.
         fields = ("state", "txid", "amount_sats", "fee_sats", "confirmations", "created_at", "checked_at",
-                  "recipient_address", "wallet_receipt_status", "wallet_imported_at")
+                  "recipient_address", "wallet_receipt_status", "wallet_imported_at",
+                  "broadcast_attempted_at", "broadcast_acknowledged_at",
+                  "provider_first_confirmed_at", "wallet_accepted_reported_at")
         entry = {k: copy.deepcopy(item.get(k)) for k in fields}
         entry.update(id=tid, direction=direction, receiving_budget_id=budget_id if direction == "operator_to_driver" else None)
         if not any(p["id"] == tid for p in target["transactions"]):

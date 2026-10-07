@@ -10,6 +10,7 @@ import {mountDriverToolbar,qrText} from "./navigation.js";
 import {publicEnrolmentUrl} from "./private-link.js";
 import {ReceiptSync} from "./receipt-sync.js";
 import {pendingCreditJobs} from "./portal-credit-jobs.js";
+import {paymentTimingRows} from "./payment-timing.js";
 import {walletStatus,verifyReceivingWallet} from "./portal-wallet.js";
 import {MonthlySetup,cancelMonthly} from "./monthly-wallet.js";
 import {sessionAccount,formatRate,formatKwh} from "./account-projection.js";
@@ -644,6 +645,8 @@ function render(){
         Number.isSafeInteger(t.amount_sats)?t.amount_sats+" sat":"Amount not recorded","portal-payment-heading");
       addRow("Settlement status",transactionStatus(t));
       addRow("Network fee",Number.isSafeInteger(t.fee_sats)?t.fee_sats+" sat":"Not recorded");
+      for(const [label,value] of paymentTimingRows(t))addRow(label,value);
+      addRow("Timing note","Server observations in UTC, not block mining time or wallet-internal time. Current settlement status remains authoritative.");
       const url=chainRecordUrl(t.txid);
       if(url){const a=node("a","View chain-provider record");a.href=url;a.target="_blank";a.rel="noopener noreferrer";addRow("Transaction",a);}
     }
