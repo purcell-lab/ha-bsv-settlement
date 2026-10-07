@@ -4,6 +4,7 @@ import {canonical,bytes,paymentAuthority,spendingScope,multiScope} from "./model
 import {loginProtocol,loginScope} from "./portal-model.js";
 const wallet=new ProtoWallet(new PrivateKey(19)),params=new URLSearchParams(location.search);
 window.CWI=wallet;
+window.previewNavigate=()=>{window.location.href=new URL("./session/index.html?scenario=active",window.location.href).href;};
 window.portalPreviewCalls=[];
 window.portalPreviewWallet={imports:0,acks:0};
 let signedIn=params.has("restored");
@@ -189,7 +190,7 @@ async function monthlyPreview(data,response){
 const banner=document.createElement("p");
 banner.className="notice";banner.textContent="OFFLINE DESIGN PREVIEW · Fictional wallet and sessions. No payments or live connections.";
 const previewNav=document.createElement("p");
-previewNav.innerHTML='<a href="./session/index.html?scenario=approval">Try budget approval</a> · <a href="./session/index.html?scenario=active">Charging</a> · <a href="./session/index.html?scenario=unconfirmed">Settlement</a>';
+previewNav.innerHTML='<a href="?active&approved">Weekly approval and live session</a> · <a href="?registration">New registration</a> · <a href="./session/index.html?scenario=approval">Private budget approval</a> · <a href="./session/index.html?scenario=unconfirmed">Settlement</a>';
 banner.append(previewNav);
 banner.style.cssText="max-width:1012px;width:calc(100% - 32px);margin:16px auto";
 await import("./portal.js");
