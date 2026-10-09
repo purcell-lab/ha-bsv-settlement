@@ -22,6 +22,7 @@ PROXY_SERVICES = ("acknowledge_proxy_issue",)
 SERVICES = (PURGE_REMOVED_BACKEND_STORES, "get_credit_receipt_link", "bind_session", "add_interval", "prepare_session", "refresh",
             "configure_automatic_credit", "configure_ongoing_credit", "configure_early_credit_delivery",
             "configure_messagebox_delivery", "deliver_credit_message",
+            "inspect_operator_credit_resubmission", "resubmit_operator_credit",
             "wallet_status", "wallet_self_test", "wallet_refresh_chain",
             "prepare_operator_payment", "broadcast_operator_payment", "cancel_operator_payment",
             *SESSION_REVIEW_SERVICES, *BUDGET_SERVICES, *COLLECTION_RECOVERY_SERVICES,

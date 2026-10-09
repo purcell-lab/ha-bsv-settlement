@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: stuck credit resubmission and inbox policy visibility
+
+- Add administrator-only `inspect_operator_credit_resubmission` (read-only) and `resubmit_operator_credit` for a credit stuck in `broadcast_unknown`. Resubmission sends the exact stored signed bytes again, with the same txid, so the credit cannot pay twice. It is allowed only when the provider has no record of the transaction and the reserved funding output is still unspent and confirmed. It is never re-signed or replaced, is capped at 3 attempts per credit, and every attempt is recorded.
+- The status sensor now records the `messagebox_delivery` policy.
+
 ## Unreleased: MessageBox credit delivery (PeerPay-compatible)
 
 - New opt-in delivery sends each provider-confirmed operator credit to the driver's MessageBox `payment_inbox` as an encrypted PeerPay payment message (AtomicBEEF with its Merkle path, BRC-29 derivation prefix and suffix, output 0). A compatible wallet can accept it without the driver opening the portal. Driver-page receipt sync is unchanged.

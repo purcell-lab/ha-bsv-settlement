@@ -50,3 +50,24 @@ must not be confused with a protected backup restore.
 Tests use fictional transactions and a recording provider only. They cover
 confirmation loss and return, invalid/missing evidence, timestamps, disabled
 policy, receipt freshness and retained reservations with exactly one broadcast.
+
+## Operator-approved resubmission of identical bytes
+
+A submission can time out before the provider records it. The credit then stays `broadcast_unknown` indefinitely, and its funding output stays reserved, holding back later credits. The automatic workers still never rebroadcast. An administrator can resolve it in two steps:
+
+1. **`inspect_operator_credit_resubmission`** (read-only). It checks:
+   - the stored signed bytes still parse to the same txid, recipient, amount and single funding outpoint;
+   - whether the provider has the transaction;
+   - whether that outpoint is still in the operator's provider-confirmed unspent set.
+
+   It returns a review hash.
+2. **`resubmit_operator_credit`**. It quotes the txid and review hash, plus `confirm_resubmit_identical_signed_bytes: true`, and submits the exact stored bytes again. It is allowed only if:
+   - the provider has no record of the transaction;
+   - the funding outpoint is still unspent and confirmed;
+   - the credit has fewer than 3 earlier resubmissions.
+
+Resubmission never re-signs, replaces, re-prices or redirects anything. The same bytes have the same txid, so the credit cannot be paid twice. Each attempt is recorded in `resubmissions` (time, administrator, outcome) before and after the network call. An accepted resubmission moves the credit to `submitted`, and normal reconciliation continues from there. An uncertain one stays `broadcast_unknown`.
+
+Do not resubmit in either of these cases:
+- **The funding output is spent elsewhere or no longer confirmed.** The credit needs separate review.
+- **The provider already shows the transaction.** Normal reconciliation will update it.

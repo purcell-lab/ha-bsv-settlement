@@ -254,6 +254,37 @@ configure_early_credit_delivery:
       required: true
       selector: {boolean: {}}
 
+inspect_operator_credit_resubmission:
+  name: Inspect a stuck operator credit for resubmission
+  description: Read-only, administrator only. For a credit stuck in broadcast_unknown, check that its signed bytes still match the frozen recipient, amount and funding output; whether the provider has the transaction; and whether the funding output is still unspent and confirmed. Returns the review hash that resubmission requires.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    credit_id:
+      required: true
+      selector: {text: {}}
+
+resubmit_operator_credit:
+  name: Resubmit a stuck operator credit's identical signed bytes
+  description: REAL MAINNET FUNDS. Administrator only. Resubmits the exact signed transaction of a broadcast_unknown credit, with the same transaction ID, so it cannot pay twice. Nothing is re-signed or replaced. Allowed only when the provider has no record of the transaction and the funding output is still unspent and confirmed. Quote the txid and review hash from the inspection. At most 3 resubmissions per credit.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    credit_id:
+      required: true
+      selector: {text: {}}
+    expected_txid:
+      required: true
+      selector: {text: {}}
+    expected_review_hash:
+      required: true
+      selector: {text: {}}
+    confirm_resubmit_identical_signed_bytes:
+      required: true
+      selector: {boolean: {}}
+
 configure_messagebox_delivery:
   name: Configure MessageBox credit delivery
   description: Administrator-only opt-in. Push newly provider-confirmed operator credits to the driver's MessageBox payment_inbox (PeerPay-compatible) as encrypted AtomicBEEF, so a compatible wallet can accept them without opening the portal. Sends no payment and changes no credit. Disabled by default. The host sees both identity keys and the timing.

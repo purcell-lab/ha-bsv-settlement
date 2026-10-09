@@ -123,6 +123,15 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     result = await configure(self.api, data["enabled"], approving_user_id)
                     self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
                     return result
+                if action in ("inspect_operator_credit_resubmission", "resubmit_operator_credit"):
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    from .credit_resubmission import inspect, resubmit
+                    if action == "inspect_operator_credit_resubmission":
+                        return await inspect(self.api, data["credit_id"])  # Read-only; no tick.
+                    result = await resubmit(self.api, data, approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
                 if action in ("configure_messagebox_delivery", "deliver_credit_message"):
                     if self.mode != "embedded_mainnet":
                         raise WalletError("Select the mainnet operator wallet")
