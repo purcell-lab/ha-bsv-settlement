@@ -35,7 +35,10 @@ STATIC_PATHS = {
     "/bsv_settlement/session-review-card.js": "frontend/session-review-card.js",
     "/bsv_settlement/budget-card.js": "frontend/budget-card.js",
     "/bsv_settlement/driver": "frontend/driver",
+    "/bsv_settlement/app": "frontend/app",
 }
+# Directory paths: every shipped file must be served byte-identical.
+STATIC_DIRS = ("/bsv_settlement/driver", "/bsv_settlement/app")
 REMOVED_BACKENDS = ("mock", "embedded_testnet")
 MAINNET_ACKS = ("acknowledge_key_custody", "acknowledge_mainnet", "enable_broadcast")
 OCPP_METRICS = {"import": ("energy_active_import_register", "100", "kWh"),
@@ -218,16 +221,20 @@ async def child(config_dir):
         installed = Path(config_dir) / "custom_components" / "bsv_settlement"
         for rel in STATIC_PATHS.values():
             assert (installed / rel).exists(), rel
+        served = {url: installed / rel for url, rel in STATIC_PATHS.items() if url not in STATIC_DIRS}
+        for prefix in STATIC_DIRS:
+            folder = installed / STATIC_PATHS[prefix]
+            assert (folder / "index.html").is_file(), prefix
+            served.update({f"{prefix}/{p.relative_to(folder).as_posix()}": p
+                           for p in sorted(folder.rglob("*")) if p.is_file()})
         async with TestClient(TestServer(hass.http.app)) as client:
-            for url in ("/bsv_settlement/operator-card.js", "/bsv_settlement/session-review-card.js",
-                        "/bsv_settlement/budget-card.js", "/bsv_settlement/driver/index.html"):
+            for url, expected in served.items():
                 response = await client.get(url)
                 body = await response.read()
                 assert response.status == 200 and body, (url, response.status)
-                expected = installed / ("frontend/driver/index.html" if url.endswith("index.html")
-                                        else STATIC_PATHS[url])
                 assert body == expected.read_bytes(), url
         report["static_paths"] = sorted(STATIC_PATHS)
+        report["served"] = sorted(served)
 
         for entry in (proxy, shadow):
             assert await hass.config_entries.async_unload(entry.entry_id)

@@ -7,6 +7,11 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[EV app: HA engine, new front door](ev-app.md):** `create-bsv-app` React
+  driver client in `apps/ev-app`, built into the integration and served at
+  `/bsv_settlement/app/index.html`. Milestone 1 is read-only (public rates, own
+  sessions and payments after wallet sign-in through the existing portal API).
+  HA remains the financial authority.
 - **[Station-first implementation series](station-first-implementation.md):**
   approved 30,000 sat monthly driver workflow, coordinated PR dependencies and
   inactive accounting foundation. Not live monthly wallet authority.

@@ -30,6 +30,9 @@ async def async_setup(hass, config):
             "/bsv_settlement/driver",
             str(Path(__file__).parent / "frontend" / "driver"),
             cache_headers=False), StaticPathConfig(
+            "/bsv_settlement/app",
+            str(Path(__file__).parent / "frontend" / "app"),
+            cache_headers=False), StaticPathConfig(
             "/bsv_settlement/budget-card.js",
             str(Path(__file__).parent / "frontend" / "budget-card.js"),
             cache_headers=False)])

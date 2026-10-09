@@ -14,3 +14,9 @@ preview/receipt-sync/
 preview/portal/
 preview/simple-driver/
 preview/qa-simple-*.png
+
+# EV app (apps/ev-app): dependencies and local env files are never committed.
+# Its build goes to custom_components/bsv_settlement/frontend/app/ and IS committed.
+apps/ev-app/**/node_modules/
+apps/ev-app/**/dist/
+apps/ev-app/**/.env*

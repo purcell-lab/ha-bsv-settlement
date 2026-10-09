@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: EV app milestone 1 (read-only, hosted by the integration)
+
+- Add `apps/ev-app/client`, a React driver client scaffolded with `create-bsv-app@1.1.2`. Its build is committed to `custom_components/bsv_settlement/frontend/app/` and served by the integration at `/bsv_settlement/app/index.html`, next to the driver page. There is no separate server and no Home Assistant token: the scaffold's Express half was removed.
+- The app uses the existing same-origin driver portal API (`/api/bsv_settlement/portal`) for five actions only: `prices`, `challenge`, `login`, `sessions` and `logout`. Wallet sign-in is the portal's existing wallet-signature challenge, signed exactly as the driver page signs it (not BRC-103 `@bsv/auth`, which HA cannot verify). The sign-in uses the portal's existing HttpOnly cookie.
+- Read-only: public rates, then the driver's own sessions and payments. Unknown values show "Unavailable", never 0. Provisional amounts are labelled and the session conversion rate is labelled "demonstration rate, not market FX". No registration, pairing, approval, collection, debit, credit, waiver or charger actions.
+- The only Python change is one more static path (`/bsv_settlement/app`). The clean-install smoke test now checks that every driver page and app file is served byte-identical. The `EV app (apps/ev-app)` CI job runs the client tests, rebuilds the bundle and fails on any diff.
+
 ## Unreleased: wallet-connected 5 kWh adjustments
 
 - New debit-button adjustments enter the authenticated wallet queue with an
