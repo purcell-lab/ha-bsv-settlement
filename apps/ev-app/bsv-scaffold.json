@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "name": "ev-app",
+  "network": "test",
+  "stack": {
+    "frontend": {
+      "framework": "react",
+      "variant": "react-ts"
+    },
+    "backend": {
+      "framework": "express"
+    }
+  },
+  "targets": {
+    "client": "client",
+    "server": "server"
+  },
+  "bsvDir": "src/bsv",
+  "capabilities": [
+    "wallet-connect",
+    "wallet-login",
+    "signed-requests"
+  ],
+  "starter": {
+    "id": "custom",
+    "kind": "generated"
+  }
+}

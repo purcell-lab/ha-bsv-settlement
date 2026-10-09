@@ -1,0 +1,10 @@
+{
+  "name": "ev-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/run-apps.mjs dev",
+    "build": "node scripts/run-apps.mjs build",
+    "install:apps": "node scripts/run-apps.mjs install"
+  }
+}
