@@ -266,6 +266,8 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
         self.auto_credits = AutomaticCredits(self)
         from .ongoing_credit import OngoingCredits
         self.ongoing_credits = OngoingCredits(self)
+        from .messagebox import MessageBoxDelivery
+        self.messagebox = MessageBoxDelivery(self)
         from .credit_recovery import OperatorCreditRecovery
         self.credit_recovery = OperatorCreditRecovery(self)
         from .session_closure import ClosedSessions
@@ -301,6 +303,7 @@ class MainnetWalletAPI(EmbeddedWalletAPI):
             session_payments=session_rows,
             session_payments_window=payment_counts,
             ongoing_credit=self.ongoing_credits.summary() if hasattr(self, "ongoing_credits") else None,
+            messagebox_delivery=self.messagebox.summary() if hasattr(self, "messagebox") else None,
             closed_sessions=self.closures.summary() if hasattr(self, "closures") else [],
             record_audit=self.store.audit.summary() if hasattr(self.store, "audit") else None,
         )

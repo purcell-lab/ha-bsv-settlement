@@ -254,6 +254,33 @@ configure_early_credit_delivery:
       required: true
       selector: {boolean: {}}
 
+configure_messagebox_delivery:
+  name: Configure MessageBox credit delivery
+  description: Administrator-only opt-in. Push newly provider-confirmed operator credits to the driver's MessageBox payment_inbox (PeerPay-compatible) as encrypted AtomicBEEF, so a compatible wallet can accept them without opening the portal. Sends no payment and changes no credit. Disabled by default. The host sees both identity keys and the timing.
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    enabled:
+      required: true
+      selector: {boolean: {}}
+    host:
+      name: MessageBox host
+      description: HTTPS origin of the MessageBox server. Defaults to https://message-box-us-1.bsvb.tech.
+      required: false
+      selector: {text: {}}
+
+deliver_credit_message:
+  name: Send one credit to the driver's MessageBox inbox
+  description: Administrator-only. Queue one provider-confirmed credit the driver's wallet has not reported for MessageBox delivery, including one created before delivery was enabled. Never resends a delivered credit. Use the credit ID from the operator card (the budget ID, or ongoing:<proxy>|<session>).
+  fields:
+    config_entry_id:
+      required: true
+      selector: {config_entry: {integration: bsv_settlement}}
+    credit_id:
+      required: true
+      selector: {text: {}}
+
 configure_automatic_credit:
   name: Set automatic operator credit policy
   description: Administrator only. Enable prospective session credits with no per-payment approval. Maximum total spend 1000 sat per session including a fresh provider-quoted, size-based fee. Missing or stale fee evidence blocks signing. Disable stops new signatures, not transactions already submitted.

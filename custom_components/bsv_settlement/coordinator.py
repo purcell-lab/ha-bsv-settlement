@@ -49,6 +49,8 @@ class SettlementCoordinator(DataUpdateCoordinator):
                     await self.api.driver_confirmations.tick()
                     await self.api.ongoing_credits.tick()
                     await self.api.auto_credits.tick()
+                    # Opt-in inbox delivery; its network calls run outside this lock.
+                    self.api.messagebox.schedule(self.lock)
                     await self.api.refresh_balance_if_due(reconcile_payment=True)
                 health = await self.api.call("GET", "/v1/health")
                 # A timed-out prepare is replayed with the same ID and frozen payload.
@@ -119,6 +121,15 @@ class SettlementCoordinator(DataUpdateCoordinator):
                         raise WalletError("Select the mainnet operator wallet")
                     from .early_credit import configure
                     result = await configure(self.api, data["enabled"], approving_user_id)
+                    self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
+                    return result
+                if action in ("configure_messagebox_delivery", "deliver_credit_message"):
+                    if self.mode != "embedded_mainnet":
+                        raise WalletError("Select the mainnet operator wallet")
+                    if action == "configure_messagebox_delivery":
+                        result = await self.api.messagebox.configure(data, approving_user_id)
+                    else:
+                        result = await self.api.messagebox.request(data["credit_id"], approving_user_id)
                     self.async_set_updated_data({**(self.data or {}), "health": self.api.status()})
                     return result
                 if action == "configure_automatic_credit":

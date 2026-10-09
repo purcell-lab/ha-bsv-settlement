@@ -13,6 +13,7 @@ from .mainnet import build_transaction, MIN_CHANGE_SATS, TXID
 from .fees import quote, validate, MODE
 from . import payment_timing
 from . import early_credit
+from .messagebox import MessageBoxDelivery
 
 MAX_TOTAL = 1000
 PROTOCOL = [2, "3241645161d8"]
@@ -63,6 +64,7 @@ class AutomaticCredits:
             "wallet_receipt_status": "wallet_reported_accepted" if acknowledgement else "not_recorded",
             "wallet_imported_at": acknowledgement["reported_at"] if acknowledgement else None,
             **payment_timing.public(item),
+            **MessageBoxDelivery.public(item),
             "early_receipt_available": early_credit.eligible(self.api, item)}
 
     def summary(self):
