@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {PrivateKey,ProtoWallet} from "@bsv/sdk";
 import {canonical} from "./model.js";
-import {signPortalLogin,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
+import {signPortalLogin,signPortalRequest,requestProtocol,signedPortalActions,loginProtocol,loginScope,averageNet,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
 import {priceCard} from "./portal-prices.js";
 const priceNow=Date.parse("2026-10-04T00:00:00Z");
 const currentRate={available:true,estimate:false,aud_per_kwh:"0.285",
@@ -115,4 +115,43 @@ test("final or uncertain payment facts are never replaced by provisional estimat
     {transactions:[{state:"broadcast_unknown"}]},
     {transactions:[{state:"waiting_for_session_end",txid:"a".repeat(64)}]}])
     assert.equal(provisionalSession({...activeSession(),...patch},priceNow),null);
+});
+function grant(identity,patch={}){
+  const now=Math.floor(Date.now()/1000);
+  return {nonce:"n".repeat(43),keyID:"n".repeat(43),browser_binding:"b".repeat(64),identity,
+    issued_at:now,expires_at:now+120,protocolID:requestProtocol,...patch};
+}
+test("signed requests cover exactly the state-changing cookie-only actions",()=>{
+  assert.deepEqual(signedPortalActions,["registration_offer","debit_authorise","debit_failure"]);
+});
+test("a signed request binds the exact body, origin, browser and nonce under its own protocol",async()=>{
+  const wallet=new ProtoWallet(new PrivateKey(21)),sign=wallet.createSignature.bind(wallet);
+  const identity=(await wallet.getPublicKey({identityKey:true})).publicKey;
+  let request;wallet.createSignature=async r=>{request=r;return sign(r);};
+  wallet.createAction=()=>assert.fail("No payment");
+  const body={action:"debit_authorise",attempt_token:"t",draft:{version:1,locktime:0,inputs:[],outputs:[]}};
+  const proof=await signPortalRequest(wallet,grant(identity),origin,body);
+  const p=JSON.parse(proof.payload);
+  assert.deepEqual(p.request,body);
+  assert.equal(p.action,"signed_driver_portal_request");assert.equal(p.origin,origin);
+  assert.equal(p.identity,identity);assert.equal(p.browser_binding,"b".repeat(64));
+  assert.deepEqual(request.protocolID,requestProtocol);assert.equal(request.keyID,"n".repeat(43));
+  assert.equal(request.counterparty,"anyone");
+  assert.notDeepEqual(requestProtocol,loginProtocol);
+  assert.match(request.description,/one-use signing permit/);
+  assert.match(proof.signature,/^[0-9a-f]+$/);
+});
+test("a different wallet than the signed-in identity cannot produce a request proof",async()=>{
+  const wallet=new ProtoWallet(new PrivateKey(22));
+  const other=(await new ProtoWallet(new PrivateKey(23)).getPublicKey({identityKey:true})).publicKey;
+  await assert.rejects(()=>signPortalRequest(wallet,grant(other),origin,{action:"debit_failure"}),/did not verify/);
+});
+test("invalid grants and unsupported actions are refused before wallet use",async()=>{
+  const wallet={createSignature:()=>assert.fail("Do not contact wallet")};
+  const identity="02"+"a".repeat(64);
+  for(const patch of [{nonce:"short",keyID:"short"},{keyID:"x".repeat(43)},{browser_binding:"bad"},{identity:"bad"},
+    {expires_at:1},{issued_at:99999999999},{protocolID:loginProtocol},{extra:true}])
+    await assert.rejects(()=>signPortalRequest(wallet,grant(identity,patch),origin,{action:"debit_failure"}),/Invalid/);
+  for(const body of [{action:"debit_claim"},{action:"sessions"},{action:"debit_failure",signed_request:{}},null])
+    await assert.rejects(()=>signPortalRequest(wallet,grant(identity),origin,body),/Unsupported/);
 });

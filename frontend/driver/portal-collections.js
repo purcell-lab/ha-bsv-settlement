@@ -1,5 +1,6 @@
 import {parseInvitation,derivedInvitation} from "./model.js";
 import {collectOnce,collectAdjustmentOnce} from "./collection.js";
+import {signedPortalActions} from "./portal-model.js";
 
 const actions={claim_collection:"debit_claim",authorise_collection:"debit_authorise",
   report_collection:"debit_report",report_collection_failure:"debit_failure"};
@@ -12,9 +13,9 @@ export function collectionOutcome(result){
 
 // Verified-wallet, serial coordinator. Never resumes holds or replaces an attempt.
 export class PortalCollections {
-  constructor({api,assertActive,onState=()=>{},collect=collectOnce,derive=derivedInvitation,
+  constructor({api,signedApi=null,assertActive,onState=()=>{},collect=collectOnce,derive=derivedInvitation,
     collectAdjustment=collectAdjustmentOnce,operatorIdentity=()=>null}){
-    Object.assign(this,{api,assertActive,onState,collect,derive,collectAdjustment,operatorIdentity});
+    Object.assign(this,{api,signedApi,assertActive,onState,collect,derive,collectAdjustment,operatorIdentity});
     this.running=false;this.enabled=false;this.seen=new Set();this.paused=new Map();this.cursor=0;
   }
   start(){this.enabled=true;} // Only after live wallet verification, not cookie restore.
@@ -57,7 +58,11 @@ export class PortalCollections {
           // Diagnostics can still be reported after a local pause, but never
           // allow a payment call to continue after sign-out or hidden context.
           if(action!=="report_collection_failure")this.assertActive();
-          return this.api(mapped,{...data,...job});
+          if(!signedPortalActions.includes(mapped))return this.api(mapped,{...data,...job});
+          if(!this.signedApi)throw Error("This step needs a wallet-signed request.");
+          // The permit is signed through the guarded wallet; a failure report
+          // may still be signed after a local pause, like its unsigned form.
+          return this.signedApi(action==="report_collection_failure"?wallet:guarded,mapped,{...data,...job});
         };
         const guarded=new Proxy(wallet,{get:(target,method)=>{
           const value=target[method];
