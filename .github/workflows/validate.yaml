@@ -122,3 +122,22 @@ jobs:
       - run: npm ci && npm test && npm run build
         working-directory: frontend
       - run: git diff --exit-code -- custom_components/bsv_settlement/frontend frontend/bsv-session-review-card.bundle.js frontend/bsv-budget-card.bundle.js
+
+  ev-app:
+    name: EV app (apps/ev-app)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            apps/ev-app/server/package-lock.json
+            apps/ev-app/client/package-lock.json
+      - name: Server tests, typecheck and build (fake HA only)
+        working-directory: apps/ev-app/server
+        run: npm ci && npm test && npm run typecheck && npm run build
+      - name: Client tests and build
+        working-directory: apps/ev-app/client
+        run: npm ci && npm test && npm run build

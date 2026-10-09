@@ -12,26 +12,26 @@ export function ConnectWallet () {
   }
   return (
     <div className="bsv-connect">
-      <button onClick={() => { void connect() }} disabled={status !== 'disconnected'}>
+      <button type="button" onClick={() => { void connect() }} disabled={status !== 'disconnected'}>
         {status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
       </button>
       {(status === 'choosing' || status === 'pairing') && (
-        <div className="bsv-modal" role="dialog">
+        <div className="bsv-modal" role="dialog" aria-modal="true" aria-labelledby="bsv-connect-title">
           <div className="bsv-modal-card">
             {status === 'choosing' && (
               <>
-                <h3>No desktop wallet found</h3>
-                <button className="bsv-btn" onClick={() => { void connectMobile() }}>Connect with a mobile wallet</button>
+                <h3 id="bsv-connect-title">No desktop wallet found</h3>
+                <button type="button" className="bsv-btn" onClick={() => { void connectMobile() }}>Connect with a mobile wallet</button>
                 <a href={INSTALL_URL} target="_blank" rel="noreferrer">Install a desktop wallet</a>
               </>
             )}
             {status === 'pairing' && (
               <>
-                <h3>Scan with your mobile wallet</h3>
+                <h3 id="bsv-connect-title">Scan with your mobile wallet</h3>
                 {relay.session?.qrDataUrl != null ? <img src={relay.session.qrDataUrl} alt="Pairing QR" /> : <p>Generating code…</p>}
               </>
             )}
-            <button className="bsv-btn-ghost" onClick={cancel}>Cancel</button>
+            <button type="button" className="bsv-btn-ghost" onClick={cancel}>Cancel</button>
           </div>
         </div>
       )}

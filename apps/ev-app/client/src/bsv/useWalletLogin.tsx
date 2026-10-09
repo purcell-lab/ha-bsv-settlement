@@ -2,7 +2,7 @@
 import { useCallback } from 'react'
 import { useWallet } from './WalletContext.js'
 import { createAuthProof } from './auth.js'
-import { getServerIdentity, readIdentityKeyResponse } from './serverIdentity.js'
+import { getServerIdentity, readIdentityKeyResponse, requireIdentityKey } from './serverIdentity.js' // ev-app fix: missing import in generated file
 import { apiFetch } from './apiClient.js'
 
 // serverIdentityKey is optional: when omitted it's fetched from GET /api/identity.

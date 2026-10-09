@@ -7,6 +7,9 @@ an implemented control. The original no-budget mock documentation remains below.
 
 ## Current development
 
+- **[EV app: HA engine, new front door](ev-app.md):** separate `create-bsv-app`
+  driver app in `apps/ev-app`. Milestone 1 is read-only (station status and own
+  credits after wallet sign-in). HA remains the financial authority.
 - **[Station-first implementation series](station-first-implementation.md):**
   approved 30,000 sat monthly driver workflow, coordinated PR dependencies and
   inactive accounting foundation. Not live monthly wallet authority.

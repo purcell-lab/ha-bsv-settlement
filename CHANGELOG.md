@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: EV app milestone 1 (read-only front door)
+
+- Add `apps/ev-app`, scaffolded with `create-bsv-app@1.1.2` (React + Express, wallet login, signed requests). Home Assistant remains the single source of financial truth.
+- The server reads only allowlisted sensor states through `GET /api/states/<id>`, using a dedicated non-admin HA token kept server-side. It enforces a timeout, a byte cap, strict JSON, no redirects and HTTPS (LAN `http` only by explicit opt-in).
+- Add public `GET /api/station` (unknown values are null with a reason, never 0; provisional and demonstration-rate labels). Add `GET /api/me/credits`, which needs BRC-103 sign-in and returns only the verified identity's credit rows.
+- No payment, signing, broadcast, collection, credit, waiver, recovery or charger actions. `custom_components/` is unchanged. A new CI job, `EV app (apps/ev-app)`, runs fake-HA tests and builds.
+
 ## Unreleased: wallet-connected 5 kWh adjustments
 
 - New debit-button adjustments enter the authenticated wallet queue with an

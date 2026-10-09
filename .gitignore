@@ -14,3 +14,8 @@ preview/receipt-sync/
 preview/portal/
 preview/simple-driver/
 preview/qa-simple-*.png
+
+# EV app (apps/ev-app): dependencies and build output are never committed
+apps/ev-app/**/node_modules/
+apps/ev-app/**/dist/
+apps/ev-app/**/.env*

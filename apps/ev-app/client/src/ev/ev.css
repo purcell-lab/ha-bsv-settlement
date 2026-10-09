@@ -1,0 +1,24 @@
+/* Driver page styles. Plain CSS on top of the generated bsv.css theme. */
+.ev-page { padding: 32px 16px 64px; }
+.ev-page h1 { font-size: 24px; }
+.ev-card { margin: 0 0 20px; padding: 16px; border: 1px solid var(--bsv-border-soft); border-radius: 10px; background: var(--bsv-surface); }
+.ev-card h2 { margin: 0 0 12px; font: 600 18px/1.3 system-ui; color: var(--bsv-strong); }
+.ev-card h3 { margin: 16px 0 6px; font: 600 14px/1.3 system-ui; color: var(--bsv-strong); }
+.ev-card-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.ev-card-head h2 { margin: 0; }
+.ev-list { margin: 0; }
+.ev-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-bottom: 1px solid var(--bsv-border-soft); }
+.ev-row:last-child { border-bottom: 0; }
+.ev-row dt { color: var(--bsv-muted); }
+.ev-row dd { margin: 0; color: var(--bsv-strong); text-align: right; overflow-wrap: anywhere; }
+.ev-note { font-size: 12px; color: #e0b25a; }
+.ev-unavailable { color: #e0b25a; font-style: italic; }
+.ev-reason { font-size: 12px; color: var(--bsv-muted); font-style: normal; }
+.ev-caveat { margin: 8px 0; padding: 8px 10px; border-left: 3px solid #e0b25a; background: rgba(224,178,90,.08); font-size: 13px; }
+.ev-meta { margin: 8px 0; font-size: 12px; color: var(--bsv-muted); }
+.ev-credits { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.ev-credit { padding: 8px 12px; border: 1px solid var(--bsv-border); border-radius: 8px; background: var(--bsv-surface-deep); }
+.ev-page button:focus-visible, .ev-page a:focus-visible { outline: 3px solid var(--bsv-accent); outline-offset: 2px; }
+@media (max-width: 400px) {
+  .ev-row dd { text-align: left; }
+}

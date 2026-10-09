@@ -1,16 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { Home } from './bsv/Home'
-import { WalletLogin } from './bsv/WalletLogin'
-import { SignedRequestDemo } from './bsv/SignedRequestDemo'
+import { DriverPage } from './ev/DriverPage'
 
+// Milestone 1: one read-only driver page. The generated demo routes (/login,
+// /signed-demo) were replaced by this page; the generated wallet helpers remain.
 export default function App () {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<WalletLogin />} />
-        <Route path="/signed-demo" element={<SignedRequestDemo />} />
-      </Routes>
-    </BrowserRouter>
-  )
+  return <DriverPage />
 }

@@ -81,7 +81,8 @@ export async function apiFetch (path: string, init: RequestInit = {}): Promise<R
     const headers = new Headers(response.headers)
     headers.delete('content-encoding')
     headers.delete('content-length')
-    return new Response(body.length === 0 ? null : body, {
+    // ev-app fix: TS 6 DOM types need an ArrayBuffer-backed view (body is freshly allocated).
+    return new Response(body.length === 0 ? null : (body as Uint8Array<ArrayBuffer>), {
       status: response.status,
       statusText: response.statusText,
       headers
