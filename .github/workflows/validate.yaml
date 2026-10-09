@@ -133,11 +133,13 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
-            apps/ev-app/server/package-lock.json
             apps/ev-app/client/package-lock.json
-      - name: Server tests, typecheck and build (fake HA only)
-        working-directory: apps/ev-app/server
-        run: npm ci && npm test && npm run typecheck && npm run build
-      - name: Client tests and build
+            frontend/driver/package-lock.json
+      # Driver modules let the client tests compare sign-in arguments with the driver page.
+      - run: npm ci
+        working-directory: frontend/driver
+      - run: npm ci
         working-directory: apps/ev-app/client
-        run: npm ci && npm test && npm run build
+      - run: npm test && npm run build
+        working-directory: apps/ev-app/client
+      - run: git diff --exit-code -- custom_components/bsv_settlement/frontend/app

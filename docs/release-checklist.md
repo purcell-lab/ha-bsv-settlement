@@ -97,8 +97,9 @@ protection uses that name.
 - [ ] Every unresolved payment, monthly binding and pending collection from the
       inventory is still present, in the same state.
 - [ ] `/bsv_settlement/operator-card.js`, `/bsv_settlement/session-review-card.js`,
-      `/bsv_settlement/budget-card.js` and `/bsv_settlement/driver/` return
-      200. Installed file hashes match the commit's source.
+      `/bsv_settlement/budget-card.js`, `/bsv_settlement/driver/index.html` and
+      `/bsv_settlement/app/index.html` return 200. Installed file hashes match
+      the commit's source.
 - [ ] Each sensor-proxy entry has `source_identity` in its config entry data.
       On the first load after #107 an older entry logs one "adopted its
       current source registry identities" warning and stores
@@ -151,7 +152,7 @@ added later:
 
 | Evidence | What it shows |
 |---|---|
-| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 44 actions (43 services plus the grouped wallet test) and frontend paths load, and everything unloads. Runs with no network, using only HA and the manifest requirements |
+| `scripts/clean_install_smoke.py`, `tests/test_clean_install.py` and the `Clean install smoke test` CI job | Only the HACS payload is copied into an empty config. An isolated interpreter sets it up via the config flows (sensor proxy, OCPP import shadow, mainnet refusal without all acknowledgements, no mock/testnet choice). Entities, 44 actions (43 services plus the grouped wallet test) and frontend paths load (every driver page and hosted EV app file is served byte-identical to the install), and everything unloads. Runs with no network, using only HA and the manifest requirements |
 | `tests/test_upgrade_rollback.py` with `tests/fixtures/upgrade` | Stores written by the earlier main layout load in full HA. Mainnet identity, proxy observations and an uncertain-broadcast reservation are kept. Legacy mock (v0.1.2) and testnet entries fail closed and can be deleted, with their stores left byte-identical. Store versions and keys stay readable for rollback. A split restore of an older ledger fails closed |
 | Python/HA CI matrix | Focused development gate plus changed-area tests; full regression on explicit manual runs, version tags and broad-change fallback |
 

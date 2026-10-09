@@ -1,7 +1,8 @@
-import { DriverPage } from './ev/DriverPage'
+import { DriverPage } from './ev/DriverPage.tsx'
 
-// Milestone 1: one read-only driver page. The generated demo routes (/login,
-// /signed-demo) were replaced by this page; the generated wallet helpers remain.
+// Read-only milestone: one driver page served by the integration at
+// /bsv_settlement/app/. The scaffold's demo routes, BRC-103 login and signed
+// requests were removed; the portal's own wallet-signature sign-in is used.
 export default function App () {
   return <DriverPage />
 }

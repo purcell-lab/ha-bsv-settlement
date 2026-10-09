@@ -31,6 +31,7 @@ def test_stage_copies_only_shipped_files_and_never_overwrites(tmp_path):
     assert sorted(p.name for p in (tmp_path / "custom_components").iterdir()) == [domain]
     shipped = {p.relative_to(target) for p in target.rglob("*") if p.is_file()}
     assert Path("manifest.json") in shipped and Path("frontend/driver/index.html") in shipped
+    assert Path("frontend/app/index.html") in shipped and Path("frontend/app/app.js") in shipped
     assert not any("__pycache__" in p.parts or p.suffix == ".pyc" for p in shipped)
     for rel in smoke.STATIC_PATHS.values():
         assert (target / rel).exists(), rel
@@ -54,6 +55,10 @@ def test_clean_install_smoke_sets_up_and_unloads():
     assert report["actions"] == len(SERVICES) + 1  # Plus the grouped wallet test action.
     assert "request_payment" not in SERVICES
     assert report["static_paths"] == sorted(smoke.STATIC_PATHS)
+    # Every shipped driver and hosted EV app file is served byte-identical.
+    for url in ("/bsv_settlement/driver/index.html", "/bsv_settlement/app/index.html",
+                "/bsv_settlement/app/app.js", "/bsv_settlement/app/index.css"):
+        assert url in report["served"], url
 
 
 def test_missing_shipped_asset_fails_the_smoke_test(tmp_path):

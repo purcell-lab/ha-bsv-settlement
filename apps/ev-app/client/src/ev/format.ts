@@ -1,67 +1,61 @@
-// Display formatters. Rule: a missing / unknown value is shown as "unavailable",
-// NEVER as 0. Pure module with no imports so it can be unit-tested directly.
+// Display formatters. Rule: a missing or unknown value is shown as
+// "Unavailable", NEVER as 0. Pure module with no imports so it can be
+// unit-tested directly with node --test.
 
-export interface Reading<T extends number | string> {
-  value: T | null
-  unit: string | null
-  reason: string | null
-  last_updated: string | null
-}
+export const UNAVAILABLE = 'Unavailable'
 
-export const UNAVAILABLE = 'unavailable'
+const DECIMAL = /^-?\d{1,16}(?:\.\d{1,16})?$/
 
-const REASONS: Record<string, string> = {
-  unknown: 'unknown in Home Assistant',
-  unavailable: 'sensor unavailable',
-  empty: 'no value reported',
-  not_numeric: 'not a number',
-  ha_timeout: 'Home Assistant did not answer in time',
-  ha_not_found: 'sensor not found',
-  ha_unauthorized: 'not permitted',
-  ha_oversize: 'response too large',
-  ha_network: 'Home Assistant unreachable'
-}
-
-export function describeReason (reason: string | null): string {
-  if (reason === null) return ''
-  return REASONS[reason] ?? (reason.startsWith('ha_') ? 'Home Assistant read failed' : reason)
-}
-
-function isNumber (value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
-export function formatNumber (value: unknown, opts: { decimals?: number, unit?: string | null } = {}): string {
-  if (!isNumber(value)) return UNAVAILABLE
-  const text = value.toLocaleString('en-AU', {
-    minimumFractionDigits: opts.decimals ?? 0,
-    maximumFractionDigits: opts.decimals ?? 3
-  })
-  return opts.unit != null && opts.unit !== '' ? `${text} ${opts.unit}` : text
-}
-
-/** Format a server Reading. Null / malformed → "unavailable", never "0". */
-export function formatReading (reading: Reading<number | string> | null | undefined, decimals?: number): string {
-  if (reading == null || reading.value === null || reading.value === undefined) return UNAVAILABLE
-  if (typeof reading.value === 'string') return reading.value === '' ? UNAVAILABLE : reading.value
-  return formatNumber(reading.value, { decimals, unit: reading.unit })
-}
-
-export function formatSats (value: unknown): string {
-  if (!isNumber(value) || !Number.isInteger(value)) return UNAVAILABLE
-  return `${value.toLocaleString('en-AU')} sats`
+/** A finite number, or a plain decimal string as the portal stores amounts. Anything else is null. */
+export function toFinite (value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && DECIMAL.test(value)) {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
 }
 
 export function formatAud (value: unknown): string {
-  if (!isNumber(value)) return UNAVAILABLE
-  const sign = value < 0 ? '-' : ''
-  return `${sign}A$${Math.abs(value).toFixed(2)}`
+  const n = toFinite(value)
+  if (n === null) return UNAVAILABLE
+  const sign = n < 0 ? '-' : ''
+  return `${sign}A$${Math.abs(n).toFixed(2)}`
+}
+
+export function formatKwh (value: unknown): string {
+  const n = toFinite(value)
+  return n === null ? UNAVAILABLE : `${n.toFixed(3)} kWh`
+}
+
+/** Satoshis are integers from the ledger; a string, fraction or unsafe value is not a satoshi amount. */
+export function formatSats (value: unknown): string {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) return UNAVAILABLE
+  return `${value.toLocaleString('en-AU')} sat`
 }
 
 export function formatCount (value: unknown): string {
-  return isNumber(value) && Number.isInteger(value) && value >= 0 ? String(value) : UNAVAILABLE
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? String(value) : UNAVAILABLE
+}
+
+export function formatTime (value: unknown): string {
+  if (typeof value !== 'string' || value === '') return UNAVAILABLE
+  const t = Date.parse(value)
+  return Number.isFinite(t)
+    ? new Date(t).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
+    : UNAVAILABLE
+}
+
+export function isTxid (value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 }
 
 export function shortTxid (txid: unknown): string {
-  return typeof txid === 'string' && /^[0-9a-f]{64}$/.test(txid) ? `${txid.slice(0, 10)}…${txid.slice(-6)}` : UNAVAILABLE
+  return isTxid(txid) ? `${txid.slice(0, 10)}…${txid.slice(-6)}` : UNAVAILABLE
+}
+
+export function compactIdentity (identity: unknown): string {
+  return typeof identity === 'string' && /^(02|03)[0-9a-f]{64}$/.test(identity)
+    ? `${identity.slice(0, 6)}…${identity.slice(-4)}`
+    : UNAVAILABLE
 }
