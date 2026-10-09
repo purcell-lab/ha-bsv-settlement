@@ -32,6 +32,9 @@ an implemented control. The original no-budget mock documentation remains below.
   synthetic lifecycle fixtures, deterministic shadow replay, the session
   attribution contract (idTag is never identity) and a reproducible
   [shadow report](qa/ocpp-shadow-report-2026-10-05.md); offline, shadow only.
+- **[MessageBox credit delivery](messagebox-credit-delivery.md):** opt-in,
+  PeerPay-compatible push of provider-confirmed credits to the driver's
+  `payment_inbox` as encrypted AtomicBEEF. Evidence only; disabled by default.
 - **[Driver portal](driver-portal.md):** static wallet sign-in and owned session
   history; portal authentication is not spending authority.
 - **[Driver collection assurance](driver-collection-assurance.md):** restart

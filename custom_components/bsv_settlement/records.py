@@ -59,6 +59,7 @@ LEDGER_NAMESPACES = {
     "automatic_credit_index": ("auto_credit", None),
     "ongoing_credit_policy": ("ongoing_credit", None),
     "ongoing_credit_routes": ("ongoing_credit", None),
+    "messagebox_delivery_policy": ("messagebox", None),
     "closed_sessions": ("session_closure", None),
     "unallocated_receipts": ("owned_waiver", None),
     "energy_adjustment_requests": ("energy_adjustment", None),

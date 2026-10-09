@@ -87,6 +87,9 @@ async def async_setup(hass, config):
         },
         "configure_automatic_credit": {**common, vol.Required("enabled"): bool},
         "configure_early_credit_delivery": {**common, vol.Required("enabled"): bool},
+        "configure_messagebox_delivery": {**common, vol.Required("enabled"): bool,
+                                          vol.Optional("host"): vol.All(str, vol.Length(min=9, max=270))},
+        "deliver_credit_message": {**common, vol.Required("credit_id"): vol.All(str, vol.Length(min=1, max=300))},
         "prepare_adjustment_renewal": {**common, vol.Required("review_id"): str},
         "prepare_settlement_recovery": {
             **common, vol.Required("record_type"): vol.In(["review", "budget", "credit", "payment"]),
@@ -250,6 +253,7 @@ async def async_setup(hass, config):
     async def handle(call):
         if call.service in ("get_credit_receipt_link", "prepare_operator_payment", "broadcast_operator_payment",
                             "configure_automatic_credit", "configure_ongoing_credit", "configure_early_credit_delivery",
+                            "configure_messagebox_delivery", "deliver_credit_message",
                             "cancel_operator_payment", "wallet_refresh_chain", *SESSION_REVIEW_SERVICES,
                             # #113: these persist to (or expose) the mainnet ledger and coordinator store.
                             "wallet_status", "wallet_self_test", "bind_session", "add_interval",

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: MessageBox credit delivery (PeerPay-compatible)
+
+- New opt-in delivery sends each provider-confirmed operator credit to the driver's MessageBox `payment_inbox` as an encrypted PeerPay payment message (AtomicBEEF with its Merkle path, BRC-29 derivation prefix and suffix, output 0). A compatible wallet can accept it without the driver opening the portal. Driver-page receipt sync is unchanged.
+- It is disabled by default. `configure_messagebox_delivery` (administrator only) enables it and sets the HTTPS host, defaulting to `https://message-box-us-1.bsvb.tech`. Only credits created after enablement are sent automatically. `deliver_credit_message` sends one older credit on request.
+- It is evidence only: it never builds, signs, funds or broadcasts a payment, and never pays a delivery fee. Unconfirmed, wallet-reported and mismatched credits are never sent. Attempts are bounded (3, one hour apart), and network calls run outside the wallet lock.
+- New ledger namespace: `messagebox_delivery_policy`. Each credit carries `messagebox_delivery`, shown as `inbox_delivery` in the payment list.
+
 ## Unreleased: signed portal requests
 
 - `registration_offer`, `debit_authorise` and `debit_failure` now need a per-request wallet signature as well as the sign-in cookie. The signature covers the exact body, the origin, this browser's sign-in and a single-use server nonce (`request_nonce`), under the separate protocol `[2, "ev portal request"]`. Pattern adapted from create-bsv-app's `signed-requests` capability, verified in Python.
