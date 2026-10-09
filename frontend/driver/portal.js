@@ -1,6 +1,6 @@
 import {WalletClient} from "@bsv/sdk";
 import {BrowserPairing} from "./pairing.js";
-import {signPortalLogin,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
+import {signPortalLogin,signPortalRequest,transactionStatus,sessionSummary,compactIdentity,provisionalSession} from "./portal-model.js";
 import {parseInvitation} from "./model.js";
 import {importAndReportCredit,receiptReported} from "./credit.js";
 import {chainRecordUrl} from "../ui.js";
@@ -202,7 +202,7 @@ const expandedSessions=new Set();
 let syncGeneration=null;
 let connectionState="unverified",connectionCheckedAt=null;
 let station={monthly_enabled:false,station_ids:[]},monthly=null,tab="station",tabChosen=false;
-const collections=new PortalCollections({api,operatorIdentity:()=>{
+const collections=new PortalCollections({api,signedApi,operatorIdentity:()=>{
   const keys=[...new Set(walletMetadata.addresses.filter(a=>a.receiving_verified).map(a=>a.operator_identity))];
   return keys.length===1?keys[0]:null;
 },assertActive:()=>{
@@ -527,6 +527,12 @@ async function api(action,extra={}){
   if(!r.ok){const error=Error(data.error||"Portal request failed");error.status=r.status;error.code=data.code;throw error;}
   return data;
 }
+// State-changing actions also carry a fresh wallet signature over the exact
+// request; the sign-in cookie alone never authorises them.
+async function signedApi(signer,action,extra={}){
+  const grant=await api("request_nonce");
+  return api(action,{signed_request:await signPortalRequest(signer,grant,location.origin,{action,...extra})});
+}
 function paintPrices(){
   const buy=priceCard(prices,"import"),sell=priceCard(prices,"export");
   const note=buy.available&&sell.available
@@ -817,7 +823,7 @@ async function completeSignIn(candidate,assertActive=()=>{}){
     // Only authenticated operator-configured terms; no client-chosen limits,
     // destination or historical session. Existing assigned records stay frozen.
     try{
-      const offered=await api("registration_offer");
+      const offered=await signedApi(candidate,"registration_offer");
       assertActive();
       if(offered.invitation){
         checked=parseInvitation(JSON.stringify(offered.invitation));

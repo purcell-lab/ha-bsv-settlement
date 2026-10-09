@@ -39,6 +39,24 @@ page handoff. The recovery control accepts only same-origin links.
 - Exact Origin and JSON checks apply to every request. Responses are no-store. Wallet actions are disabled in frames.
 - Limits are 64 browser sessions, 120 requests per minute globally, 20 KB request bodies and 25 returned sessions per page. These are bounded prototype controls, not a substitute for upstream denial-of-service protection.
 
+## Signed requests
+
+The sign-in cookie proves a recent wallet login, not consent to a specific change. Three state-changing actions that previously relied on the cookie alone now also need a fresh wallet signature over the exact request:
+
+| Action | What it changes | Other protection it keeps |
+|---|---|---|
+| `registration_offer` | Creates or reuses an operator-signed weekly offer | Operator template and fixed limits |
+| `debit_authorise` | Issues the one-use submission permit for a payment draft | Attempt token from the wallet-signed claim; draft validation |
+| `debit_failure` | Records an unverified browser diagnostic | Attempt token from the wallet-signed claim |
+
+Every other state-changing action already carried its own wallet proof: the claim, transaction, approval receipt, receiving-address proof, receipt acknowledgement and monthly consent.
+
+- `request_nonce` (signed-in wallets only) returns a single-use 120-second grant: nonce, browser binding, identity, issue and expiry times. At most eight grants are outstanding per sign-in.
+- The wallet signs a payload that binds the purpose, HTTPS origin, identity, browser binding, nonce, times and the full request body, using protocol `[2, "ev portal request"]`, the nonce as key ID and counterparty `anyone`. This protocol is separate from login.
+- The request is sent as `{"action", "signed_request": {"payload", "signature"}}`. The server parses the signed bytes as the request, so nothing is re-encoded between signing and checking. Unsigned fields beside it are refused.
+- The nonce is consumed on any attempt, including a failed one. A replayed, expired, tampered, wrong-wallet, wrong-browser or wrong-action request gets `403` with code `request_signature_required`. The sign-in stays valid.
+- The private-link driver endpoint (`/api/bsv_settlement/driver`) is unchanged. It is authorised by its own link token, not the portal cookie.
+
 The endpoint requires exactly one loaded embedded-mainnet operator coordinator. Multi-operator selection is not included.
 
 ## History and receipt sync

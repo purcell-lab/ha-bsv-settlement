@@ -6,6 +6,8 @@ Monthly consent actions are delegated to ``monthly_portal`` and stay disabled
 unless a reviewed activation configures them; no accounting transition is exposed.
 Login state is memory-only and is lost on restart. Receipt reports use the
 existing independently wallet-signed acknowledgement, not login authority.
+Actions in ``portal_requests.SIGNED_ACTIONS`` also need a per-request wallet
+signature over the exact body; the cookie alone never authorises them.
 """
 import copy
 import json
@@ -22,7 +24,7 @@ from .api import WalletError
 from .budget import approval_payload, canonical, message_hash, sha, signature_protocol
 from .const import DOMAIN
 from .pairing import external_origin, KEY as PAIRING_KEY
-from . import monthly_portal, portal_debits, portal_registration
+from . import monthly_portal, portal_debits, portal_registration, portal_requests
 
 KEY = DOMAIN + "_portal"
 COOKIE = "__Host-bsv_driver_portal"
@@ -387,6 +389,7 @@ class DriverPortalView(HomeAssistantView):
                 raise WalletError("Invalid request")
             action = data.get("action")
             if action not in ("prices", "challenge", "login", "sessions", "logout", "pairing_create", "pairing_cancel",
+                              "request_nonce",
                               "credit_receipt", "acknowledge_credit_receipt", "station", *monthly_portal.ACTIONS,
                               *portal_debits.ACTIONS, *portal_registration.ACTIONS):
                 raise WalletError("Unsupported portal action")
@@ -415,7 +418,16 @@ class DriverPortalView(HomeAssistantView):
             item = state.valid(key)
             if item["coord"] is not coord:
                 raise WalletError("Sign in again")
-            if action == "challenge":
+            if action in portal_requests.SIGNED_ACTIONS:
+                try:
+                    data = portal_requests.verify(item, key, origin, action, data)
+                except portal_requests.RequestRefused:
+                    # Not a sign-out: the page keeps its sign-in and can ask again.
+                    return web.json_response({"error": "Approve this request in your wallet and try again.",
+                                              "code": "request_signature_required"}, status=403, headers=HEADERS)
+            if action == "request_nonce":
+                result = portal_requests.issue(item, key, origin)
+            elif action == "challenge":
                 nonce = secrets.token_urlsafe(32)
                 payload = canonical({"action": "sign_in_driver_portal", "version": 1,
                     "origin": origin, "nonce": nonce, "browser_binding": key, "scope": SCOPE,

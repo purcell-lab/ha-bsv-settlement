@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: signed portal requests
+
+- `registration_offer`, `debit_authorise` and `debit_failure` now need a per-request wallet signature as well as the sign-in cookie. The signature covers the exact body, the origin, this browser's sign-in and a single-use server nonce (`request_nonce`), under the separate protocol `[2, "ev portal request"]`. Pattern adapted from create-bsv-app's `signed-requests` capability, verified in Python.
+- The driver page signs these automatically. Each weekly offer request and each payment permit adds one wallet signature; the payment transaction itself still needs its own wallet approval. Every other money-moving action already carried a wallet proof and is unchanged.
+- Refusals return `403` with code `request_signature_required` and do not sign the driver out. An end-to-end test checks that the official TypeScript SDK signature verifies in Python.
+
 ## Unreleased: EV app milestone 1 (read-only, hosted by the integration)
 
 - Add `apps/ev-app/client`, a React driver client scaffolded with `create-bsv-app@1.1.2`. Its build is committed to `custom_components/bsv_settlement/frontend/app/` and served by the integration at `/bsv_settlement/app/index.html`, next to the driver page. There is no separate server and no Home Assistant token: the scaffold's Express half was removed.

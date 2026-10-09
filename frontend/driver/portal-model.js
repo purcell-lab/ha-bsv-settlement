@@ -24,6 +24,32 @@ export async function signPortalLogin(wallet,challenge,origin,now=Date.now()){
   if(!key.verify(bytes(challenge.payload),Signature.fromDER(signature)))throw Error("Wallet login signature did not verify.");
   return {identity,payload:challenge.payload,signature:hex(signature)};
 }
+export const requestProtocol=[2,"ev portal request"];
+export const signedPortalActions=["registration_offer","debit_authorise","debit_failure"];
+const requestDescriptions={
+  registration_offer:"Confirm this browser may request the operator's current weekly charging offer. This signature does not approve, create or increase a spending budget.",
+  debit_authorise:"Confirm the one-use signing permit for this exact session payment draft. The payment itself still needs your separate wallet transaction approval.",
+  debit_failure:"Confirm this browser may record why a session payment stopped. This signature does not pay, retry or release anything."};
+// Per-request proof over the exact body. The server parses these signed bytes
+// as the request, so nothing is re-encoded between signing and checking.
+export async function signPortalRequest(wallet,grant,origin,request,now=Date.now()){
+  if(!grant||Object.keys(grant).sort().join(",")!=="browser_binding,expires_at,identity,issued_at,keyID,nonce,protocolID"||
+    !/^[A-Za-z0-9_-]{43}$/.test(grant.nonce)||grant.keyID!==grant.nonce||!/^[0-9a-f]{64}$/.test(grant.browser_binding)||
+    !/^(02|03)[0-9a-f]{64}$/.test(grant.identity)||canonical(grant.protocolID)!==canonical(requestProtocol)||
+    !Number.isSafeInteger(grant.issued_at)||!Number.isSafeInteger(grant.expires_at)||
+    grant.issued_at*1000>now+30000||grant.expires_at*1000<=now||grant.expires_at<=grant.issued_at||grant.expires_at-grant.issued_at>120)
+    throw Error("Invalid portal request grant.");
+  if(!request||typeof request!=="object"||!signedPortalActions.includes(request.action)||"signed_request" in request)
+    throw Error("Unsupported signed portal request.");
+  const payload=canonical({version:1,action:"signed_driver_portal_request",origin,identity:grant.identity,
+    browser_binding:grant.browser_binding,nonce:grant.nonce,issued_at:grant.issued_at,expires_at:grant.expires_at,request});
+  const {signature}=await wallet.createSignature({protocolID:requestProtocol,keyID:grant.nonce,counterparty:"anyone",
+    data:bytes(payload),description:requestDescriptions[request.action]});
+  // A different wallet cannot satisfy this: the key is derived from the signed-in identity.
+  const key=new KeyDeriver("anyone").derivePublicKey(requestProtocol,grant.nonce,grant.identity);
+  if(!key.verify(bytes(payload),Signature.fromDER(signature)))throw Error("Wallet request signature did not verify. Was a different wallet connected?");
+  return {payload,signature:hex(signature)};
+}
 export function averageNet(session){
   const values=[session.import_kwh,session.export_kwh,session.net_amount_aud];
   if(values.some(v=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))))return null;

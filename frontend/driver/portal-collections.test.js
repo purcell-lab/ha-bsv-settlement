@@ -81,3 +81,29 @@ test("scoped API cannot route a claim to another session",async()=>{
   assert.deepEqual(seen.map(x=>x.session_id),["one","two"]);
   assert.ok(seen.every(x=>x.budget_id!=="attacker"));
 });
+test("permit and failure steps are sent signed; other steps stay on the plain API",async()=>{
+  const f=fixture(),signedCalls=[];const wallet={id:"raw"};
+  const signedApi=async(signer,action,data)=>{signedCalls.push({signer,action,data});return {ok:true};};
+  const worker=new PortalCollections({...f,signedApi,assertActive(){},collect:async(_w,_c,_b,_q,scoped)=>{
+    await scoped("claim_collection",{attempt_token:"t"});
+    await scoped("authorise_collection",{attempt_token:"t",draft:{}});
+    await scoped("report_collection_failure",{attempt_token:"t",diagnostic:{}});
+    return {};
+  }});
+  worker.start();await worker.run(wallet);
+  assert.equal(f.calls.filter(x=>x==="debit_claim").length,2);
+  assert.ok(!f.calls.includes("debit_authorise")&&!f.calls.includes("debit_failure"));
+  assert.deepEqual(signedCalls.map(c=>c.action),["debit_authorise","debit_failure","debit_authorise","debit_failure"]);
+  // The permit goes through the guarded wallet; the failure report may use the raw wallet.
+  assert.notEqual(signedCalls[0].signer,wallet);assert.equal(signedCalls[1].signer,wallet);
+  assert.equal(signedCalls[0].data.session_id,"one");assert.equal(signedCalls[2].data.session_id,"two");
+});
+test("without a signer, permit steps fail closed instead of falling back to the cookie",async()=>{
+  const f=fixture();
+  const worker=new PortalCollections({...f,assertActive(){},collect:async(_w,_c,_b,_q,scoped)=>{
+    await scoped("authorise_collection",{attempt_token:"t",draft:{}});
+  }});
+  worker.start();await worker.run({});
+  assert.ok(!f.calls.includes("debit_authorise"));
+  assert.match(worker.paused.values().next().value.message,/wallet-signed/);
+});
