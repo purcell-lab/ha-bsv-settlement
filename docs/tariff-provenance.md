@@ -46,6 +46,10 @@ policy. It identifies the source row that supplied each resolved price.
   is the same value a manual review stores as `source_hash` and that automatic
   paths compare before payment, so a frozen account identifies its provenance
   version exactly.
+- Closed-session consent freezes `reviewed_snapshot`. The
+  `*:energy_without_matching_state` flags are warnings, not rejections, so that
+  account has the same digest as `account_snapshot(record)` and its collection
+  links the captured version like any other path (#110).
 - A new version is added only when the provenance body or the linked account
   digest changes, for example a final price replacing an estimate before
   payment. Earlier versions are never edited.
@@ -148,9 +152,6 @@ ignored. It never blocks, delays or changes an account.
   runtime) does not copy provenance. Its binding schema is exact-key validated,
   so adding a field needs a schema change. Until then its `final_account`
   digest can only be looked up while the recorder retains the session.
-- Closed-session consent with accepted metering flags freezes a reviewed
-  account whose digest the recorder never links (capture links only
-  `account_snapshot` digests), so those collections show `not_recorded`.
 - Waivers and zero-balance closures are not payments and keep no reference.
 - Provenance proves which observed price was used. It does not prove the
   provider published that price. HA history and the provider integration remain
