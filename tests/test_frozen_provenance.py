@@ -345,3 +345,24 @@ async def test_manual_review_keeps_null_inline_field_for_downgrade(tmp_path):
     stored = api.saved["session_reviews"][again["review_id"]]
     assert stored["tariff_provenance"] is None
     ref_matches(api, stored, ledger.lookup("session-1", stored["source_hash"]))
+
+
+async def test_closed_session_consent_collection_links_the_captured_version(tmp_path):
+    """#110: the reviewed account frozen by closed-session consent is the account the recorder links."""
+    from test_session_closure import closed, consent
+    _, api, proxy, args, _, plan = await closed(tmp_path)
+    record = proxy.data["latest_session"]
+    assert "import:energy_without_matching_state" in record["quality_flags"]
+    assert plan["accepted_flags"] == []  # A warning, not an accepted rejection.
+    ledger = attach(proxy)
+    key = observe(ledger, record)  # The recorder's rule: digest(account_snapshot(record)).
+    new = await api.closures.execute("request_closed_session_consent", args, "admin")
+    row = api.saved["session_budgets"][new["terms"]["budget_id"]]
+    assert digest(row["terms"]["closed_session_review"]["account"]) == key
+    await api.budgets.accept(row, consent(row), "admin")
+    assert (await api.collections.status(row))["state"] == "ready"
+    item = api.collections.get(row)
+    assert item["source_hash"] == key
+    ref = ref_matches(api, item, ledger.lookup(record["session_id"], key))
+    assert ref["status"] == "recorded" and ref["account_digest"] == key
+    assert not api.chain.posts
